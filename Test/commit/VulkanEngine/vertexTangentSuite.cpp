@@ -110,6 +110,32 @@ TEST(VertexUnit, DegenerateUvFallsBackToAnAxisOrthogonalToTheNormalNotNan)
     }
 }
 
+TEST(VertexUnit, TangentBasisMapsAFlatSampleToTheGeometricNormal)
+{
+    // Regression fixture for the apply_normal_map() operand-order bug (see
+    // common/normal_map.slang): a flat normal-map texel (nTs == (0, 0, 1),
+    // "no perturbation") must map back to the geometric normal exactly. This
+    // pins *why* BuildIntegrity.NormalMappingIsAppliedByEveryShadingPath's
+    // text-match on "mul(nTs, float3x3(" is the correct operand order, by
+    // computing both candidate expressions directly (mirroring slang's
+    // row-built float3x3(t, b, n) semantics: mul(v, M) = v.x*t + v.y*b +
+    // v.z*n, mul(M, v) = (dot(t, v), dot(b, v), dot(n, v))) rather than
+    // trusting a glm::mat3 constructor to reproduce them.
+    const glm::vec3 n(0.0F, 1.0F, 0.0F);
+    const glm::vec3 t(1.0F, 0.0F, 0.0F);
+    const float w = 1.0F;
+    const glm::vec3 b = glm::cross(n, t) * w;
+    const glm::vec3 nTs(0.0F, 0.0F, 1.0F);
+
+    const glm::vec3 rightMultiplied = nTs.x * t + nTs.y * b + nTs.z * n;
+    const glm::vec3 leftMultiplied(glm::dot(t, nTs), glm::dot(b, nTs), glm::dot(n, nTs));
+
+    EXPECT_NEAR(glm::length(rightMultiplied - n), 0.0F, 1e-6F)
+      << "mul(nTs, float3x3(t, b, n)) must return the geometric normal for a flat normal-map sample";
+    EXPECT_GT(glm::length(leftMultiplied - n), 1e-3F)
+      << "mul(float3x3(t, b, n), nTs) is the world-to-tangent transform and must NOT return the geometric normal";
+}
+
 TEST(VertexUnit, TangentParticipatesInEqualityAndHash)
 {
     // Vertex::operator== and its std::hash specialization must both include

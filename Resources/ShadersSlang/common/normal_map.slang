@@ -22,5 +22,8 @@ float3 apply_normal_map(float3 geometricNormal, float4 tangent, float3 sampledNo
     float3 b = cross(n, t) * tangent.w;
     float3 nTs = sampledNormal * 2.0 - 1.0;
     nTs.xy *= scale;
-    return normalize(mul(float3x3(t, b, n), nTs));
+    // Row-multiply: mul(v, M), not mul(M, v), against the row-built (t, b, n)
+    // - same convention rchit_main and path_tracing's inline hit-shading loop
+    // use for their WorldToObject() inverse-transpose.
+    return normalize(mul(nTs, float3x3(t, b, n)));
 }

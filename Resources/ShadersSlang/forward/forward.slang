@@ -416,7 +416,9 @@ float4 fs_main(VsOut In, bool isFrontFace : SV_IsFrontFace) : SV_Target
     float3 b = cross(nGeom, t) * In.worldTangent.w;
     float3 nTs = normalSample.xyz * 2.0 - 1.0;
     nTs = float3(nTs.xy * prim.material_factors.w, nTs.z);
-    float3 n = normalize(mul(float3x3(t, b, nGeom), nTs));
+    // Row-multiply: mul(v, M), not mul(M, v) - see common/normal_map.slang's
+    // apply_normal_map(), this is its wgsl-target inline twin.
+    float3 n = normalize(mul(nTs, float3x3(t, b, nGeom)));
 
     float3 l = normalize(frame.light_dir_ambient.xyz);
     float3 v = normalize(frame.camera_position.xyz - In.worldPosition);

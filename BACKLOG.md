@@ -10423,3 +10423,417 @@ except that it deletes the divergence-matrix row task 5 does not touch.
 
 ### Docs
 
+## 2026-08-05 batch VII — planner (the TBN matrix multiplied on the wrong side in the one module all five normal-mapped shading paths call, which the emitted WGSL confirms without a GPU; a GLFW cursor-position callback installed only while the right mouse button is down, against an ImGui backend that documents the opposite as mandatory; a per-primitive tangent pass that allocates and zeroes two vectors over the *whole* model's vertex array once per primitive; `map_d`, which two of the bundled sponza's 24 materials carry and both OBJ paths drop; and a doc that calls seven SPIR-V-only Slang modules "shared math")
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch VI's five tasks all shipped
+(`0c5c57b0`, `c812eef8`, `22407124`, `f13797cb`, plus the docs follow-ups
+through `bc021c43`). Everything below was read out of the tree at `bc021c43`.
+
+**First, `apply_normal_map` multiplies the TBN basis on the wrong side.**
+`common/normal_map.slang` ends with
+`return normalize(mul(float3x3(t, b, n), nTs));`. In Slang/HLSL semantics
+`float3x3(t, b, n)` builds the matrix with `t`, `b`, `n` as **rows**, and
+`mul(M, v)` is `M·v` — component *i* is `dot(row_i, v)`. So the expression
+evaluates to `(dot(t, nTs), dot(b, nTs), dot(n, nTs))`, which is the
+world→tangent transform. The tangent→world transform this function is
+documented to perform is `nTs.x*t + nTs.y*b + nTs.z*n`, i.e. `mul(nTs, M)`
+with the same row-built matrix (or `mul(transpose(M), nTs)`).
+
+This is not a subtle shading difference. Take the flat-texel case a normal
+map spends most of its area on, `nTs = (0,0,1)`: the correct result is `n`,
+and the expression returns `(t.z, b.z, n.z)`. For a floor with `n = (0,1,0)`,
+`t = (1,0,0)`, `w = +1`, that is `b = cross(n, t) = (0,0,-1)` and the result
+is `(0,-1,0)` — the geometric normal exactly inverted. Every normal-mapped
+surface in the engine is being lit by a normal that is, at best, unrelated to
+its surface.
+
+The same expression is written a second time inline in
+`forward/forward.slang` (`normalize(mul(float3x3(t, b, nGeom), nTs))`), so
+the Rust/WebGPU renderer carries the identical defect. **You can verify the
+Slang semantics offline, with no GPU and no compiler**: the emitted WGSL is
+checked in, and
+`crates/webgpu_renderer/src/shaders/forward.wgsl` reads
+`(vec3<f32>(...)) * (mat3x3<f32>(t_0, cross(nGeom_1, t_0) * ..., nGeom_1))`.
+WGSL `mat3x3` takes **columns**, and `v * M` is `result[j] = dot(v,
+column_j)` — the same `(dot(t,nTs), dot(b,nTs), dot(n,nTs))` the HLSL reading
+gives. Two independent readings of the same emitted artifact agreeing is what
+makes this actionable while goldens are blocked.
+
+The reason five source-text gates did not catch it is that all five check for
+*calls* — `import normal_map;`, `apply_normal_map(`, `normalTextureID`,
+`material.normalScale` — and none checks the one line of arithmetic that
+those calls exist to share. Note also that the RT/PT normal transforms went
+through exactly this row-vs-column reasoning in batch XVII
+(`raytrace.rchit.slang`'s `mul(normalHit, (float3x3)WorldToObject())` and
+`path_tracing.slang`'s twin, both correct); `apply_normal_map` was the one
+place that reasoning was not applied.
+
+**Second, the GLFW cursor-position callback is installed only during a
+right-button drag, and ImGui is initialised with `install_callbacks = false`.**
+`GUI.cpp` calls `ImGui_ImplGlfw_InitForVulkan(window, false)`, so ImGui sees
+input *only* through the forwarding callbacks `Window::init_callbacks`
+installs. That function installs key, mouse-button, scroll, char,
+framebuffer-size, focus and cursor-enter callbacks — and **not**
+`glfwSetCursorPosCallback`. The only three sites that touch it are
+`handle_mouse_button_callback` (installs on right-press, clears on
+right-release) and `Window::window_focus_callback` (clears on focus loss).
+`imgui_impl_glfw.cpp`'s own header states the contract this violates: "If you
+called ImGui_ImplGlfw_InitXXX() with install_callbacks = false, you MUST
+install glfwSetCursorPosCallback() and forward it to the backend."
+
+The consequence is mechanical: `ImGui_ImplGlfw_CursorEnterCallback` *is*
+forwarded, so entering the window sets `bd->MouseWindow = window`, and
+`ImGui_ImplGlfw_UpdateMouseData`'s polling fallback is gated on
+`bd->MouseWindow == nullptr`. With the fallback disabled and the callback
+uninstalled, ImGui's mouse position stops updating until the next right-drag.
+The look-mode gate belongs in the pure `handle_mouse_callback` (where
+`frontendInputSuite.cpp` can test it) rather than in which GLFW callback
+happens to be installed — that is the same "GLFW-touching half stays at the
+call site so this half stays testable" split the module's own comment already
+describes.
+
+**Third, `computeTangents` allocates over the whole model once per
+primitive.** It opens with two `std::vector<glm::vec3>(vertices.size())`, but
+`GltfLoader::processPrimitive` calls it per primitive with a `firstIndex`
+that scopes the *work* to that primitive while the *allocation* stays sized
+to every vertex parsed so far. Loading a P-primitive document therefore
+allocates and zeroes Θ(P · V) bytes — for sponza-class glTF (hundreds of
+primitives, hundreds of thousands of vertices) that is hundreds of megabytes
+of pure memset on a code path the loader runs on every model switch. The OBJ
+path calls it once with `firstIndex = 0` and is unaffected.
+
+**Fourth, `map_d` is dropped by both OBJ paths, and the bundled sponza uses
+it.** `Resources/Models/crytek-sponza/sponza_triag.mtl` has 24 materials: 23
+`map_Kd`, 9 `map_Bump` (both now read) and **2 `map_d`** — the chain and
+hanging-plant cut-outs. tinyobjloader parses that directive into
+`material_t::alpha_texname` / `alpha_texopt`; `ObjLoader::loadMaterials`
+never reads either, and `obj_to_gltf.rs` never emits anything for it. Since
+every OBJ material also leaves `alphaCutoff` at the `-1` "not a MASK
+material" sentinel, the cut-outs render as solid rectangles in all five
+shading paths. This is the same shape as the `map_Ke`/`map_Bump` tasks that
+shipped yesterday (`3143e92a`, `54a39af2`), with one extra decision baked in
+below because OBJ has no `alphaMode` to read.
+
+**Fifth, `docs/shader-sharing.md` calls seven SPIR-V-only modules "shared
+math".** Its "Shared math lives in Slang modules under
+`Resources/ShadersSlang/common/`" sentence names `material_fetch.slang`,
+`material_rules.slang` and `cascaded_shadow.slang`, and the "What is wired
+today" list adds `base_color.slang`, `emission.slang`, `normal_map.slang` and
+`alpha_test.slang`. Walking the `import` graph, every entry point that
+reaches any of those seven emits **spirv only**; the genuinely cross-target
+modules are `aces`, `brdf`, `fullscreen` and `noise`, and `sky_model` is
+shared between two *wgsl* shaders. The doc already carries a marker-block
+table for entry-point targets with a gate behind it
+(`shader-targets:begin`/`:end`), and `buildIntegritySuite.cpp` already has
+the `import_closure` helper `f13797cb` added — the same two pieces answer
+this question for `common/` modules.
+
+**Verification context.** Host GPU goldens remain blocked over RDP (the
+`- [b]` near the end of this file) and `path_tracing` mode device-losts on
+the host RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). No
+task below may claim a rendered result. Tasks 1, 4 and 5 are source-text
+gates plus (for 4) parse-time state in `commitTestSuite.exe`; task 2 is
+device-free unit tests over the pure input helpers; task 3 is a CPU
+benchmark plus a device-free unit test. **Say which suites you actually
+ran.**
+
+**Rust verification limits (tasks 1 and 4 touch the submodule).**
+`cargo test`/`cargo build` do not link on this host: the VC++ Build Tools
+install is incomplete and Git Bash's `link.exe` shadows MSVC's. Verify with
+`cargo check`, `cargo clippy` and `cargo fmt --check` from
+`ExternalLib/Kataglyphis-RustProjectTemplate`, say so explicitly in the
+commit message, and let the always-on Linux lane
+(`Scripts/Linux/run-cargo-tests.sh`) run the tests you add. Regenerating
+`forward.wgsl` is a `compile-slang-shaders.ps1` run, not a cargo build.
+
+**Ordering.** Tasks 1, 4 and 5 all edit
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` — land them one at a time,
+in that order; each later one rebases trivially. Tasks 4 and 5 both edit
+`docs/shader-sharing.md` (task 4 the shared-module prose and a new marker
+block, task 5 the divergence matrix), so serialize those two as well. Tasks 2
+and 3 are independent of everything.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Install the GLFW cursor-position callback unconditionally and move the look-mode gate into `handle_mouse_callback`** — ImGui is initialised with `install_callbacks = false`, so uninstalling that callback outside a right-drag is what stops ImGui's mouse position from updating at all.
+
+  **Files to read:**
+  - `Src/shared/frontend/WindowInputCallbacks.ixx` — `handle_mouse_callback`,
+    `handle_mouse_button_callback`, `handle_focus_lost`, and the comment
+    explaining why the GLFW-touching half stays at the call site
+  - `Src/shared/frontend/WindowInputState.hpp` — the struct that gains the new
+    flag
+  - `Src/GraphicsEngineVulkan/window/Window.cpp` — `init_callbacks` (which
+    never installs a cursor-pos callback) and `window_focus_callback` (which
+    clears one)
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp` — `create_gui_context`'s
+    `ImGui_ImplGlfw_InitForVulkan(..., false)`
+  - `ExternalLib/IMGUI/backends/imgui_impl_glfw.cpp` — the "you MUST install
+    glfwSetCursorPosCallback()" note in the changelog header,
+    `ImGui_ImplGlfw_CursorEnterCallback` (sets `bd->MouseWindow`) and
+    `ImGui_ImplGlfw_UpdateMouseData` (whose polling fallback is gated on
+    `bd->MouseWindow == nullptr`)
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp` — the device-free test
+    pattern, especially `LookModeEntryReSeedsTheMouseOrigin`,
+    `FocusLossEndsLookModeAndReSeedsTheMouseOrigin` and
+    `CursorCrossingAnImGuiPanelDoesNotJumpTheCamera`
+
+  **Steps:**
+  1. Add `bool look_mode_active{ false };` to `WindowInputState`.
+  2. Give `handle_mouse_callback` a `bool look_mode_active` parameter.
+     Keep the existing ImGui-capture early return exactly as it is (it must
+     still re-seed `last_x`/`last_y`), and add a second early return with the
+     *same* re-seeding behaviour when `!look_mode_active` — re-seeding rather
+     than plain `return` is what keeps the "first event after look mode
+     resumes produces no delta" property the suite already pins.
+  3. Change `handle_mouse_button_callback` to set/clear the flag instead of
+     calling `glfwSetCursorPosCallback`, and drop its `GLFWcursorposfun`
+     parameter. Keep both existing predicates (`should_capture_cursor` /
+     `should_release_cursor`) and both `mouse_first_moved = true`
+     re-seeds unchanged.
+  4. Set `look_mode_active = false` in `handle_focus_lost` alongside the
+     existing key reset and `mouse_first_moved = true`.
+  5. In `Window::init_callbacks`, add
+     `glfwSetCursorPosCallback(main_window, &mouse_callback);` next to the
+     other seven installs. Delete the `glfwSetCursorPosCallback(window,
+     nullptr)` line from `window_focus_callback` — `handle_focus_lost` now
+     carries that meaning. Update `Window::mouse_callback` to pass
+     `input_state.look_mode_active` through, and `Window::mouse_button_callback`
+     to stop passing `mouse_callback`.
+  6. Leave a comment at the new install site naming the ImGui backend
+     contract, so the next person does not "optimise" the callback back into
+     conditional installation.
+
+  **Test:** Add to `frontendInputSuite.cpp`, following the existing
+  device-free style (never pass a live `GLFWwindow`):
+  `WindowInputUnit.CursorMotionOutsideLookModeProducesNoCameraDelta` (flag
+  false, two moves, `x_change`/`y_change` stay 0) and
+  `WindowInputUnit.LookModeResumesWithoutSnappingAfterIdleMotion` (flag false
+  across a long move, then flag true and one more move — the delta must be
+  only the last segment, proving the outside-look-mode branch still re-seeds).
+  Update the existing look-mode/focus-loss tests to drive the new flag rather
+  than the removed callback parameter.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=WindowInputUnit.*`
+  from the repo root. The GUI half cannot be verified headlessly; if you
+  launch `Scripts\Windows\run_clangcl_debug.ps1` to eyeball it, say so, and
+  if you do not, say that too.
+
+  **Context:** This is the C++ twin of the Rust orbit-controller fix from
+  2026-08-04 batch VI ("never ends a drag on focus loss and snaps when the
+  cursor comes back off an egui panel") — same subsystem, opposite renderer.
+  The design rule to preserve is the one already written into
+  `WindowInputCallbacks.ixx`: pure, testable input logic in the module,
+  GLFW calls at the call site.
+
+- [ ] **(S) (refactor) Scope `computeTangents`' accumulators to the vertex range it actually touches** — it allocates and zeroes two `vector<vec3>` sized to the whole model once per glTF primitive, so a P-primitive document pays Θ(P · V).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp` — `computeTangents`, the two
+    `tangentAccum`/`bitangentAccum` allocations and both loops
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `processPrimitive`'s
+    `vertex::computeTangents(vertices, indices, primIndexStart)` call, and the
+    `base`/`primIndexStart` locals that make the per-primitive vertex range
+    contiguous
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — the `firstIndex = 0`
+    caller, which must stay bit-identical
+  - `Test/perf/perfSuite.cpp` — `BM_GltfParse_CubeGlb` and the file header's
+    rule that the suite is GPU-free; note it already links `VulkanEngineCore`,
+    so `import kataglyphis.vulkan.vertex;` is available
+  - `Test/commit/VulkanEngine/vertexTangentSuite.cpp` — the hand-built-triangle
+    test pattern
+
+  **Steps:**
+  1. Keep the signature. In `computeTangents`, walk
+     `indices[firstIndex..]` once to find the minimum and maximum corner
+     index actually referenced, then size both accumulators to
+     `maxCorner - minCorner + 1` and offset every accumulator subscript by
+     `minCorner`. Return early when the range is empty.
+  2. Do not change either output loop's semantics: the second loop must still
+     write `v.tangent` for exactly the corners it writes today, and the
+     degenerate-UV and degenerate-Gram-Schmidt fallbacks must stay
+     byte-identical.
+  3. Add a short comment recording why the range scan exists — that
+     `GltfLoader::processPrimitive` calls this once per primitive over the
+     growing global vertex array, so a `vertices.size()`-sized accumulator is
+     quadratic in primitive count.
+
+  **Test:** Two additions.
+  (a) `TEST(VertexUnit, TangentsForALaterRangeLeaveEarlierVerticesUntouched)`
+  in `vertexTangentSuite.cpp`: build two disjoint quads in one vertex array,
+  run `computeTangents` with `firstIndex` pointing at the second quad's first
+  index, and assert the first quad's tangents are still their pre-call values
+  while the second quad's match `UnitQuadTangentFollowsUvGradient`'s
+  expectations. This is the invariant the offsetting can break.
+  (b) `BM_ComputeTangents` in `Test/perf/perfSuite.cpp`, parameterised on
+  primitive count (`->Arg(1)->Arg(64)->Arg(512)`), building N disjoint quads
+  in one array and calling `computeTangents` once per primitive with the
+  matching `firstIndex` — the shape `GltfLoader` actually produces. Follow
+  the existing benchmark comment style: say what per-frame or per-load cost
+  it guards.
+
+  **Build:** `clangcl-debug` for the unit test, then `clangcl-profile` for the
+  benchmark (`perfTestSuite` only exists in RelWithDebInfo):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations "clangcl-debug,clangcl-profile"`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=VertexUnit.*`
+  and `.\build-clangcl-profile\perfTestSuite.exe --benchmark_filter=BM_ComputeTangents`
+  from the repo root. Quote the before/after numbers at `Arg(512)`.
+
+  **Context:** Debug timings are noise — take the numbers from
+  `clangcl-profile` only, as `perfSuite.cpp`'s header says. The benchmark is
+  the point as much as the fix: `BM_GltfParse_*` measures cgltf, not the
+  engine's own post-parse passes, so nothing has ever been watching this.
+
+- [ ] **(M) Read `map_d` into a new `ObjMaterial::alphaTextureID` and alpha-test with it in all four shading paths** — two of the bundled crytek-sponza's 24 materials carry `map_d`, and both OBJ paths drop it, so the chain and hanging-plant cut-outs render as solid rectangles everywhere.
+
+  **Files to read:**
+  - `Src/shared/scene/ObjMaterial.hpp` — the field-plus-sentinel pattern to
+    copy (`emissiveTextureID`, `normalTextureID`), the trailing-scalar
+    scalar-layout rationale, and the two `static_assert`s that keep the struct
+    an aggregate
+  - `Resources/ShadersSlang/common/scene_types.slang` — the mirrored
+    `ObjMaterial`; the two structs are hand-mirrored and must change together
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `loadMaterials`'
+    `resolveSlot` lambda and the `map_Ke`/`map_Bump` blocks; `map_d` is a
+    linear opacity map, so `srgb = false`, like the normal slot
+  - `ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h` — `material_t::alpha_texname`
+    (`map_d`) and `alpha_texopt`
+  - `Resources/ShadersSlang/common/material_rules.slang` — `alpha_masked_out`
+    and its documented product rule
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang`,
+    `Resources/ShadersSlang/deferred/deferred.slang`,
+    `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang`, and
+    `Resources/ShadersSlang/common/alpha_test.slang` — the four places a
+    sampled alpha is produced today
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs`
+    — the `d`/`Tr` → `alphaMode: BLEND` emit, for the divergence row
+  - `Test/commit/VulkanEngine/objParseSuite.cpp` and
+    `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.ModelLoadingDocDocumentsEveryObjMaterialMember` and the
+    `offsetof` layout gates in `pushConstantSuite.cpp`
+
+  **Steps:**
+  1. Add `int alphaTextureID{ -1 };` to `ObjMaterial` as a **trailing** member
+     (after `unlit`), with the usual comment: `-1` = no alpha texture, every
+     glTF material and every OBJ material without `map_d` keeps it, so
+     pre-existing scenes are bit-unchanged. Mirror it at the end of
+     `scene_types.slang`'s `ObjMaterial`.
+  2. In `ObjLoader::loadMaterials`, when `mp->alpha_texname` is non-empty:
+     `material.alphaTextureID = resolveSlot(mp->alpha_texname, false);` and
+     **set `material.alphaCutoff = 0.5F`**. Record the decision in the
+     comment: OBJ has no `alphaMode`, this engine has no sorted transparent
+     pass (see `GltfLoader.cpp`'s `alphaCutoff` comment), so a `map_d`
+     material is treated as glTF `MASK` at the conventional 0.5 cutoff rather
+     than as blended. Use the same "no directive, no push" rule the normal and
+     emissive slots use so `textures`/`textureSrgb` stay as long as
+     `materials` for every model without `map_d`.
+  3. In each of the four shader sites, when `material.alphaTextureID >= 0`,
+     sample that texture's `.r` at the base-colour UV and fold it into the
+     alpha handed to `alpha_masked_out` (it multiplies the existing
+     texture/vertex alpha — `map_d` is an opacity mask, so the product rule is
+     the right composition). Use `SampleLevel(..., 0.0)` in
+     `alpha_test.slang`, matching the explicit-LOD rule its own comment
+     states; `Sample` is fine in the two raster paths and the shadow pass.
+  4. `GltfLoader` needs no change — glTF carries opacity in
+     `baseColorTexture.a`, so `alphaTextureID` stays `-1` there. Say so in the
+     field comment.
+  5. Update `docs/model-loading.md`'s material table with the new row (its
+     coverage gate will fail otherwise) and add a `map_d` row to
+     `docs/shader-sharing.md`'s divergence matrix: C++ reads it as a MASK
+     cut-out, `obj_to_gltf` emits nothing for it — a real gap, not an intended
+     one.
+
+  **Test:** Add `ObjParse.MapDBecomesAnAlphaTextureAndAMaskCutoff` to
+  `objParseSuite.cpp` over a temporary `.mtl`/`.obj` pair carrying `map_d`,
+  asserting `alphaTextureID >= 0`, `alphaCutoff == 0.5F`, and that a material
+  *without* `map_d` keeps `-1`. Add
+  `BuildIntegrity.AlphaTextureIsSampledByEveryAlphaTestingPath` next to
+  `NormalMappingIsAppliedByEveryShadingPath`, gating all four shader sources
+  on `alphaTextureID`. Extend the `offsetof` layout gate for the new member.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root. The
+  shader edits also need
+  `Scripts\Windows\compile-slang-shaders.ps1`. Cut-out geometry is a
+  pixel-visible change you **cannot** verify here — goldens are blocked; say
+  so.
+
+  **Context:** `ObjMaterial` has grown one glTF/OBJ factor per commit for a
+  week (`135aebb8`, `3143e92a`, `54a39af2`, `8a728c26`); this is the same
+  motion for the one remaining `.mtl` texture directive that changes what the
+  bundled flagship scene looks like. `map_Ka`/`map_Ns`/`map_Ps` stay dropped
+  — none of them has a consumer in any shading path.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+### Docs
+
+- [ ] **(S) Give `docs/shader-sharing.md` a per-target consumer table for `common/` modules, and stop calling seven SPIR-V-only modules "shared math"** — walking the `import` graph, only four of the twelve `common/` modules are reachable from both a spirv and a wgsl entry point.
+
+  **Files to read:**
+  - `docs/shader-sharing.md` — the "Architecture: Slang-native, not
+    `#include`" bullet that names `material_fetch.slang`,
+    `material_rules.slang` and `cascaded_shadow.slang` as shared math; the
+    "Shared math modules" list under "What is wired today"; and the existing
+    `<!-- shader-targets:begin -->` / `:end` marker block
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `import_closure` /
+    `collect_import_closure` (added by `f13797cb`), the
+    `shader-targets` marker-block parser, and
+    `BuildIntegrity`'s existing shader-targets test: the whole shape to reuse
+  - `Resources/ShadersSlang/shader-manifest.json` — the `manifest` rows'
+    `file` + `targets` fields, which give each entry-point source its target
+    set
+  - `Resources/ShadersSlang/tests/brdf_test.slang` and `noise_test.slang` —
+    the two dual-emit CI guards, and why they exist only for `brdf`/`noise`
+
+  **Steps:**
+  1. Compute, for each `Resources/ShadersSlang/common/*.slang`, the union of
+     targets over every manifest entry-point source whose `import_closure`
+     contains it. Include the `tests/*.slang` guards as consumers — they are
+     real dual-emit consumers, and they are exactly why `brdf`/`noise` are
+     genuinely both-target.
+  2. Add a second marker block to `docs/shader-sharing.md`
+     (`<!-- shared-module-targets:begin -->` / `:end`) with one
+     `| \`common/<name>.slang\` | spirv | wgsl | both | (unused) |` row per
+     module, in the same table style as the entry-point block.
+  3. Fix the prose: the "Shared math lives in Slang modules under
+     `common/`" sentence and the "Shared math modules" list must stop
+     implying both renderers consume `material_fetch`, `material_rules`,
+     `cascaded_shadow`, `base_color`, `emission`, `normal_map` and
+     `alpha_test`. Keep those modules described — they *are* shared across
+     shading paths, just within one target — and say which target.
+     `sky_model.slang`'s existing description is already accurate (both its
+     consumers are wgsl); do not rewrite it into a cross-renderer claim.
+  4. Do not add new `tests/*_test.slang` guards in this task. Note in the doc
+     that only `brdf` and `noise` are guarded for dual emit today, and that a
+     spirv-only module has nothing to guard until it gains a wgsl consumer —
+     that is a fact the new table now makes checkable.
+
+  **Test:** Add
+  `BuildIntegrity.SharedModuleTargetsTableMatchesTheImportGraph` to
+  `buildIntegritySuite.cpp`, next to the existing shader-targets test and
+  built the same way: parse the new marker block, recompute the mapping from
+  `import_closure` + the manifest, and assert set equality in both directions
+  (a module missing from the table, and a table row for a module that no
+  longer exists, must both fail). Fail loudly if the marker pair is missing,
+  exactly as the entry-point parser does.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** This is the same "the doc asserts something the tree can
+  answer, so gate it" motion as
+  `ShaderSharingDocCoversEveryKnownLoaderDivergence` (`3af452d8`) and
+  `ModelLoadingDocDocumentsEveryObjMaterialMember` (`697349d8`). The reason it
+  is worth a gate rather than a one-time edit is that every batch for a week
+  has added a `common/` module or moved code between them, and the doc's
+  "shared" framing is what tells a reader whether a change to one can break
+  the *other* renderer's compile.
+

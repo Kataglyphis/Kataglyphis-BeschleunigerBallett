@@ -2968,6 +2968,24 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
       << "normal_map.slang's apply_normal_map() no longer unpacks the sampled tangent-space normal from [0,1] to "
          "[-1,1]. "
       << kFailureMessage;
+    EXPECT_NE(normal_map_text.find("mul(nTs, float3x3("), std::string::npos)
+      << "normal_map.slang's apply_normal_map() must right-multiply the row-built (t, b, n) basis by nTs "
+         "(mul(nTs, float3x3(t, b, n))) to apply the tangent-to-world transform; mul(float3x3(t, b, n), nTs) is "
+         "the inverse (world-to-tangent) transform and produces an inverted shading normal.";
+    EXPECT_EQ(normal_map_text.find("mul(float3x3("), std::string::npos)
+      << "normal_map.slang's apply_normal_map() must not left-multiply the row-built (t, b, n) basis - that is "
+         "the world-to-tangent transform, not tangent-to-world.";
+
+    const fs::path forward_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
+    const auto forward_text_opt = readFileText(forward_path);
+    ASSERT_TRUE(forward_text_opt.has_value()) << "could not open " << forward_path.string();
+    const std::string &forward_text = *forward_text_opt;
+    EXPECT_NE(forward_text.find("mul(nTs, float3x3("), std::string::npos)
+      << "forward.slang's fs_main is normal_map.slang's wgsl-target inline twin and must right-multiply the "
+         "row-built (t, b, nGeom) basis by nTs (mul(nTs, float3x3(t, b, nGeom))), same as apply_normal_map().";
+    EXPECT_EQ(forward_text.find("mul(float3x3("), std::string::npos)
+      << "forward.slang's fs_main must not left-multiply the row-built (t, b, nGeom) basis - that is the "
+         "world-to-tangent transform, not tangent-to-world.";
 
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
