@@ -10300,56 +10300,6 @@ Rust submodule and touch disjoint files (`gltf_loader.rs`/`forward.rs` versus
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Emit `metallicFactor`/`roughnessFactor` from `.mtl` `Pm`/`Pr` in the OBJ→glTF converter** — the emitter hard-codes `0.0` and `1.0`, so the two PBR channels the format defines never survive conversion.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs` — `ObjMaterial`,
-    `parse_mtl`'s match arms (`Kd`, `Ke`, `d`, `Tr`, `map_Kd`, the four
-    normal-map spellings, `map_Ke`), and the material-emitting `format!` that
-    writes `"metallicFactor": 0.0, "roughnessFactor": 1.0`
-  - `crates/webgpu_renderer/tests/obj_to_gltf.rs` —
-    `parse_mtl_takes_the_last_token_of_an_option_carrying_map_ke` and the
-    `parse_mtl("newmtl a\n…")` inline-source pattern to follow
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — the C++ twin of this
-    change (task 1 in this batch), including the "`Pr 0.0` is indistinguishable
-    from absent" reasoning
-
-  **Steps:**
-  1. Add `metallic: Option<f32>` and `roughness: Option<f32>` to the
-     converter's `ObjMaterial`. `Option` rather than a defaulted `f32` is the
-     point: it records *whether the directive was present*, which is exactly
-     the information tinyobjloader cannot give the C++ side.
-  2. Add `"Pm"` and `"Pr"` arms to `parse_mtl`, parsing one real each and
-     ignoring a malformed value the same way the existing scalar arms do.
-  3. In the emitter, write `metallicFactor` from `metallic` and
-     `roughnessFactor` from `roughness`, falling back to the current hard-coded
-     `0.0` / `1.0` when absent so every existing `.obj` converts
-     byte-identically.
-  4. Update the module header comment (the `Kd` becomes `baseColorFactor` list)
-     to name the two new directives.
-
-  **Test:** Add `parse_mtl_reads_the_pbr_channels` to
-  `tests/obj_to_gltf.rs`, asserting `parse_mtl("newmtl a\nPm 1.0\nPr 0.25\n")`
-  yields `Some(1.0)`/`Some(0.25)`, and a companion that
-  `parse_mtl("newmtl a\nKd 1 0 0\n")` leaves both `None`. Add one
-  `ObjMesh`-level test in the same file (following
-  `..._emits_..._texture` neighbours) asserting the emitted JSON carries
-  `"metallicFactor": 1` for the first case and the unchanged `0.0`/`1.0` pair
-  for the second — the JSON assertion is what pins the fallback.
-
-  **Build:** From `ExternalLib/Kataglyphis-RustProjectTemplate`:
-  `cargo check -p kataglyphis_webgpu_renderer`,
-  `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings`,
-  `cargo fmt --check`. `cargo test` does not link on this host — say so, and
-  let the Linux lane run it.
-
-  **Context:** Same directive pair as task 1, opposite renderer, and the two are
-  independent. The pre-existing asymmetry worth not making worse: the C++
-  loader derives roughness from `Ns` (`shininess`) when no `Pr` is authored,
-  while this converter emits a flat `1.0` — leave that divergence alone here
-  (changing it would alter every existing conversion) and record it in task 5's
-  table instead.
-
 ### Docs
 
 - [ ] **(S) Turn `docs/shader-sharing.md`'s one-bullet divergence list into a material-feature matrix, and gate its coverage** — the section is introduced as the place the two loaders stay honest with each other and names one of at least four real divergences.
