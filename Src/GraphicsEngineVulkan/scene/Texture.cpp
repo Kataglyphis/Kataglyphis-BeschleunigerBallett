@@ -12,6 +12,7 @@ module;
 #include <cstring>
 #include <stb_image.h>
 #include <string>
+#include <type_traits>
 #include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.texture;
@@ -23,6 +24,7 @@ import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.image_view;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.sampler_builder;
+import kataglyphis.vulkan.texture_decode;
 
 using namespace Kataglyphis;
 
@@ -302,18 +304,17 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
   int *height,
   vk::DeviceSize *image_size) -> unsigned char *
 {
-    int channels = 0;
-    unsigned char *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
+    // The decode itself, and the size contract callers size staging buffers
+    // from, live in kataglyphis.vulkan.texture_decode - a module that needs
+    // neither a device nor this class, so texture_loading_fuzz_test can reach
+    // it without linking the renderer (see TextureDecode.ixx for what that
+    // link cost). All this adds is the engine's error line.
+    static_assert(std::is_same_v<vk::DeviceSize, std::uint64_t>,
+      "loadTextureData forwards image_size straight through to decodeImageRGBA8");
 
-    if (image == nullptr) {
-        spdlog::error("Failed to load a texture file! (" + file_name + ")");
-        *width = 0;
-        *height = 0;
-        *image_size = 0;
-        return nullptr;
-    }
+    unsigned char *image = TextureDecode::decodeImageRGBA8(file_name, width, height, image_size);
 
-    *image_size = static_cast<vk::DeviceSize>(*width) * static_cast<vk::DeviceSize>(*height) * 4;
+    if (image == nullptr) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 
     return image;
 }

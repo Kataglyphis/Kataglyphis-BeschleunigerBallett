@@ -157,14 +157,58 @@ target_compile_definitions(
 
 # Real engine surface: the file reader every shader load goes through
 # (ShaderHelper -> File::readCharSequence -> VkShaderModule, unvalidated).
+#
+# Compiles the file-reader module straight in and links NOTHING else - the
+# same minimal-target rule obj_parsing, gltf_parsing and scene_config follow
+# above, and for the same reason. It used to link VulkanEngineCore, and on
+# 2026-08-05, the first Linux run that ever reached the fuzz step after
+# c48ca5a2 added it to that lane's list, it died exactly the way
+# scene_config_fuzz_test's comment above describes: "SEGV on unknown address
+# 0x000000000000" after "Sanitizer coverage enabled" and before the first
+# test ran. Nothing in this target needs the renderer - FileReader.ixx is
+# self-contained (std::filesystem/ifstream, all functions inline, no engine
+# import), so the whole engine came along for four free functions.
 kataglyphis_add_fuzz_test(shader_file_reader_fuzz_test shader_file_reader_fuzz_test.cpp)
-target_link_libraries(shader_file_reader_fuzz_test PRIVATE VulkanEngineCore)
+target_sources(
+  shader_file_reader_fuzz_test
+  PUBLIC FILE_SET
+         file_reader_module
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${CMAKE_SOURCE_DIR}/Src/shared
+         FILES
+         ${CMAKE_SOURCE_DIR}/Src/shared/util/FileReader.ixx)
 
 # Real engine surface: texture decoding (stb_image). Every material texture and
 # every skybox face goes through it, and its reported byte count sizes a
 # staging buffer that is then memcpy'd into.
+#
+# Like every other target here it links no renderer. It used to link
+# VulkanEngineCore plus the ImGui test sources, because the decode lived in
+# Texture.cpp and Texture.ixx imports device/buffer/image; on 2026-08-05, the
+# first run that ever executed this target, it died at startup on the Linux
+# ASan lane with "SEGV on unknown address 0x000000000000" - a symbolized stack
+# put it in fuzztest's OWN static initializer (init_fuzztest.cc:54) registering
+# an abseil command-line flag, inside the flag registry's hash map, before a
+# single test ran. Adding the engine's translation units to the link reorders
+# the static initializers those abseil flags depend on.
+#
+# So the decode moved to kataglyphis.vulkan.texture_decode, which needs neither
+# a device nor a logger; Texture::loadTextureData forwards to it and keeps its
+# spdlog line. The fuzz target compiles that module and links only stb, the
+# same shape as gltf_parsing_fuzz_test with cgltf. STB_IMAGE_IMPLEMENTATION
+# lives in the fuzz source (the engine keeps its own in VulkanRenderer.cpp; the
+# two never meet in one link).
 kataglyphis_add_fuzz_test(texture_loading_fuzz_test texture_loading_fuzz_test.cpp)
-target_link_libraries(texture_loading_fuzz_test PRIVATE VulkanEngineCore)
-# Importing the texture module drags in the renderer's ImGui references, unlike
-# the lighter modules the other fuzz targets use.
-kataglyphis_add_imgui_test_sources(texture_loading_fuzz_test)
+target_sources(
+  texture_loading_fuzz_test
+  PUBLIC FILE_SET
+         texture_decode_module
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan
+         FILES
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/TextureDecode.ixx)
+target_link_libraries(texture_loading_fuzz_test PRIVATE stb)
