@@ -385,11 +385,10 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
         const int sel = guiSceneSharedVars.selected_model_index;
         if (sel >= 0 && sel < static_cast<int>(model_paths.size())) {
             const std::string selected_path = model_paths[static_cast<size_t>(sel)];
-            const std::string resolved_path = sceneConfig::resolveModelPath(selected_path);
 
             (void)device->getLogicalDevice().waitIdle();
 
-            scene->reloadModel(device, graphics_command_pool, resolved_path);
+            scene->reloadModel(device, graphics_command_pool, selected_path);
 
             // The reload swaps in entirely new geometry, so this needs the
             // same full refresh as addModel (BLAS+TLAS rebuild and every

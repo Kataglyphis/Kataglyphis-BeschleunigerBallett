@@ -172,6 +172,16 @@ TEST(SceneConfigUnit, ResolveModelPathFindsBundledModel)
     EXPECT_TRUE(std::filesystem::exists(resolved)) << "Could not resolve bundled model: " << resolved;
 }
 
+TEST(SceneConfigUnit, ResolveModelPathIsIdempotent)
+{
+    const std::string resolved = sceneConfig::resolveModelPath("Models/GltfTest/cube.glb");
+    EXPECT_TRUE(std::filesystem::exists(resolved)) << "Could not resolve bundled model: " << resolved;
+
+    const std::string resolved_again = sceneConfig::resolveModelPath(resolved);
+    EXPECT_EQ(resolved, resolved_again)
+      << "Resolving an already-resolved path must return it unchanged - reloadModel() relies on this.";
+}
+
 TEST(SceneConfigUnit, AvailableModelListingsAreConsistent)
 {
     const auto paths = sceneConfig::getAvailableModelPaths();

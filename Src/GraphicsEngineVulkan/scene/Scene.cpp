@@ -188,13 +188,18 @@ void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::Command
     model_list.clear();
     object_descriptions.clear();
 
+    // Resolve like loadAdditionalModel() does: callers pass a path relative
+    // to Resources/, and the working directory differs between the app and
+    // the test executables.
+    const std::string resolved = sceneConfig::resolveModelPath(modelPath);
+
     // By extension, like every other load path - reloadModel constructed
     // ObjLoader directly, so picking a .glb from the GUI fed glTF bytes to
     // the OBJ parser.
-    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, modelPath);
+    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved);
     const std::optional<uint32_t> model_index = add_model(new_model);
     if (!model_index) {
-        spdlog::error("reloadModel: '{}' failed to load; scene is now empty.", modelPath);
+        spdlog::error("reloadModel: '{}' (resolved: '{}') failed to load; scene is now empty.", modelPath, resolved);
         return;
     }
 

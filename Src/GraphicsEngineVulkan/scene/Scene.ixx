@@ -166,6 +166,10 @@ class Scene
     /// alongside the reloaded model.
     void cancelPendingModelLoad();
 
+    /// Replaces the scene with a single model. modelPath is relative to
+    /// Resources/ and is resolved here, like loadAdditionalModel()'s
+    /// contract. The previous scene is torn down before the new load is
+    /// attempted, so a failed reload leaves the scene empty by design.
     void reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &modelPath);
 
     /// Loads an ADDITIONAL model, leaving existing ones in place, and returns
