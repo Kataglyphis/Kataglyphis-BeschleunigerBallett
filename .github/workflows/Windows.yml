@@ -95,7 +95,7 @@ jobs:
       # runs out of room. Print free space per drive and where Docker stores its
       # layers, at the exact point right before the pull, so we can see whether
       # ANY drive can hold ~54 GB (and if so, whether it is the data-root drive).
-      # Pure diagnostic: it does not fail the job.
+      # It gates the pull on that number; it is not merely informational.
       - name: Disk space report before pull (winamd64 needs ~54 GB to import)
         shell: pwsh
         run: |
@@ -106,19 +106,71 @@ jobs:
             @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB,1)}},
             @{n='SizeGB';e={[math]::Round($_.Size/1GB,1)}},
             FileSystemLabel -AutoSize | Out-String | Write-Host
-          $root = docker info --format '{{.DockerRootDir}}' 2>$null
-          Write-Host "Docker data-root: $root"
+
+          # Ask the daemon where it imports layers. This used to be a one-shot
+          # `docker info --format ... 2>$null`, which on runner image
+          # win25-vs2026/20260728.188 returned an EMPTY string and a non-zero
+          # exit code (it printed C:\ProgramData\docker on 20260714.173, the
+          # last green run). Two separate faults followed from that one line,
+          # and run 31030812962 died of the second:
+          #   - the real error went to stderr, which 2>$null threw away, so the
+          #     log showed only "Docker data-root: " and no reason;
+          #   - the GitHub pwsh wrapper appends `exit $LASTEXITCODE`, so the
+          #     failed query became the STEP's exit code - the space guard
+          #     below never fired (C: had 71.3 GB, comfortably over the bar)
+          #     yet the job still failed with a bare "exit code 1".
+          # So: keep stderr, retry while the daemon settles (the disk-cleanup
+          # step two above runs `docker system prune`, which can leave it
+          # briefly unavailable), fall back to the plain-text form whose
+          # "Docker Root Dir:" line has outlived several --format rewrites,
+          # and start the service if the runner left it stopped.
+          $root = $null
+          foreach ($attempt in 1..12) {
+            $out  = & docker info --format '{{.DockerRootDir}}' 2>&1
+            $code = $LASTEXITCODE
+            $text = ($out | Out-String).Trim()
+            if ($code -eq 0 -and $text) { $root = $text; break }
+            Write-Host "attempt ${attempt}: 'docker info --format' exited ${code}: ${text}"
+
+            $plain = & docker info 2>&1
+            $line  = $plain | Select-String -Pattern '^\s*Docker Root Dir:\s*(\S.*)$' | Select-Object -First 1
+            if ($line) {
+              $root = $line.Matches[0].Groups[1].Value.Trim()
+              Write-Host "attempt ${attempt}: recovered the data-root from plain 'docker info'"
+              break
+            }
+
+            $svc = Get-Service -Name docker -ErrorAction SilentlyContinue
+            if ($svc) {
+              Write-Host "attempt ${attempt}: docker service status = $($svc.Status)"
+              if ($svc.Status -ne 'Running') { Start-Service docker -ErrorAction SilentlyContinue }
+            } else {
+              Write-Host "attempt ${attempt}: no 'docker' service registered on this runner"
+            }
+            Start-Sleep -Seconds 10
+          }
+          # Whatever the loop above did to $LASTEXITCODE stops here: only the
+          # explicit `exit 1` below may fail this step.
+          $global:LASTEXITCODE = 0
+
           $maxDrive  = ($vols | Select-Object -First 1).DriveLetter
           $maxFreeGB = [math]::Round(($vols | Select-Object -First 1).SizeRemaining/1GB, 1)
           Write-Host "Largest free drive: ${maxDrive}: has $maxFreeGB GB free; winamd64 import needs ~54 GB."
-          # Free space on the drive Docker actually imports layers into (data-root).
-          $rootDriveFreeGB = $null
-          if ($root -and $root.Length -ge 1) {
-            $rootLetter = $root.Substring(0,1)
-            $rootVol = $vols | Where-Object { $_.DriveLetter -eq $rootLetter } | Select-Object -First 1
-            if ($rootVol) { $rootDriveFreeGB = [math]::Round($rootVol.SizeRemaining/1GB,1) }
-            Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
+          if (-not $root) {
+            # Docker on Windows defaults to <SystemDrive>\ProgramData\docker,
+            # which is where it was on every run that ever got this far. Gate on
+            # that rather than skipping the check: an unreadable data-root is no
+            # reason to let a doomed ~40-minute pull start.
+            $root = Join-Path $env:SystemDrive 'ProgramData\docker'
+            Write-Host "::warning::Could not read Docker's data-root from the daemon; assuming $root for the space check."
           }
+          Write-Host "Docker data-root: $root"
+          # Free space on the drive Docker actually imports layers into (data-root).
+          $rootLetter = $root.Substring(0,1)
+          $rootVol = $vols | Where-Object { $_.DriveLetter -eq $rootLetter } | Select-Object -First 1
+          $rootDriveFreeGB = $null
+          if ($rootVol) { $rootDriveFreeGB = [math]::Round($rootVol.SizeRemaining/1GB,1) }
+          Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
           # Fail FAST with the numbers instead of grinding ~40 min on a doomed
           # pull. hcsshim::ImportLayer needs headroom beyond the final image size:
           # measured 2026-07-21, a data-root drive with 59.3 GB free still failed
@@ -340,6 +392,13 @@ jobs:
           $r = Invoke-Pester -Path Scripts/Windows/tests -PassThru -Quiet
           Write-Host "TOTAL=$($r.TotalCount) PASSED=$($r.PassedCount) FAILED=$($r.FailedCount)"
           if ($r.FailedCount -gt 0) {
-            $r.TestResult | Where-Object { -not $_.Passed } | ForEach-Object { Write-Host "FAIL: $($_.Describe) / $($_.Name)" }
+            # The name alone is not enough to act on - which assertion, with
+            # which values? Print Pester's FailureMessage and StackTrace too,
+            # or the next failure costs another 3-minute round trip to find out.
+            $r.TestResult | Where-Object { -not $_.Passed } | ForEach-Object {
+              Write-Host "FAIL: $($_.Describe) / $($_.Name)"
+              if ($_.FailureMessage) { Write-Host "      $($_.FailureMessage)" }
+              if ($_.StackTrace)     { Write-Host "      $($_.StackTrace)" }
+            }
             exit 1
           }
