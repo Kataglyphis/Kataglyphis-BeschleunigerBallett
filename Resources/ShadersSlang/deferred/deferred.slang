@@ -88,7 +88,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     if (material.normalTextureID >= 0)
     {
         int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-        float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], transform_uv(In.texCoords, material.normal_uv_transform_row0, material.normal_uv_transform_row1)).xyz;
+        float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], normal_uv(In.texCoords, material)).xyz;
         N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
     }
     float metallic = material.metallic;
@@ -96,7 +96,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     if (material.metallicRoughnessTextureID >= 0)
     {
         int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-        float4 mrSample = textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], transform_uv(In.texCoords, material.metallic_roughness_uv_transform_row0, material.metallic_roughness_uv_transform_row1));
+        float4 mrSample = textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(In.texCoords, material));
         float2 metallicRoughness = material_metallic_roughness(material, mrSample);
         metallic = metallicRoughness.x;
         roughness = metallicRoughness.y;
@@ -120,7 +120,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     if (material.emissiveTextureID >= 0)
     {
         int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-        emissiveSample = textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], transform_uv(In.texCoords, material.emissive_uv_transform_row0, material.emissive_uv_transform_row1)).xyz;
+        emissiveSample = textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], emissive_uv(In.texCoords, material)).xyz;
     }
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
     // eR16G16B16A16Sfloat, so emissive above 1.0 from

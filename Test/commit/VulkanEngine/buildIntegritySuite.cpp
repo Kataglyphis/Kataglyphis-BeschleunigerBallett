@@ -2639,10 +2639,12 @@ TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
 // (forward, deferred, shadow) already routed through transform_uv(), so a
 // model using the extension rendered inconsistently depending on which mode
 // was active. Scans each shading source as text and requires that every line
-// sampling `textures[...]` via `textureSamplers[...]` also calls
-// transform_uv( on the same line. The any-hit alpha test's sample site lives
-// in common/alpha_test.slang (raytrace.rahit.slang and path_tracing.slang's
-// ray-query candidate loop both call it), not in raytrace.rahit.slang itself.
+// sampling `textures[...]` via `textureSamplers[...]` also calls transform_uv(
+// or one of its per-slot named accessors (normal_uv(/metallic_roughness_uv(/
+// emissive_uv(, see common/base_color.slang) on the same line. The any-hit
+// alpha test's sample site lives in common/alpha_test.slang
+// (raytrace.rahit.slang and path_tracing.slang's ray-query candidate loop
+// both call it), not in raytrace.rahit.slang itself.
 TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 {
     const fs::path repo_root = repoRoot();
@@ -2658,7 +2660,12 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
     };
     static const std::string kTextures = "textures[";
     static const std::string kSamplers = "textureSamplers[";
-    static const std::string kTransform = "transform_uv(";
+    static const std::array<const char *, 4> kTransformCalls = {
+        "transform_uv(",
+        "normal_uv(",
+        "metallic_roughness_uv(",
+        "emissive_uv(",
+    };
 
     std::vector<std::string> violations;
     for (const char *relative_path : kShaders) {
@@ -2672,7 +2679,12 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
             ++line_number;
             if (line.find(kTextures) == std::string::npos || line.find(kSamplers) == std::string::npos) { continue; }
             sawSampleSite = true;
-            if (line.find(kTransform) == std::string::npos) {
+            const bool hasTransformCall = std::any_of(kTransformCalls.begin(),
+                                                        kTransformCalls.end(),
+                                                        [&line](const char *call) {
+                                                            return line.find(call) != std::string::npos;
+                                                        });
+            if (!hasTransformCall) {
                 violations.push_back(std::string(relative_path) + ":" + std::to_string(line_number)
                                       + " samples the base-colour texture without transform_uv(, so this mode "
                                         "disagrees with the others on any KHR_texture_transform material");
@@ -2841,22 +2853,22 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
 }
 
 // KHR_texture_transform is declared per texture slot (glTF 2.0 spec), so the normal, metallic-roughness and
-// emissive samples in every shading path must transform their UV with their OWN row members
-// (material.normal_uv_transform_row0/_row1 etc.), not material.uv_transform_row0/_row1 - the base-colour pair.
-// Sampling a non-base slot with the base-colour rows silently tiles/offsets that slot's texture identically to
-// base-colour instead of independently (or not at all, for a material that transforms only a non-base slot). This
-// scans the shader sources as text (the source-text gate pattern used throughout this file); alpha_test.slang and
-// shadow_map.slang are intentionally excluded - both sample only the base-colour texture, for which
-// material.uv_transform_row0/_row1 is correct.
+// emissive samples in every shading path must transform their UV through their OWN named accessor
+// (normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang), not the bare
+// transform_uv(uv, material) overload - which resolves to the base-colour rows. Sampling a non-base slot with the
+// base-colour rows silently tiles/offsets that slot's texture identically to base-colour instead of independently
+// (or not at all, for a material that transforms only a non-base slot). This scans the shader sources as text (the
+// source-text gate pattern used throughout this file); alpha_test.slang and shadow_map.slang are intentionally
+// excluded - both sample only the base-colour texture, for which transform_uv(uv, material) is correct.
 TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *kFailureMessage =
-      "KHR_texture_transform is per texture slot; a non-base sample naming material.uv_transform_row0/_row1 "
-      "(the base-colour pair) instead of its own slot's rows stamps the base-colour transform onto a slot that "
-      "may have a different transform, or none at all";
+      "KHR_texture_transform is per texture slot; a non-base sample calling the bare transform_uv(uv, material) "
+      "overload (the base-colour pair) instead of its own slot's named accessor stamps the base-colour transform "
+      "onto a slot that may have a different transform, or none at all";
 
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
@@ -2869,33 +2881,82 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
 
-        EXPECT_NE(text.find("material.normal_uv_transform_row0"), std::string::npos)
-          << path.string() << " no longer names the normal slot's own UV-transform rows. " << kFailureMessage;
-        EXPECT_NE(text.find("material.metallic_roughness_uv_transform_row0"), std::string::npos)
-          << path.string() << " no longer names the metallic-roughness slot's own UV-transform rows. "
+        EXPECT_NE(text.find("normal_uv("), std::string::npos)
+          << path.string() << " no longer calls the normal slot's own UV-transform accessor. " << kFailureMessage;
+        EXPECT_NE(text.find("metallic_roughness_uv("), std::string::npos)
+          << path.string() << " no longer calls the metallic-roughness slot's own UV-transform accessor. "
           << kFailureMessage;
-        EXPECT_NE(text.find("material.emissive_uv_transform_row0"), std::string::npos)
-          << path.string() << " no longer names the emissive slot's own UV-transform rows. " << kFailureMessage;
+        EXPECT_NE(text.find("emissive_uv("), std::string::npos)
+          << path.string() << " no longer calls the emissive slot's own UV-transform accessor. " << kFailureMessage;
 
         // The normal/metallic-roughness/emissive samples must not fall back to
-        // the bare (uv, material) overload, which resolves to the base-colour
-        // rows - count that every transform_uv(...) call passes explicit rows
-        // except exactly one (the base-colour sample every shading path has).
-        std::size_t bareMaterialOverloadCalls = 0;
+        // the bare transform_uv(uv, material) overload, which resolves to the
+        // base-colour rows - count that transform_uv(...) is called exactly
+        // once (the base-colour sample every shading path has); every other
+        // slot must go through its own named accessor instead.
+        std::size_t bareTransformUvCalls = 0;
         std::size_t pos = 0;
         while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
-            const std::size_t callEnd = text.find(')', pos);
-            ASSERT_NE(callEnd, std::string::npos) << path.string() << " has an unterminated transform_uv(...) call";
-            const std::string call = text.substr(pos, callEnd - pos);
-            if (call.find("_uv_transform_row0") == std::string::npos) { ++bareMaterialOverloadCalls; }
-            pos = callEnd;
+            ++bareTransformUvCalls;
+            pos += std::strlen("transform_uv(");
         }
-        EXPECT_EQ(bareMaterialOverloadCalls, 1U)
+        EXPECT_EQ(bareTransformUvCalls, 1U)
           << path.string()
           << " must call the bare transform_uv(uv, material) overload exactly once (the base-colour sample); "
-             "every non-base sample must pass its own slot's rows explicitly. "
+             "every non-base sample must go through its own slot's named accessor. "
           << kFailureMessage;
     }
+}
+
+// normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang are the sole named accessors for
+// their slot's KHR_texture_transform row pair; the row members themselves
+// (normal|metallic_roughness|emissive)_uv_transform_row[01] must therefore appear in exactly two places: the
+// accessor bodies in base_color.slang, and the ObjMaterial mirror declaration in scene_types.slang. A shading path
+// naming a row member directly (rather than calling the accessor) can pair a slot's row0 with another slot's row1 -
+// both are float3 on the same struct, so the mismatch is well-typed and silently samples the wrong UV.
+TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources/ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "could not find " << slang_root.string();
+
+    static const std::regex kRowPattern(R"((normal|metallic_roughness|emissive)_uv_transform_row[01])");
+    static const std::set<fs::path> kAllowedFiles = {
+        repo_root / "Resources/ShadersSlang/common/base_color.slang",
+        repo_root / "Resources/ShadersSlang/common/scene_types.slang",
+    };
+
+    std::vector<std::string> violations;
+    for (const auto &entry : fs::recursive_directory_iterator(slang_root)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".slang") { continue; }
+        if (kAllowedFiles.count(entry.path()) != 0) { continue; }
+
+        const auto text_opt = readFileText(entry.path());
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << entry.path().string();
+        const std::string &text = *text_opt;
+
+        std::istringstream stream(text);
+        std::string line;
+        int lineNumber = 0;
+        while (std::getline(stream, line)) {
+            ++lineNumber;
+            if (std::regex_search(line, kRowPattern)) {
+                violations.push_back(fs::relative(entry.path(), repo_root).string() + ":" + std::to_string(lineNumber)
+                                      + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << "found a per-slot UV-transform row member named outside base_color.slang's accessors and "
+         "scene_types.slang's ObjMaterial mirror - call normal_uv()/metallic_roughness_uv()/emissive_uv() instead:\n"
+      << [&violations]() {
+             std::string joined;
+             for (const std::string &violation : violations) { joined += violation + "\n"; }
+             return joined;
+         }();
 }
 
 // ObjMaterial::metallicRoughnessTextureID (glTF pbrMetallicRoughness.metallicRoughnessTexture) is dedup'd into the

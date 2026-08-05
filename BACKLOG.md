@@ -10058,3 +10058,261 @@ Rust submodule and is independent of all four.
 
 ### Docs
 
+## 2026-08-05 batch IV — planner (refactor: the per-slot `KHR_texture_transform` that shipped this morning left twelve call sites each naming its own `_row0`/`_row1` pair by hand, in four shaders, where pairing the wrong slot's rows is a silent mis-sample; eighteen `file:line` citations in engine comments and shaders, at least eight of them verifiably pointing at unrelated code today, against a gate that already forbids exactly this — in one doc only; and a ten-line texture-teardown block that `DeferredRasterizer` writes twice verbatim and `Rasterizer` writes twice with different null-handling)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch III's four tasks all shipped (`4b3f438d`,
+`f01fb288`, `3143e92a`/`60175c97`, `697349d8`). Everything below was read out of
+the tree at `697349d8`.
+
+**First, the per-slot UV rows are spelled out by hand at every sample.**
+Batch III's `4b3f438d` did the right thing structurally — `ObjMaterial` now
+carries four independent `KHR_texture_transform` row pairs, one per texture
+slot — but it wired them in the most fragile way available. Every non-base-colour
+sample in the engine reads:
+
+```
+transform_uv(In.texCoords, material.normal_uv_transform_row0, material.normal_uv_transform_row1)
+```
+
+…with the slot name typed twice, as two separate arguments, on the same line as
+a *different* slot's `resolve_texture_slot(obj, material.normalTextureID)`.
+There are **twelve** such sites — three each in `rasterizer.slang`
+(`:71`, `:97`, `:118`), `deferred.slang` (`:91`, `:99`, `:123`),
+`raytrace.rchit.slang` (`:113`, `:142`, `:172`) and `path_tracing.slang`
+(`:240`, `:289`, `:305`). The base-colour slot is the only one that does *not*
+name its rows: `base_color.slang` already provides a
+`transform_uv(float2 uv, ObjMaterial material)` overload whose whole documented
+purpose is "the base-colour slot's `KHR_texture_transform`, by definition", and
+its own comment ends by telling the reader that "the normal,
+metallic-roughness and emissive slots each have their own pair and call the
+(uv, row0, row1) overload above directly with those members."
+
+That asymmetry is the defect. Typing `material.emissive_uv_transform_row0`
+where `material.normal_uv_transform_row1` belongs compiles, runs, and produces
+a wrongly-transformed normal map that no test can see — and it is a plausible
+typo precisely because the four names differ by one word in the middle of a
+150-column line. The fix is the one the base-colour slot already demonstrates:
+one named accessor per slot, so the slot is named once and the row pair can
+never be mismatched. This is the same "one rule, N hand-rolled copies" shape
+this backlog has closed eight times in `Src/`; it has simply reappeared in
+`Resources/ShadersSlang/`.
+
+**Second, engine comments cite line numbers, and they have rotted.**
+`BuildIntegrity.ModelLoadingDocCitesSymbolsNotLineNumbers`
+(`buildIntegritySuite.cpp:5441`) already encodes the principle — its comment
+says citations "rot within days - a function moves ten lines and the citation
+now points at unrelated code, silently" — but it is scoped to exactly one file,
+and its own comment justifies that scope with a claim that is now false:
+"docs/model-loading.md is the one doc in the tree written to cite `file:line`
+locations". It is not the one *place*. A grep for
+`[A-Za-z_/.-]+\.(cpp|hpp|ixx|slang|wgsl|rs):[0-9]+` over `Src/` and
+`Resources/ShadersSlang/` returns **eighteen** citations, and spot-checking
+them at `697349d8` found most of them wrong:
+
+| Citation site | Cites | What is actually there |
+| --- | --- | --- |
+| `SceneUboMarshal.hpp:30` | `CascadedShadowMap.cpp:342-352` | vertex-input attribute descriptions, not the `glm::ortho` cascade matrices |
+| `SceneUboMarshal.hpp:71` | `clouds.slang:129-143` | `eyePosition`; the UBO unpack it means starts three lines later |
+| `SceneUboMarshal.hpp:100` | `clouds.slang:126` | an `inv_projection` multiply; the `cam_pos.xyz` read is at `:129` |
+| `SceneUboMarshal.hpp:101` | `deferred.slang:121` | the emissive-texture branch, no `cam_pos` in sight |
+| `SceneUboMarshal.hpp:101` | `rasterizer.slang:55` | the `[shader("fragment")]` attribute; the read is at `:74` |
+| `SceneUboMarshal.hpp:101` | `raytrace.rchit.slang:87` | the base-colour branch; the read is at `:116` |
+| `SceneUboMarshal.hpp:112` | `rasterizer.slang:75` | `float3 albedo;`, not the `lightIntensity` unpack |
+| `ObjMaterial.hpp:12` | `rasterizer.slang:84-86` | the untextured `else` branch; `material_emission` is at `:120` |
+| `clouds.slang:40` | `raytrace.rchit.slang:78-81` | barycentric vertex-colour interpolation; the explicit-LOD rationale is at `:89-91` |
+| `path_tracing.slang:260` | `raytrace.rchit.slang:78-81` | same, a second copy of the same wrong citation |
+| `cascaded_shadow.slang:56` | `Texture.cpp:249` | the middle of a parameter list |
+
+Only three survived the check (`cascaded_shadow.slang:22`,
+`VulkanRenderer.cpp:690`, `VulkanSwapChain.cpp:52`) and those are luck, not
+durability. Four more were not checked and are the executor's job. The point is
+not to re-verify eleven numbers once; it is that the instrument to make the
+class extinct already exists and is pointed at one markdown file.
+
+**Third, `DeferredRasterizer` frees its textures twice, and `Rasterizer` frees
+them twice differently.** `DeferredRasterizer::cleanUp` (`:125-134`) and
+`DeferredRasterizer::recreateFrameResources` (`:151-160`) are ten lines of
+byte-identical text — four `for (auto& tex : <vec>) { if (tex) tex->cleanUp(); }
+<vec>.clear();` pairs plus the `depthBufferImage` guard-and-reset. `Rasterizer`
+has the same pairing over two vectors, and the two copies **disagree**:
+`cleanUp` (`:111-117`) guards both (`if (texture)`, `if (depthBufferImage)`),
+while `recreateFrameResources` (`:138-143`) dereferences
+`texture->cleanUp()` and `depthBufferImage->cleanUp()` unguarded. That is not a
+hypothetical difference — it is the exact asymmetry that makes one of two
+copies of a block the wrong one to read. `PostStage` is not affected (it owns no
+textures), and a grep for the pattern over the rest of `Src/` finds no other
+site, so this is a bounded two-file cleanup.
+
+**Verification context.** Host GPU goldens are still blocked over RDP (the
+`- [b]` near the end of this file) and `path_tracing` mode device-losts on the
+host RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). All three
+tasks are accepted CPU-only. Tasks 1 and 2 are pinned by source-text gates, the
+same instrument `NormalMappingIsAppliedByEveryShadingPath` and
+`ModelLoadingDocCitesSymbolsNotLineNumbers` already use; task 3 is a
+behaviour-preserving extraction whose only behavioural change is *adding* null
+guards that the sibling copy already had. **Do not claim a rendered result you
+cannot obtain** — state which suites you ran. Task 1 does change generated
+SPIR-V; if `slangc` output is byte-identical, say so, and if it is not, say
+that too rather than asserting pixels.
+
+**Ordering.** All three are independent and can run in any order. Task 2 edits
+comments in `SceneUboMarshal.hpp` and in the same four shaders task 1 rewrites,
+so do not run 1 and 2 concurrently; either order works, and whichever runs
+second rebases trivially. Task 3 touches only `renderer/Rasterizer.*` and
+`renderer/DeferredRasterizer.*`.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Retire the eighteen `file:line` citations in engine comments, and widen the gate that already forbids them to `Src/` and the shaders** — at least eight point at unrelated code today, and the gate that would have caught every one of them is scoped to a single markdown file.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5434-5465` —
+    `BuildIntegrity.ModelLoadingDocCitesSymbolsNotLineNumbers`: the regex
+    (`R"([A-Za-z_/.-]+\.(cpp|ixx|hpp|rs):[0-9]+)"`), the violation-collection
+    loop and the failure-message shape. This test is the template; its scoping
+    comment is the thing this task falsifies.
+  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` — five citations
+    (`:30`, `:71`, `:100` ×2, `:101` ×3, `:112`), the densest site
+  - `Src/shared/scene/ObjMaterial.hpp:12` — cites `rasterizer.slang:84-86`
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/BlasGeometryLimits.hpp:17`
+    — cites `VulkanDevice.cpp:484` (**not yet verified — check it**)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:362` — cites
+    `GUI.cpp:88-94` (**not yet verified**)
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:153` — cites
+    `gltf_loader.rs:618-625`, a **cross-repo** citation into the Rust submodule
+    (**not yet verified**; these are the worst kind — the target moves on a
+    different repo's schedule)
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:105` — cites
+    `VulkanRenderer.cpp:690` and `VulkanSwapChain.cpp:52` (both verified
+    correct today; still convert them)
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang:56`,
+    `Resources/ShadersSlang/compute/clouds.slang:40`,
+    `Resources/ShadersSlang/path_tracing/path_tracing.slang:260`,
+    `Resources/ShadersSlang/gpu_cull/gpu_cull.slang:63` (the last cites
+    `tile_grid.rs:108`, also cross-repo; **not yet verified**)
+
+  **Steps:**
+  1. Enumerate the current set yourself before editing anything, so the count
+     in the gate's failure message and the count you fix agree:
+     `grep -rnoE "[A-Za-z_/.-]+\.(cpp|hpp|ixx|slang|wgsl|rs):[0-9]+(-[0-9]+)?" Src/ Resources/ShadersSlang/`
+  2. For each hit, open the cited file at the cited line and decide what the
+     comment *meant* to point at. Rewrite the citation as the symbol name —
+     `rasterizer.slang`'s `material_emission` call, `CascadedShadowMap.cpp`'s
+     `buildCascadeMatrices`, `raytrace.rchit.slang`'s explicit-LOD comment on
+     the base-colour sample — never a new line number. Where a symbol name is
+     genuinely not available (a bare statement inside a long function), name
+     the enclosing function plus a distinctive token from the line.
+  3. The eleven drifted ones listed in this batch's preamble are the known
+     work; re-verify each rather than trusting the table, and handle the four
+     unverified ones the same way.
+  4. Widen the gate: rename it
+     `BuildIntegrity.SourceAndDocsCiteSymbolsNotLineNumbers` (or add a second
+     test beside it — either is fine, but do not leave the existing one
+     narrowly scoped and passing). Scan `Src/**/*.{cpp,hpp,ixx}`,
+     `Resources/ShadersSlang/**/*.slang` and `docs/model-loading.md` with the
+     same regex, extended to cover `slang` and `wgsl` extensions.
+  5. Update the gate's leading comment: the "one doc in the tree" claim is what
+     let this class grow to eighteen sites unobserved. Say instead that
+     `docs/cpp-renderer-improvements.md` is the sole exemption (it is a
+     chronological log where a citation pinned to a historical commit is
+     legitimate — that reasoning is already written in the existing comment and
+     should survive), and that `BACKLOG.md` is not scanned at all.
+  6. Exempt the gate's own regex literal and this backlog from the scan, or the
+     test fails on its own source text.
+
+  **Test:** The widened gate *is* the test. Verify it is RED before step 2 by
+  running it against the unmodified tree (state the count it reports), and
+  GREEN after. Run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*Cite*`
+  from the repo root.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  `SceneUboMarshal.hpp` and `ObjMaterial.hpp` are headers pulled into module
+  global-module-fragments, so use `-FreshContainer` for the build that includes
+  their edits (AGENTS.md § Containerized Windows Builds).
+
+  **Context:** Comment-only changes cannot break the renderer, which is exactly
+  why this is worth doing as one sweep with a gate rather than opportunistically:
+  the value is entirely in the gate, and the gate can only go in once the
+  existing violations are cleared. Note the two cross-repo citations
+  (`gltf_loader.rs`, `tile_grid.rs`) — those point into
+  `ExternalLib/Kataglyphis-RustProjectTemplate`, whose line numbers move when
+  *that* repo is pushed, so they were never durable even in principle. Do not
+  add new citations of any kind while doing this; symbol names only.
+
+- [ ] **(S) (refactor) Collapse the frame-texture teardown that `Rasterizer` and `DeferredRasterizer` each write twice — and make the two copies agree on null-handling** — ten identical lines in `DeferredRasterizer`, and in `Rasterizer` the second copy drops the null guards the first one has.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp` — `cleanUp()`
+    (`:112-137`) and `recreateFrameResources()` (`:149-164`); the four texture
+    vectors are `offscreenTextures`, `gBufferNormals`, `gBufferAlbedos`,
+    `gBufferMaterials`, plus `depthBufferImage`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx` — the private
+    section around `:116` (`createTextures()`), where the new declaration goes
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp` — `cleanUp()`
+    (`:105-125`) and `recreateFrameResources()` (`:137-146`); note the guard
+    asymmetry called out in this batch's preamble
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.ixx` — private section around
+    `:94`
+  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp` — `destroyFramebuffers`,
+    and `PipelineLayoutHelper.hpp`'s `destroyPipelineAndLayout`: the established
+    "device-less-safe destroy helper" family and its doc-comment style. Read
+    these to match the convention, **not** to add to them — `Texture` is a
+    module type (`kataglyphis.vulkan.texture`) and these are headers in module
+    global-module-fragments, so a shared `destroyTextures` free function does
+    not belong here. Keep the extraction private to each class.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `function_body_span`
+    (`:1143`) and its use at `:3207-3223`, the helper for asserting that a
+    given statement lies inside (or outside) a named function body
+
+  **Steps:**
+  1. Add a private `void releaseFrameTextures();` to `DeferredRasterizer.ixx`
+     next to `createTextures()`. Its body is the ten-line block: for each of
+     the four vectors, `for (auto &tex : v) { if (tex) { tex->cleanUp(); } }`
+     then `v.clear();`, followed by the `depthBufferImage` guard-and-reset.
+  2. Replace both copies (`cleanUp` and `recreateFrameResources`) with a call
+     to it. Keep the ordering in `cleanUp` exactly as it is — pipelines and
+     render pass are destroyed *before* the textures there, and framebuffers
+     before both; only the texture block moves.
+  3. Do the same for `Rasterizer`: a private `releaseFrameTextures()` over
+     `offscreenTextures` and `depthBufferImage`. Use the **guarded** form from
+     `cleanUp()`. This is the one behavioural change in the task: it adds null
+     guards to the `recreateFrameResources()` path, which previously
+     dereferenced unconditionally. Say so in the commit message.
+  4. Leave `PostStage` alone — it owns no textures and its
+     `recreateFrameResources()` is a single `createFramebuffer()` call.
+  5. Leave the comment above each `recreateFrameResources()` in place ("does
+     not destroy the previous framebuffers — `recreateSwapChain()` must call
+     `destroyFramebuffers()` first"); it is still true and still load-bearing.
+
+  **Test:** Add `BuildIntegrity.RasterStagesReleaseFrameTexturesThroughOneHelper`
+  to `Test/commit/VulkanEngine/buildIntegritySuite.cpp`. Using
+  `function_body_span`, assert that in both `Rasterizer.cpp` and
+  `DeferredRasterizer.cpp` the bodies of `cleanUp` and `recreateFrameResources`
+  each contain `releaseFrameTextures()` and contain **no** `->cleanUp()` on a
+  texture (i.e. no `tex->cleanUp()` / `texture->cleanUp()` /
+  `depthBufferImage->cleanUp()` token inside those two spans). That is what
+  keeps a future third copy from being pasted back in. Verify with
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*ReleaseFrameTextures*`
+  from the repo root, and run the full CPU suite
+  (`.\build-clangcl-debug\commitTestSuite.exe`) to confirm nothing else moved.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  `-FreshContainer` is required: both `.ixx` files are C++23 module interfaces
+  (AGENTS.md § Containerized Windows Builds, the fresh-container rule).
+
+  **Context:** This is a pure extraction — `cleanUp()` and
+  `recreateFrameResources()` already do the same thing to the same members, and
+  the only reason to read both today is to notice they disagree. Teardown paths
+  are exactly where a duplicated block is dangerous: `cleanUp()` runs at
+  shutdown and `recreateFrameResources()` runs on every window resize, so the
+  unguarded copy is the *hot* one. `VulkanBuffer`/`VulkanImage` are move-only
+  with destructor release and `cleanUp()` is idempotent (AGENTS.md § Code
+  Conventions), so calling it via the helper is behaviourally identical to
+  calling it inline. Do not "improve" this into RAII while you are here — the
+  renderer-level RAII consolidation is its own `- [b]` entry near the top of
+  this file and is blocked for reasons that still hold.
+

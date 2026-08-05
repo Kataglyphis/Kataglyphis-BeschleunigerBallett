@@ -27,9 +27,29 @@ float2 transform_uv(float2 uv, float3 row0, float3 row1)
 
 // Base-colour slot's KHR_texture_transform, by definition: ObjMaterial's
 // uv_transform_row0/_row1 are the base-colour pair (see ObjMaterial.hpp). The
-// normal, metallic-roughness and emissive slots each have their own pair and
-// call the (uv, row0, row1) overload above directly with those members.
+// normal, metallic-roughness and emissive slots each have their own named
+// accessor below, forwarding to the (uv, row0, row1) overload above with
+// their own row pair — the raw overload is the shared implementation, never
+// the call-site form for those three slots.
 float2 transform_uv(float2 uv, ObjMaterial material)
 {
     return transform_uv(uv, material.uv_transform_row0, material.uv_transform_row1);
+}
+
+// Normal slot's KHR_texture_transform.
+float2 normal_uv(float2 uv, ObjMaterial material)
+{
+    return transform_uv(uv, material.normal_uv_transform_row0, material.normal_uv_transform_row1);
+}
+
+// Metallic-roughness slot's KHR_texture_transform.
+float2 metallic_roughness_uv(float2 uv, ObjMaterial material)
+{
+    return transform_uv(uv, material.metallic_roughness_uv_transform_row0, material.metallic_roughness_uv_transform_row1);
+}
+
+// Emissive slot's KHR_texture_transform.
+float2 emissive_uv(float2 uv, ObjMaterial material)
+{
+    return transform_uv(uv, material.emissive_uv_transform_row0, material.emissive_uv_transform_row1);
 }

@@ -237,7 +237,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
                 int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
                 // Explicit LOD: see the base-colour sample below for why.
-                float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material.normal_uv_transform_row0, material.normal_uv_transform_row1), 0.0).xyz;
+                float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], normal_uv(texCoords, material), 0.0).xyz;
                 shadingNormal = apply_normal_map(hitWorldNormal, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
             }
 
@@ -286,7 +286,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 {
                     int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
                     // Explicit LOD: see the base-colour sample above for why.
-                    float metallicSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], transform_uv(texCoords, material.metallic_roughness_uv_transform_row0, material.metallic_roughness_uv_transform_row1), 0.0).b;
+                    float metallicSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material), 0.0).b;
                     hitColor *= (1.0 - material.metallic * metallicSample);
                 }
             }
@@ -302,7 +302,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 {
                     int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
                     // Explicit LOD: see the base-colour sample above for why.
-                    emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], transform_uv(texCoords, material.emissive_uv_transform_row0, material.emissive_uv_transform_row1), 0.0).xyz;
+                    emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], emissive_uv(texCoords, material), 0.0).xyz;
                 }
                 radiance += throughput * material_emission(material, emissiveSample);
             }
