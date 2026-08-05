@@ -5652,6 +5652,48 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
                                      }();
 }
 
+// docs/shader-sharing.md's "Known glTF loader divergences" section claims to
+// be the place the C++ and Rust glTF loaders stay honest with each other, but
+// nothing enforced that claim - it shipped with one bullet while at least
+// four other real divergences (KHR_materials_unlit, occlusionTexture/
+// occlusionStrength, per-slot KHR_texture_transform, alphaMode BLEND) went
+// unrecorded. Same hand-maintained-list-plus-gate shape as
+// ModelLoadingDocDocumentsEveryObjMaterialMember (above): this only checks
+// that every key has a row, not that the row's content is accurate.
+TEST(BuildIntegrity, ShaderSharingDocCoversEveryKnownLoaderDivergence)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "shader-sharing.md";
+    const auto doc_content = readFileText(doc_path);
+    ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
+
+    static constexpr std::array<const char *, 6> kDivergenceKeys{ "TEXCOORD_0", "KHR_materials_unlit",
+        "occlusionTexture", "KHR_texture_transform", "BLEND", "Pr" };
+
+    const auto section_start = doc_content->find("Known glTF loader divergences");
+    ASSERT_NE(section_start, std::string::npos)
+      << doc_path.string() << " is missing its \"Known glTF loader divergences\" section";
+    const auto section_end = doc_content->find("\n## ", section_start);
+    const std::string section_text = doc_content->substr(
+      section_start, section_end == std::string::npos ? std::string::npos : section_end - section_start);
+
+    std::vector<std::string> missing;
+    for (const char *key : kDivergenceKeys) {
+        if (section_text.find(key) == std::string::npos) { missing.emplace_back(key); }
+    }
+
+    EXPECT_TRUE(missing.empty())
+      << doc_path.string()
+      << "'s \"Known glTF loader divergences\" section is missing a row covering the following key(s):"
+      << [&missing] {
+             std::string joined;
+             for (const auto &entry : missing) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Parses docs/code-quality.md's `<!-- format-drift-denominator: N -->` marker
 // line. Returns std::nullopt if the marker line, or its value, is missing -
 // a deleted or malformed marker must fail the calling test, not skip it.

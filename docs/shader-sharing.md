@@ -164,17 +164,14 @@ revisions of this document as "in progress" is complete.
 
 ## Known glTF loader divergences (not shader-shared, but the two renderers must stay honest about it)
 
-- **Base-colour UV set beyond TEXCOORD_0** — `scene/GltfLoader.cpp`'s
-  `fromGltfMaterial` (C++) supports only TEXCOORD_0 and now warns when a
-  material's base-colour texture or `KHR_texture_transform` names anything
-  else; the WebGPU `asset/gltf_loader.rs`'s `uv_set_bit` (Rust) supports
-  TEXCOORD_0/1 and warns only past that. The Rust masked-shadow pass
-  (`forward.slang`'s `vs_shadow_masked`/`fs_shadow_masked`) honours the per-slot UV mask for the
-  base-colour slot the same way the forward pass does, so a MASK material
-  whose base-colour texture declares TEXCOORD_1 casts a shadow silhouette
-  that matches its forward-pass alpha test; the C++ shadow pass has no
-  equivalent selector because it never reads past TEXCOORD_0 in the first
-  place.
+| Feature | C++ `GltfLoader` | Rust `gltf_loader` | Note |
+| --- | --- | --- | --- |
+| Base-colour UV set beyond TEXCOORD_0 | `fromGltfMaterial` supports only TEXCOORD_0 and warns when a material's base-colour texture or `KHR_texture_transform` names anything else | `uv_set_bit` supports TEXCOORD_0/1 and warns only past that | The Rust masked-shadow pass (`forward.slang`'s `vs_shadow_masked`/`fs_shadow_masked`) honours the per-slot UV mask for the base-colour slot the same way the forward pass does, so a MASK material whose base-colour texture declares TEXCOORD_1 casts a shadow silhouette that matches its forward-pass alpha test; the C++ shadow pass has no equivalent selector because it never reads past TEXCOORD_0 in the first place. |
+| `KHR_materials_unlit` | `fromGltfMaterial` reads `material.unlit` into `ObjMaterial::unlit`, honoured in all four shading paths (`rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang`) | reads `material.unlit()` into `CpuMaterial::unlit` | Parity, not a gap — both loaders and every shading path on both sides treat the extension identically. |
+| `occlusionTexture` + `occlusionStrength` | `fromGltfMaterial` never reads `cgltf_material::occlusion_texture` — `ObjMaterial` has no occlusion field at all | reads `occlusion_texture()`/`occlusion_strength` into `CpuMaterial::occlusion_texture`/`occlusion_strength` | Intended divergence: glTF scopes `occlusionTexture` to indirect light, and neither C++ raster path has an indirect term — `rasterizer.slang`'s `fs_main` and the deferred lighting pass are `brdf_direct` + shadow + emissive only, so there is nothing for an AO map to attenuate. A future IBL or ambient term is what would make the slot meaningful. |
+| Per-slot `KHR_texture_transform` | `fromGltfMaterial` gives base-colour, normal, metallic-roughness and emissive each their own transform (`uv_transform_row0`/`_row1`, `normal_uv_transform_row0`/`_row1`, `metallic_roughness_uv_transform_row0`/`_row1`, `emissive_uv_transform_row0`/`_row1`); no occlusion slot, since occlusion textures are not read at all (previous row) | the same four slots plus `occlusion_uv_transform` | Parity everywhere C++ has a texture to transform; the remaining gap is exactly the occlusion-support gap above, not a `KHR_texture_transform` bug. |
+| `alphaMode` `BLEND` | `fromGltfMaterial`'s `alphaCutoff` sentinel maps `BLEND` to the same `-1` as `OPAQUE` (never discards) — a `BLEND` material renders opaque; rationale in `fromGltfMaterial`'s `alphaCutoff` comment | `AlphaMode::Blend` drives a real sorted back-to-front alpha-blend pass (the `alpha_blend` primitive flag and its distance sort) | Intended divergence: real `BLEND` compositing needs a sorted transparent pass this engine does not have yet, so it falls back to the common cut-out case (`MASK`) instead. |
+| Roughness default when `Pr` is unauthored (OBJ path) | `ObjLoader` treats an absent (or `0.0`) `Pr` as "not authored" and leaves `ObjMaterial::roughness` at its sentinel, so `material_roughness()` derives it from `shininess`/`Ns` | the OBJ→glTF converter (`obj_to_gltf`) emits a flat `roughnessFactor: 1.0` when `Pr` is absent | The same `.mtl` without `Pr` renders differently depending on path: loading it directly through `ObjLoader` derives a shininess-based roughness, while converting it through `obj_to_gltf` first yields a flat, fully-rough `1.0` regardless of `Ns`. |
 
 ## Beyond shaders
 
