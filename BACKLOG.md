@@ -11070,3 +11070,388 @@ reason too. Only task 5 changes a C++23 module interface
   small to be worth a task on its own; fold it into the next dead-code sweep
   that touches `Src/shared/scene/`, and change the two call sites to the member.
 
+## 2026-08-05 batch XI — planner (the path tracer's bounce ray is never renormalized, so `TMin`/`TMax` and the miss-gradient are all measured in units of a vector whose length runs from 0 to 2; a cloud noise lookup that `abs()`es its `fmod`, mirroring the whole volume about the origin instead of tiling it, on a box whose default extent is ±6300 world units either side of that plane; the guard-plus-default-plus-combine wrapper around three of the four texture slots, still written out eleven times across four shaders after batch X gave the *samples* one owner; no document anywhere saying which of the four C++ shading paths reads which `ObjMaterial` field, which is the exact gap batches XI–XVII kept re-discovering one field at a time; and a clouds subsystem whose own doc admits neither of its two shipped bug fixes has a numerical oracle)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch X's four tasks all shipped
+(`1df30964`, `f2cb4cb4`, `a94358e1`, `e5ad0863`, `b7f2ecc4`). Everything
+below was read out of the tree at `b7f2ecc4`.
+
+**Ordering matters.** Task 3 moves the emissive/metallic-roughness/normal
+blocks behind named helpers; task 4's gate has to key on those helper names,
+so do 3 before 4. Tasks 1, 2, 3 are shader-only (no C++ rebuild needed for
+the shader itself — but every one of them lands a gate in
+`buildIntegritySuite.cpp`, so all five still need a container build).
+
+**Note on the `- [b]` entries.** None of them were flipped. In particular the
+path-tracing device-lost entry near line 2030 and the SBT entry near line
+3563 both need a live host GPU/console session to close, which this planner
+cannot verify from a sandbox. Task 1 touches `path_tracing.slang` again; if
+the executor *does* get a console session, running
+`GoldenRender.PathTracing*` closes out the device-lost entry on evidence.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Stop the cloud density lookup from mirroring the noise volume
+  about the origin** — `abs(fmod(p, N)) / N` folds negative coordinates back
+  onto positive ones, so the default cloud box (±6300 world units in X and Z)
+  renders as a mirror image of itself across the plane it straddles.
+
+  `Resources/ShadersSlang/compute/clouds.slang`'s `sample_density` wraps the
+  sample position into the noise volume's `[0, 1)` domain twice:
+
+  ```slang
+  float3 uvw128 = abs(fmod(position + cloud.offset, 256.0)) / 256.0;
+  ...
+  float3 uvw32  = abs(fmod(position + cloud.offset,  64.0)) /  64.0;
+  ```
+
+  HLSL/Slang `fmod` keeps the sign of the dividend, so for a negative
+  argument it returns a value in `(-N, 0]`; `abs()` then maps `-x` and `+x`
+  to the *same* texel. That is a mirror, not a wrap: the noise pattern for
+  `position.x < -offset.x` is the reflection of the pattern for
+  `position.x > -offset.x`, and each negative-side period additionally runs
+  backwards. With the shipped defaults
+  (`GUISceneSharedVars`: `cloud_mesh_offset = {-0.364, 367, -18.351}`,
+  `cloud_mesh_scale = {1000, 5, 1000}`, `cloud_density_multiplier = 0.63`),
+  `cloud.radius = meshScale * scale * 10 = (6300, 31.5, 6300)`, so the box
+  spans roughly `x ∈ [-6300, +6300]` — the mirror plane sits almost exactly
+  in the middle of the visible volume, in both X and Z.
+
+  The correct wrap is `frac(x)`, which is `x - floor(x)` and therefore
+  returns `[0, 1)` for negative inputs too. (Letting the sampler wrap would
+  also work — `Texture::createTextureSampler`'s default `addressMode` is
+  `vk::SamplerAddressMode::eRepeat` and `Clouds::createStorageTexture` takes
+  that default — but the explicit `frac()` keeps the shader correct
+  independent of a C++-side sampler setting, which is the same reasoning the
+  file's existing "a shader must not trust a UBO" clamps use.)
+
+  Second, smaller problem in the same two lines: `uvw128`/`noise128` and
+  `uvw32`/`noise32` name *texel counts*, but 256 and 64 are **world-unit
+  periods** and have nothing to do with the volume's `kNoiseVolumeExtent`
+  of 128. `docs/clouds.md` repeats the mistake verbatim
+  ("`sample_density`: two LODs, 128- and 32-texel period, blended").
+
+  **Files to read:**
+  - `Resources/ShadersSlang/compute/clouds.slang` — `sample_density` only.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx` — the cloud
+    defaults quoted above, and `clouds.slang`'s `cloud.radius` line, for the
+    arithmetic that puts the mirror plane inside the box.
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx` —
+    `createTextureSampler`'s default `addressMode = eRepeat`, i.e. why the
+    volume already tiles at the sampler level.
+  - `docs/clouds.md` — "The estimator" section, first bullet.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.CloudsDocTablesMatchTheirSources` (must stay green) and
+    `BuildIntegrity.CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance`
+    (the gate shape to copy).
+
+  **Steps:**
+  1. Replace both wraps with `frac((position + cloud.offset) / <period>)`.
+  2. Rename the four locals to say what the number is: `uvwCoarse`/
+     `noiseCoarse` at the 256-unit period and `uvwFine`/`noiseFine` at the
+     64-unit period (or keep numbers but make them read as world units —
+     just do not leave `128`/`32` naming a 128³ volume they do not index).
+  3. Add a short comment recording that `frac`, not `abs(fmod(...))`, is the
+     wrap, and why: `fmod` keeps the dividend's sign and `abs` turns the
+     negative half into a mirror of the positive half.
+  4. Fix `docs/clouds.md`'s bullet to say "two world-space periods (256 and
+     64 units), both wrapped with `frac` into the volume's `[0, 1)` domain".
+  5. Recompile the shader
+     (`Scripts/Windows/compile-slang-shaders.ps1`) — no C++ rebuild is
+     needed for the shader itself, but the new gate needs one.
+
+  **Test:** Add `BuildIntegrity.CloudNoiseSamplingWrapsRatherThanMirrors`:
+  read `clouds.slang`, assert `sample_density`'s body contains no
+  `abs(fmod(` and does contain `frac(`. Message should state the symptom
+  (mirrored cloud field about the origin plane) not just the rule. Keep
+  `CloudsDocTablesMatchTheirSources` and
+  `CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelTheMarchReads`
+  green.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Clouds are **off by default** (`clouds_enabled = false`), and
+  the only existing cloud golden
+  (`GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`) asserts
+  liveness, not pixels — so no golden regresses on this. Task 5 of this
+  batch adds the oracle that would have caught it. See `docs/clouds.md` for
+  the subsystem contract.
+
+- [ ] **(M) (refactor) Give the emissive, metallic-roughness and normal-map
+  slots the same single owner batch X gave their samplers** — the
+  guard-plus-default-plus-combine wrapper around each is still written out
+  eleven times across four shaders.
+
+  Batch X (`a94358e1`) moved the four texture-slot *samples* into
+  `common/material_textures.slang`. What it left behind at every call site is
+  the identical three-part wrapper around each sample: the
+  `if (material.XTextureID >= 0)` guard, the neutral default for the absent
+  case, and the combine with the material's factor. Counted at `b7f2ecc4`:
+
+  - **Emissive**, 4 copies (`rasterizer.slang` `fs_main`, `deferred.slang`
+    `geometry_fs_main`, `raytrace.rchit.slang` `rchit_main`,
+    `path_tracing.slang`) — all four are
+    `float3 emissiveSample = float3(1.0); if (material.emissiveTextureID >= 0) { emissiveSample = sample_emissive[_lod0](obj, material, texCoords); } ... material_emission(material, emissiveSample)`,
+    including the "Emissive is surface-emitted radiance, not reflected
+    light" comment reproduced almost verbatim in three of them.
+  - **Metallic-roughness**, 3 copies (`rasterizer.slang`, `deferred.slang`,
+    `raytrace.rchit.slang`) — all three are
+    `float metallic = material.metallic; float roughness = material_roughness(material); if (material.metallicRoughnessTextureID >= 0) { ... material_metallic_roughness(material, mrSample) ... }`.
+  - **Normal map**, 4 copies — all four are
+    `if (material.normalTextureID >= 0) { float3 normalSample = sample_normal[_lod0](obj, material, texCoords); N = apply_normal_map(N, tangent, normalSample, material.normalScale); }`.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/material_textures.slang` — the module
+    that already owns the samples; its header comment explains the
+    one-module/two-LOD-shapes decision and must be extended, not replaced.
+  - `Resources/ShadersSlang/common/emission.slang`,
+    `common/material_rules.slang`, `common/normal_map.slang` — the
+    binding-free rule modules the new helpers will call.
+  - `rasterizer/rasterizer.slang`, `deferred/deferred.slang`,
+    `raytracing/raytrace.rchit.slang`, `path_tracing/path_tracing.slang` —
+    the eleven blocks.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.EveryImportedSlangModuleIsUsed` and
+    `BuildIntegrity.EverySlangFunctionIsReachableFromAnEntryPoint`. **Both
+    will fail if this is done carelessly** — see step 5.
+
+  **Steps:**
+  1. In `material_textures.slang`, add `import emission;`,
+     `import material_rules;`, `import normal_map;` (all three are
+     binding-free, so this pulls in no second `objectDescription`
+     declaration — the same argument the existing header comment makes) and
+     six helpers, each in an implicit-LOD and an explicit-LOD form:
+     - `float3 resolved_emission[_lod0](ObjectDescription obj, ObjMaterial material, float2 uv)`
+       → returns `material_emission(material, sampled_or_one)`.
+     - `float2 resolved_metallic_roughness[_lod0](ObjectDescription obj, ObjMaterial material, float2 uv)`
+       → returns `float2(material.metallic, material_roughness(material))`
+       when there is no texture, else
+       `material_metallic_roughness(material, mrSample)`.
+     - `float3 resolved_normal[_lod0](float3 geometricNormal, float4 tangent, ObjectDescription obj, ObjMaterial material, float2 uv)`
+       → returns `geometricNormal` unchanged when
+       `material.normalTextureID < 0`, else
+       `apply_normal_map(geometricNormal, tangent, sample, material.normalScale)`.
+  2. Replace the blocks in `rasterizer.slang`, `deferred.slang` (implicit
+     LOD) and `raytrace.rchit.slang` (explicit LOD) with single calls. Move
+     the surviving rationale comments up into the helper bodies — one copy,
+     not four.
+  3. In `path_tracing.slang`, adopt `resolved_emission_lod0` and
+     `resolved_normal_lod0`, but **leave its metallic-roughness block
+     inline**: that path deliberately consumes only the `.x` half and only
+     when a texture is present, with no factor fallback — adopting
+     `resolved_metallic_roughness_lod0` would silently start applying
+     `material.metallic` to a Lambertian-only kernel whose glTF default is
+     `metallicFactor == 1.0`, i.e. every untextured glTF surface would go
+     black. That asymmetry is real and is deliberately **not** fixed here;
+     record it as a row in task 4's matrix instead.
+  4. Drop the now-unused `import emission;` / `import normal_map;` lines
+     from the four shaders (`material_rules` stays in the raster/rchit
+     paths — `alpha_masked_out` and `material_roughness` still have direct
+     callers there; check each file rather than assuming).
+  5. Recompile shaders and confirm both listed gates pass: every new helper
+     must have at least one caller reachable from an entry point (all six do
+     — implicit-LOD from raster/deferred, explicit-LOD from rchit/PT, except
+     `resolved_metallic_roughness_lod0`, whose only caller is
+     `raytrace.rchit.slang`), and no shader may keep an import it no longer
+     uses.
+
+  **Test:** Extend
+  `BuildIntegrity.RasterShadersShareOneAlphaCutoffRule`'s neighbourhood with
+  a new `BuildIntegrity.TextureSlotWrappersHaveOneOwner`: assert that
+  `sample_emissive`, `sample_normal` and `sample_metallic_roughness` (and
+  their `_lod0` twins) appear **only** in
+  `common/material_textures.slang` — i.e. no shading path calls the raw
+  sampler directly any more. `path_tracing.slang`'s
+  `sample_metallic_roughness_lod0` call is the one sanctioned exception;
+  list it explicitly in the test with the step-3 reason, in the same style
+  as the existing sanctioned-exception lists (`buildIntegritySuite.cpp`
+  around the `sliceMeshRange`/`createDefaultTexture` allowlist).
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then, on a host GPU session,
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenRender.*'`
+  from the repo root — this is a pure refactor, so every golden must be
+  unchanged; `DeferredMatchesForwardRoughly` and
+  `EmissiveStrengthSurvivesTheDeferredGBuffer` are the two that would catch
+  a mistranslation. Report skips honestly.
+
+  **Context:** This is the direct continuation of batch IX/X's
+  shader-deduplication line and the reason `material_textures.slang` exists.
+  Do **not** fold the base-colour slot in — its header comment already
+  records why it stays inline (it drives per-shader control flow: albedo
+  assembly, `discard`, G-buffer packing).
+
+### Docs
+
+- [ ] **(M) Write down which of the four C++ shading paths reads which
+  `ObjMaterial` field, and gate it** — every batch from XI to XVII found the
+  same class of bug ("path X drops field Y") one field at a time, because
+  nothing anywhere states the matrix.
+
+  `BuildIntegrity.EveryObjMaterialFieldIsReadByAShader` already exists, but
+  it concatenates **every** `.slang` source and asks only whether *some*
+  shader mentions `material.<field>`. A field read by `rasterizer.slang` and
+  dropped by `path_tracing.slang` passes it. That is precisely the shape of
+  the last seven batches' findings (emissive in the RT paths, `COLOR_0` in
+  two paths, `metallicFactor` in the path tracer, `normalScale`,
+  `KHR_materials_unlit`, `map_d`, …), and each was found by hand.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/scene_types.slang` — the `ObjMaterial`
+    struct that defines the row set.
+  - `rasterizer/rasterizer.slang`, `deferred/deferred.slang`,
+    `raytracing/raytrace.rchit.slang`, `path_tracing/path_tracing.slang`,
+    plus `rasterizer/shadows/shadow_map.slang` and
+    `common/alpha_test.slang` (the two alpha-only consumers).
+  - `docs/shader-sharing.md` — the "Known glTF loader divergences" table is
+    the format and tone to match; the new table is its shader-side sibling.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.EveryObjMaterialFieldIsReadByAShader` (reuse its
+    `parse_obj_material_member_names` helper) and
+    `BuildIntegrity.ShaderSharingDocCoversEveryKnownLoaderDivergence` (the
+    doc-coverage gate pattern).
+
+  **Steps:**
+  1. Add a section to `docs/shader-sharing.md`, "Which C++ shading path
+     reads which `ObjMaterial` field", with one row per `ObjMaterial` member
+     and five columns: `rasterizer` | `deferred` | `raytrace.rchit` |
+     `path_tracing` | `shadow_map` / `alpha_test`. Each cell is either the
+     expression that consumes it or an explicit "not read — <reason>".
+  2. Fill it by reading the six shaders, not from memory. Record the known
+     asymmetries honestly rather than papering over them, in particular:
+     `material.metallic` is consumed by three paths but only via the
+     metallic-roughness *texture* in `path_tracing.slang` (see task 3 step 3
+     for why); `material.shininess` is only ever reachable through
+     `material_roughness()`'s negative-`roughness` fallback;
+     `material.dissolve` is read only inside `alpha_masked_out`.
+  3. Add a short lead paragraph saying what the table is for: a new
+     `ObjMaterial` field is not "done" when one path reads it, and this
+     table is where the remaining paths get listed.
+  4. Cross-link it from `docs/model-loading.md`'s material table (loader
+     side) and from `AGENTS.md`'s Docs index row for `shader-sharing.md`.
+
+  **Test:** Add
+  `BuildIntegrity.ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath`:
+  parse the member list out of `scene_types.slang` with the existing
+  `parse_obj_material_member_names`, parse the new table out of
+  `docs/shader-sharing.md`, and assert (a) exactly one row per member, no
+  extras, and (b) every row has five non-empty cells. Then, for each
+  (member, shader) cell that does **not** start with "not read", assert the
+  shader source names the member — either directly as `material.<name>` or
+  through one of the helpers that reads it, using an explicit
+  helper→fields map in the test
+  (`resolved_emission* → emission, emissiveTextureID, emissive_uv_transform_row0/1`;
+  `resolved_metallic_roughness* → metallic, roughness, shininess, metallicRoughnessTextureID, metallic_roughness_uv_transform_row0/1`;
+  `resolved_normal* → normalTextureID, normalScale, normal_uv_transform_row0/1`;
+  `alpha_masked_out → alphaCutoff, dissolve`;
+  `material_roughness → roughness, shininess`;
+  `base_color → diffuse`; `transform_uv → uv_transform_row0/1`). **This
+  helper map only makes sense after task 3 lands — do task 3 first.**
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`.
+
+  **Context:** The gate is the point — a table nobody checks drifts within
+  two batches, which is what `docs/model-loading.md`'s material table did
+  before its coverage gate landed. Follow the citation rules already in
+  force: symbols, never `file:line`
+  (`BuildIntegrity.SourceAndDocsCiteSymbolsNotLineNumbers` will fail you).
+
+### Test coverage
+
+- [ ] **(M) Give the clouds subsystem a numerical oracle** — `docs/clouds.md`
+  states outright that neither of its two shipped bug fixes has one, and the
+  only cloud golden asserts the device survives, not that anything is drawn.
+
+  `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice` enables clouds,
+  renders 30+ frames and asserts `!hasDeviceLost()` and a non-empty capture.
+  It would pass with a uniformly transparent cloud buffer. Both of the last
+  two cloud bugs produced exactly that class of output — a noise volume with
+  seven eighths of its domain unwritten and two channels constant
+  (`2802c163`), and a phase function peaked away from the sun (`9ae2679b`) —
+  and both are guarded today only by text-shape gates, which
+  `docs/clouds.md` explicitly calls out as "what stops either from silently
+  reappearing" for want of an oracle. Task 2 of this batch changes the
+  density lookup and would land with no pixel evidence at all.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` —
+    `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice` (the harness
+    set-up to copy) and `GoldenRender.EmissiveMaterialBrightensTheFrame`
+    (the two-captures-and-compare pattern to copy).
+  - `Test/commit/VulkanEngine/GoldenMetrics.hpp` — `panel_free_crop`,
+    `mean_luminance_in_crop`, `swung_fraction`, `detail_fraction`.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx` — the cloud
+    GUI vars the test drives (`clouds_enabled`, `cloud_mesh_offset`,
+    `cloud_mesh_scale`, `cloud_density_multiplier`, `cloud_coverage_threshold`).
+  - `docs/clouds.md` — "The estimator", whose claims this test turns into
+    assertions.
+
+  **Steps:**
+  1. Add `GoldenRender.EnablingCloudsChangesTheFrameAndAddsDetail`, guarded
+     by `SKIP_WITHOUT_GPU()` / `SKIP_WITHOUT_FRAME_CAPTURE(harness)` like
+     every other golden.
+  2. Forward raster, clouds off: warm up, render, capture — call it the
+     baseline.
+  3. Flip `scene_vars.clouds_enabled = true` on the **same** harness,
+     render the same number of frames, capture again.
+  4. Assert `swung_fraction(baseline, clouds, ...)` over
+     `panel_free_crop` exceeds a threshold — clouds must change a
+     meaningful fraction of the frame, not a handful of pixels.
+  5. Assert `detail_fraction(clouds, ...) > detail_fraction(baseline, ...)`
+     over the same crop. **This is the assertion that carries the weight**:
+     a flat or uniform noise volume composites as a smooth wash and would
+     *lower* detail, so it catches the exact 2026-08-05 noise-fill bug class
+     without pinning any driver-specific value.
+  6. If the shipped default camera does not see the cloud box (its default
+     centre is 367 units up with a 31.5-unit half-height), lower
+     `scene_vars.cloud_mesh_offset[1]` in the test until it does, and say so
+     in a comment — that is test set-up, not a product change. Do **not**
+     change `GUISceneSharedVars`' defaults.
+  7. Pick thresholds by measuring on the host GPU first and then leaving
+     generous margin; prefer structural relations (`detail_on > detail_off`)
+     over absolute constants, per `AGENTS.md`'s testing guidance.
+
+  **Test:** the new golden is the deliverable. Verify by running
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenRender.*Cloud*'`
+  from the **repo root** on the host, and — as a negative control — confirm
+  it fails when `clouds_enabled` is forced back off in the second capture.
+  If no console GPU session is available, say so explicitly and leave the
+  thresholds marked as unmeasured rather than guessing; do not commit a
+  golden whose thresholds were never run.
+
+  **Build:** `clangcl-debug` to build, host to run. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  GPU goldens **skip** in the container by construction — a green container
+  build proves nothing here (see `docs/gpu-golden-testing.md`).
+
+  **Context:** Clouds are off by default, so this test costs nothing on
+  every other golden's path. It is also the regression net for task 2 of
+  this batch, which changes what `sample_density` returns.
+
+**Not in this batch, recorded so it is not lost.**
+
+- **`clouds.slang` builds a `cloud.model_to_world` nobody reads, and its file
+  header contradicts its own body.** `clouds_main` fills seven fields of
+  `cloud.model_to_world` (the diagonal and the translation row) and then
+  never passes it anywhere — `box_intersect` is only ever called with
+  `cloud.inv_model_to_world`. Worse, the file header says "the inverse model
+  matrix is precomputed on the CPU (Slang has no `inverse()` for SPIR-V)" and
+  the comment above the inverse says "must be set on the CPU side … compute
+  it here" — both false, and mutually contradictory: nothing on the C++ side
+  ever writes either matrix, and the diagonal-plus-translate inverse is
+  formed inline. ~10 dead lines and two wrong comments. Not sized now only
+  because task 2 already touches this file and two shader edits in one
+  session invite a merge conflict; pick it up next batch together with
+  `PostStage::recordCommands`'s `clear_values` (its render pass declares
+  `vk::AttachmentLoadOp::eLoad`, so the `{0.2, 0.65, 0.4, 1.0}` clear colour
+  is never used) and `post.slang`'s doubled `noisyTxt.Sample(In.uv)`.
+
+- **`obj_to_gltf`'s `map_d` gap is still open** — carried over from batch X's
+  "not in this batch" list unchanged; it still needs the image
+  decode/encode decision stated up front, and nothing in this batch moved it.
+

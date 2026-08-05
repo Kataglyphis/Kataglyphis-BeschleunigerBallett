@@ -11023,3 +11023,35 @@ TEST(BuildIntegrity, TheTwoRasterGeometryPassesShareOneVertexStage)
           << kFailureMessage;
     }
 }
+
+// path_tracing.slang's bounce direction used to be assigned unnormalized
+// (hitWorldNormal + a unit vector has length in [0, 2]), which quietly
+// corrupted three downstream consumers that are all measured in units of
+// rayDirection's length: ray.TMin's self-intersection epsilon, ray.TMax's
+// visibility distance, and the miss branch's sky gradient (skyT extrapolates
+// past [0, 1] once rayDirection.y leaves [-1, 1]). See docs/path-tracing.md's
+// Bounce bullet and the "Self-intersection is guarded by a 1e-4 normal
+// offset and ray-query t_min = 0.001" sentence, which this normalize keeps
+// true.
+TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+    const auto contentsOpt = readFileText(path_tracing_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << path_tracing_path.string();
+    const std::string &contents = *contentsOpt;
+
+    static const char *kFailureMessage =
+      "rayDirection must be renormalized after the hemisphere bounce sample - the unnormalized "
+      "sum (hitWorldNormal + a unit vector) has length in [0, 2], which corrupts ray.TMin's "
+      "self-intersection epsilon, ray.TMax's visibility distance, and the miss branch's sky "
+      "gradient, all of which are measured in units of rayDirection's length";
+
+    EXPECT_NE(contents.find("rayDirection = normalize(newDirection);"), std::string::npos)
+      << path_tracing_path.string() << " no longer normalizes the bounce direction. " << kFailureMessage;
+
+    EXPECT_EQ(contents.find("rayDirection = newDirection;"), std::string::npos)
+      << path_tracing_path.string() << " assigns the bounce direction without normalizing it. " << kFailureMessage;
+}

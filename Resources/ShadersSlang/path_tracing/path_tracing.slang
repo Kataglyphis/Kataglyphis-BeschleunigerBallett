@@ -385,7 +385,11 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             {
                 newDirection = hitWorldNormal;
             }
-            rayDirection = newDirection;
+            // hitWorldNormal + unitVector has length in [0, 2], not 1 -
+            // normalize before it becomes rayDirection, because TMin, TMax
+            // and the miss-gradient's skyT are all measured in units of
+            // rayDirection's length.
+            rayDirection = normalize(newDirection);
         }
 
         summedColor += radiance;

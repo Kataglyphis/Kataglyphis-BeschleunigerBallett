@@ -60,8 +60,12 @@ estimators is biased):
   Lambertian cancels the pi and the cosine exactly.
 - **Bounce**: RTIOW-style cosine-ish sampling (normal + random unit vector),
   with the degenerate-scatter guard (near-zero sum falls back to the
-  normal). From the fourth segment on, **Russian roulette** terminates
-  low-throughput paths and reweights survivors (unbiased).
+  normal). The sampled direction is renormalized before it becomes the next
+  segment's `rayDirection` - the unnormalized sum has length in `[0, 2]`,
+  and `TMin`, `TMax` and the miss gradient below are all measured in units
+  of that vector's length. From the fourth segment on, **Russian
+  roulette** terminates low-throughput paths and reweights survivors
+  (unbiased).
 - **Miss**: a soft RTIOW gradient sky at half intensity ends the path.
 
 Self-intersection is guarded by a 1e-4 normal offset **and** ray-query
