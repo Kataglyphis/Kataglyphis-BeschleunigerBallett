@@ -10054,59 +10054,6 @@ Rust submodule and is independent of all four.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Read the OBJ normal map's `-bm` factor from the texopt that belongs to the directive it came from** — `norm tex.png -bm 0.5` silently loses its scale, and a `map_Bump … -bm 3.0` line leaks its factor onto the `norm` map the loader deliberately preferred instead.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` —
-    `loadTexturesAndMaterials`, specifically the `normal_texname` /
-    `bump_texname` preference branch and the unconditional
-    `material.normalScale = mp->bump_texopt.bump_multiplier;` three lines below it
-  - `ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h` — the `material_t`
-    declarations of `bump_texopt` and `normal_texopt`, `InitTexOpt`'s
-    `bump_multiplier = 1.0` default, and the `.mtl` reader's `map_Ke`/`norm`
-    arms showing each directive parsed into its own `texture_option_t`
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs`
-    — `parse_mtl`'s normal-map arm and `bump_scale_option`: the per-directive
-    behaviour this task brings the C++ side up to
-  - `Test/commit/VulkanEngine/objParseSuite.cpp` — the temp-`.mtl`/`.obj`
-    fixture idiom (`std::filesystem::temp_directory_path()`, `std::ofstream`,
-    `mtllib` line) used by the texture-resolution tests
-
-  **Steps:**
-  1. Move the `normalScale` assignment inside the existing preference branch:
-     the `norm` arm sets it from `mp->normal_texopt.bump_multiplier`, the
-     `map_Bump` fallback arm from `mp->bump_texopt.bump_multiplier`.
-  2. In the "neither directive present" arm, leave `normalScale` at
-     `ObjMaterial`'s 1.0 default rather than assigning anything — with no
-     normal texture the value is unread, and assigning a stray texopt default
-     is what made this wrong in the first place.
-  3. Add a one-line comment naming the rule (`-bm` belongs to the directive it
-     was written on; tinyobjloader keeps one `texture_option_t` per directive)
-     and pointing at `obj_to_gltf.rs`'s `bump_scale_option` as the twin.
-
-  **Test:** Add two `ObjParseUnit` cases writing temp `.mtl` fixtures.
-  `NormDirectiveBumpMultiplierReachesNormalScale`: a material with
-  `norm rock_n.png -bm 0.5` and no `map_Bump` must yield
-  `normalScale == 0.5F` (RED today: it reads 1.0). `BumpMultiplierDoesNotLeak
-  FromMapBumpOntoAPreferredNormDirective`: a material with both
-  `map_Bump height.png -bm 3.0` and `norm rock_n.png` must yield
-  `normalScale == 1.0F` and a `normalTextureID` pointing at the `norm` slot
-  (RED today: 3.0). Follow the existing suite's pattern of writing the fixture
-  files next to each other in a temp directory so `resolveObjTexturePath`
-  resolves them.
-
-  **Build:** `clangcl-debug` (no module-interface change, no `-FreshContainer`
-  needed):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjParseUnit.*`
-
-  **Context:** `normalScale` reached `ObjMaterial` only two days ago
-  (`e0e25ee6`) and the OBJ half was wired one day later (`54a39af2`); this is
-  the loose end of that wiring, not a long-standing defect. Keep the `norm`-over-
-  `map_Bump` preference exactly as it is — the comment there explaining why
-  (`norm` is a true tangent-space map, `map_Bump` is conventionally a height
-  map exporters repurpose) is the reason the leak matters at all.
-
 - [ ] **(S) Read `map_Ke` into `emissiveTextureID` in the C++ OBJ loader** — every C++ shading path samples an emissive texture, and the OBJ path is the one loader that never fills the slot, so an emissive OBJ material gets its `Ke` factor multiplied by an implicit 1.0.
 
   **Files to read:**

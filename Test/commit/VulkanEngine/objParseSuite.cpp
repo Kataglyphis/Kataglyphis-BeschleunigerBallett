@@ -684,5 +684,78 @@ TEST(ObjParseUnit, EmptyBaseDirStaysRelative)
     EXPECT_FALSE(std::filesystem::path(resolved).is_absolute());
 }
 
+TEST(ObjParseUnit, NormDirectiveBumpMultiplierReachesNormalScale)
+{
+    // norm's own -bm must reach normalScale even with no map_Bump present at
+    // all: the old code read mp->bump_texopt.bump_multiplier unconditionally,
+    // which is tinyobjloader's default-initialised 1.0 when map_Bump was never
+    // parsed, silently dropping the norm directive's own scale.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_norm_bump_multiplier";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "norm_bm.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nnorm -bm 0.5 rock_n.png\n";
+    }
+    { std::ofstream texture(dir / "rock_n.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "norm_bm.obj", std::ios::binary);
+        obj << "mtllib norm_bm.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "norm_bm.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    EXPECT_FLOAT_EQ(loader.getMaterials()[0].normalScale, 0.5F)
+      << "norm's own -bm must reach normalScale even with no map_Bump present";
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, BumpMultiplierDoesNotLeakFromMapBumpOntoAPreferredNormDirective)
+{
+    // When both directives are present, norm wins the texture slot (see
+    // MtlNormPreferredOverMapBump above) - its -bm must win too, rather than
+    // leaking map_Bump's own -bm onto the preferred norm map.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_bump_multiplier_no_leak";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "no_leak.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Bump -bm 3.0 height.png\nnorm rock_n.png\n";
+    }
+    { std::ofstream texture(dir / "height.png", std::ios::binary); }
+    { std::ofstream texture(dir / "rock_n.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "no_leak.obj", std::ios::binary);
+        obj << "mtllib no_leak.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "no_leak.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    const auto &material = loader.getMaterials()[0];
+    EXPECT_FLOAT_EQ(material.normalScale, 1.0F)
+      << "map_Bump's -bm must not leak onto the preferred norm directive";
+
+    bool sawRockN = false;
+    for (const std::string &name : loader.getTextureNames()) {
+        if (std::filesystem::path(name).filename() == "rock_n.png") { sawRockN = true; }
+    }
+    EXPECT_TRUE(sawRockN) << "norm must still win the texture slot";
+
+    std::filesystem::remove_all(dir);
+}
+
 // The async wrapper (AsyncModelParse) has its own dedicated coverage in
 // asyncModelParseSuite.cpp, suite AsyncModelParseUnit.

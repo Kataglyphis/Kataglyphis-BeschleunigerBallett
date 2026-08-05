@@ -238,25 +238,30 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         // norm is a tangent-space normal map by definition; map_Bump is
         // conventionally a height map that most exporters (Blender included)
         // nonetheless use for normal maps, so it is only the fallback.
+        // -bm belongs to the directive it was written on: tinyobjloader keeps
+        // one texture_option_t per directive (normal_texopt vs bump_texopt),
+        // so the scale must come from whichever directive's map won the
+        // preference below, not unconditionally from bump_texopt (twin logic:
+        // obj_to_gltf.rs's bump_scale_option).
         if (!mp->normal_texname.empty()) {
             material.normalTextureID = resolveSlot(mp->normal_texname, false);
+            material.normalScale = mp->normal_texopt.bump_multiplier;
         } else if (!mp->bump_texname.empty()) {
             spdlog::debug(
               "ObjLoader: material '{}' has no 'norm' directive; using 'map_Bump' ('{}') as the normal map",
               mp->name,
               mp->bump_texname);
             material.normalTextureID = resolveSlot(mp->bump_texname, false);
+            material.normalScale = mp->bump_texopt.bump_multiplier;
         } else {
             // Unlike the diffuse slot, no directive at all means no push: a
             // model without a normal map (still the common case) keeps
             // textures/textureSrgb exactly as long as materials, matching
             // pre-normal-mapping behaviour and existing size expectations.
+            // normalScale is left at ObjMaterial's 1.0 default since there is
+            // no normal texture to scale.
             material.normalTextureID = -1;
         }
-        // -bm option; defaults to 1.0 (unscaled) when absent, matching
-        // ObjMaterial::normalScale's default and unused when there is no
-        // normal texture.
-        material.normalScale = mp->bump_texopt.bump_multiplier;
 
         materials.push_back(material);
     }
