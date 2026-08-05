@@ -11,6 +11,13 @@ on:
       - 'docs/**'
   pull_request:
     branches: [main, develop]
+  # A docs-only commit is correctly skipped by paths-ignore above, but a fix TO
+  # a docs file the test suite pins (docs/gpu-golden-testing.md's golden-counts
+  # marker, which BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite compares
+  # against the suite source) is exactly the case where the engine DOES need
+  # retesting and no code file changed. Without a manual trigger the only way to
+  # get a verdict on such a fix was to bundle an unrelated code edit with it.
+  workflow_dispatch:
 
 # Cancel superseded runs on develop and PRs so the tip's verdict arrives without
 # queueing behind stale runs - without this every push spawns a full parallel
