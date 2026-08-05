@@ -10164,4 +10164,440 @@ second rebases trivially. Task 3 touches only `renderer/Rasterizer.*` and
 
 ### C++ Vulkan engine
 
+## 2026-08-05 batch V — planner (`Pm`/`Pr`, the two PBR channels tinyobjloader parses into fields both OBJ paths drop, under a test whose comment asserts the channels do not exist; `KHR_materials_unlit`, which the Rust twin shipped in July as the fix for "every Sketchfab/mobile/AR flat-color export" and the C++ engine has never heard of; a `KHR_texture_transform` that the Rust loader still reads from the base-colour slot alone, four days after the C++ loader went per-slot — the same defect, now with the renderers swapped; and a "known glTF loader divergences" list that is one bullet long while the two loaders disagree on at least four material features)
 
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch IV's three tasks all shipped
+(`f5e27d46`, `c1cd8fad`, `994cbf4a`). Everything below was read out of the tree
+at `994cbf4a`.
+
+**First, `Pm` and `Pr` are parsed and then thrown away, by both OBJ paths.**
+`ObjMaterial` has carried `metallic` and `roughness` since the glTF PBR work,
+and all four C++ shading paths read them (`material_roughness()` plus the
+`metallic` term in `brdf_direct`). The Wavefront PBR extension defines exactly
+these two as `Pm` and `Pr`, and this repo's vendored tinyobjloader parses both:
+`material_t` declares `real_t roughness;` and `real_t metallic;`, `InitMaterial`
+zeroes them, and the `.mtl` reader has `sr_parseReal(sr, &material.roughness, …)`
+and `sr_parseReal(sr, &material.metallic, …)` arms. `ObjLoader.cpp`'s
+`loadTexturesAndMaterials` assigns `diffuse`, `emission`, `dissolve`,
+`shininess` and the three texture slots, and never touches either. So a `.mtl`
+authored `Pm 1.0` renders as a dielectric and `Pr 0.15` renders at whatever
+roughness `shininess` happens to imply.
+
+What makes this worth naming rather than shrugging at is
+`ObjParseUnit.MaterialsHaveZeroMetallic`, whose comment states the rationale as
+"Wavefront .mtl has no metallic channel, so every OBJ material must come back
+with ObjMaterial's default metallic (0.0)". The premise is false — the channel
+exists, the parser reads it, and the test passes only because the loader
+discards it. A test that asserts a field is zero *because the format cannot
+carry it* is the strongest possible signal that nobody checked whether the
+format can carry it.
+
+There is one real trap, and it is why this is not a two-line change.
+tinyobjloader defaults **both** fields to `0.0` and exposes no "was this
+authored" flag, so `mp->roughness == 0.0` is indistinguishable between "no `Pr`
+directive" (every model in `Resources/Models/` today) and "`Pr 0.0`, a perfect
+mirror". `ObjMaterial::roughness` uses `-1.0` as its "derive it from
+`shininess`" sentinel, so assigning `mp->roughness` unconditionally would move
+every existing OBJ material from the shininess-derived value to a mirror
+finish — a visible regression in every bundled scene. `metallic` has no such
+problem: tinyobjloader's default and `ObjMaterial`'s default are both `0.0`, so
+it can be assigned unconditionally and stays bit-identical where `Pm` is absent.
+
+**Second, `KHR_materials_unlit` exists in one renderer.** The Rust twin shipped
+it on 2026-07-22; `docs/webgpu-renderer-roadmap.md` records the reason in one
+line — "Fixes every Sketchfab/mobile/AR flat-color export, which previously got
+a full GGX response with IBL and shadows". `CpuMaterial` carries `unlit`,
+`forward.rs` packs it into `material_flags.x`, and `forward.slang`'s `fs_main`
+returns `albedo` at `if (prim.material_flags.x > 0.5)` — before any lighting,
+per spec. A grep for `unlit` over the whole of `Src/` returns nothing. cgltf
+parses the extension into `cgltf_material::unlit` and `fromGltfMaterial` never
+reads it, so the same asset that renders flat in the WebGPU demo renders
+shaded, shadowed and specular in the Vulkan engine.
+
+The deferred path is the only half with a design question, and the G-buffer
+already answers it: `geometry_fs_main` writes `g.outAlbedo = texColor` into an
+`eR8G8B8A8Srgb` attachment, and `lighting_fs_main` reads `albedo.rgb` and
+nothing else — the alpha channel is written every frame and read by no one.
+Vulkan applies the sRGB transfer function to RGB only, so alpha round-trips
+linearly and a 0.0/1.0 flag survives the store/`SubpassLoad` exactly. That is
+the channel, and it costs no new attachment.
+
+**Third, the Rust loader still has one UV transform for five slots — the
+mirror image of the bug that shipped four days ago.** `4b3f438d` fixed the C++
+side: `ObjMaterial` now carries four independent `KHR_texture_transform` row
+pairs and `base_color.slang` gives each slot its own named accessor. The Rust
+loader was cited in that batch as *the reference* for per-slot behaviour, and
+on re-reading it is only half of one. `gltf_loader.rs` builds
+`base_uv_transform` from `pbr.base_color_texture().and_then(|info|
+info.texture_transform())` and nothing else; `CpuMaterial` has exactly that one
+field; `PrimUniforms` carries exactly `base_uv_row0`/`base_uv_row1`; and
+`forward.slang`'s `fs_main` builds `baseUv` from those rows while `mrIn`,
+`normalIn`, `emissiveIn` and `occlusionIn` go to `Sample` as the raw per-slot
+UV. So Rust is correct in the sense the C++ engine was wrong — it never applies
+the base-colour transform to another slot — and wrong in the other direction:
+a `normalTexture` or `occlusionTexture` carrying its own `KHR_texture_transform`
+has it dropped silently. glTF defines the extension per `textureInfo`; both
+halves are required, and each renderer currently implements one of them.
+
+The slot order is already fixed by `uv_set_mask` (`uv_set_bit`'s "bit per slot:
+0 base .. 4 occlusion"), so the new row pairs have an unambiguous order to
+follow, and `fs_shadow_masked` — which already selects the base-colour UV set
+from `material_flags.y` before applying `base_uv_row0/1` — is the shape the
+four new slots should copy.
+
+**Fourth, the divergence list is one bullet, and there are at least four
+divergences.** `docs/shader-sharing.md`'s "Known glTF loader divergences (not
+shader-shared, but the two renderers must stay honest about it)" section is
+introduced as the place the two loaders stay honest with each other, and
+contains a single entry, about TEXCOORD_1 on the base-colour slot. Read against
+the tree at `994cbf4a` the section is silent about:
+
+| Feature | C++ `GltfLoader` | Rust `gltf_loader` |
+| --- | --- | --- |
+| `KHR_materials_unlit` | not read | read, `material_flags.x`, returns before lighting |
+| `occlusionTexture` + `occlusionStrength` | no `ObjMaterial` field, no slot | full: slot, strength, own UV-set bit |
+| `KHR_texture_transform` per slot | all four slots | base colour only (task 3 above) |
+| `alphaMode` `BLEND` | renders opaque (`alphaCutoff` = -1) | `alpha_blend`, its own pipeline |
+
+The occlusion row is the interesting one, because it is a divergence that
+should *stay*: glTF scopes `occlusionTexture` to indirect light, and neither C++
+raster path has an indirect term at all (`rasterizer.slang`'s `fs_main` is
+`brdf_direct` + shadow + emissive; the deferred lighting pass is the same). A
+list that records "not applicable here, and why" is the difference between a
+known limitation and the next planner re-deriving this paragraph. The existing
+`ModelLoadingDocDocumentsEveryObjMaterialMember` gate is the shape to copy for
+keeping it from rotting again.
+
+**Verification context.** Host GPU goldens are still blocked over RDP (the
+`- [b]` near the end of this file) and `path_tracing` mode device-losts on the
+host RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). All five
+tasks are accepted CPU-only: tasks 1 and 2 are parse-time state the loaders
+expose to device-free suites plus source-text gates (the instrument
+`NormalMappingIsAppliedByEveryShadingPath` and
+`MetallicRoughnessTextureIsSampledByEveryShadingPath` already use), tasks 3 and
+4 are in the Rust submodule, and task 5 touches only docs and a gate. **Do not
+claim a rendered result you cannot obtain** — state which suites you ran.
+
+**Rust verification limits.** `cargo test`/`cargo build` do not link on this
+host: the VC++ Build Tools install is incomplete and Git Bash's `link.exe`
+shadows MSVC's. Verify tasks 3 and 4 with `cargo check`, `cargo clippy` and
+`cargo fmt --check` from
+`ExternalLib/Kataglyphis-RustProjectTemplate`, say so explicitly in the commit
+message, and let the always-on Linux lane (`Scripts/Linux/run-cargo-tests.sh`)
+be the thing that actually runs the tests you add.
+
+**Ordering.** Task 5 must run **last** — tasks 2 and 3 each delete a row from
+the table it builds. Tasks 1 and 2 both edit
+`ObjLoader.cpp`/`GltfLoader.cpp` and `ObjMaterial.hpp`; do not run them
+concurrently, either order works, and task 2 appends a member so it needs
+`-FreshContainer` (`ObjMaterial.hpp` sits in `ObjMaterial.ixx`'s global module
+fragment). Task 1 changes no header and does not. Tasks 3 and 4 are both in the
+Rust submodule and touch disjoint files (`gltf_loader.rs`/`forward.rs` versus
+`obj_to_gltf.rs`), so they are independent of each other and of tasks 1–2.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Carry `KHR_materials_unlit` into `ObjMaterial` and honour it in all four shading paths** — the Rust twin shipped this in July as the fix for flat-colour Sketchfab/mobile/AR exports; the C++ engine gives the same asset a full GGX response with shadows.
+
+  **Files to read:**
+  - `ExternalLib/cgltf/cgltf.h` — `cgltf_material::unlit` and the
+    `KHR_materials_unlit` extension parse that sets it
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `fromGltfMaterial`'s
+    designated-initializer block, and how `alphaCutoff`/`normalScale` derive a
+    field from a cgltf flag
+  - `Src/shared/scene/ObjMaterial.hpp` — the append convention: trailing
+    scalar, sentinel documented on the member, "pre-existing scenes are
+    bit-unchanged" rationale spelled out
+  - `Resources/ShadersSlang/common/scene_types.slang` — the in-shader twin
+    struct that must gain the same trailing member in the same order
+  - `Resources/ShadersSlang/forward/forward.slang` — `fs_main`'s
+    `if (prim.material_flags.x > 0.5) return albedo;`, the reference
+    implementation and the exact point in the shader it belongs at
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang`,
+    `Resources/ShadersSlang/deferred/deferred.slang`,
+    `Resources/ShadersSlang/raytracing/raytrace.rchit.slang`,
+    `Resources/ShadersSlang/path_tracing/path_tracing.slang` — the four paths
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` —
+    `ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout` and
+    `ValueInitializedMaterialCarriesTheDocumentedSentinels`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the
+    `ObjMaterial_natural` member list, and
+    `MetallicRoughnessTextureIsSampledByEveryShadingPath` as the source-text
+    gate template
+
+  **Steps:**
+  1. Append `int unlit{ 0 };` to `ObjMaterial` after
+     `emissive_uv_transform_row1`. The struct is 160 bytes today with that
+     member last; an `int` lands at offset 160 for `sizeof == 164`, and no
+     existing offset moves — which is what lets the layout gates prove the
+     change without a GPU. Document `0` as "lit (the default, every OBJ
+     material and every glTF material without the extension)".
+  2. Append `int unlit;` to `scene_types.slang`'s `ObjMaterial`, last, matching
+     the C++ order.
+  3. In `fromGltfMaterial`, set `.unlit = (material.unlit != 0) ? 1 : 0`.
+     `ObjLoader` needs no change — `.mtl` has no unlit concept and the `{}`
+     default already means "lit".
+  4. `rasterizer.slang`: after `albedo` is resolved and multiplied by
+     `In.fragmentColor.rgb`, and after the alpha-mask `discard`, return
+     `float4(albedo, 1.0)` when `material.unlit != 0` — before `N`/`V` are used
+     for anything and before `brdf_direct`. Per spec, unlit skips lighting,
+     shadowing and emissive alike.
+  5. `deferred.slang`: the geometry pass cannot return early (the lighting pass
+     is a separate subpass), so carry the flag in `g.outAlbedo.a`, which
+     `lighting_fs_main` writes today and reads never. Write
+     `material.unlit != 0 ? 1.0 : 0.0` there, and in `lighting_fs_main` return
+     `float4(albedo.rgb, 1.0)` immediately when `albedo.a > 0.5`. Comment why
+     the channel is safe: `GBUFFER_ALBEDO_FORMAT` is `eR8G8B8A8Srgb` and Vulkan
+     applies the sRGB transfer function to RGB only, so alpha round-trips
+     linearly through the store and `SubpassLoad`. Before writing it, grep
+     `Src/` for other readers of the albedo attachment (`FrameCapture`, the
+     golden suites) and say in the commit message what you found.
+  6. `raytrace.rchit.slang`: once `albedo` is resolved, set the payload's
+     radiance to `albedo` and return, before the shadow ray is traced.
+  7. `path_tracing.slang`: treat an unlit hit as a terminator — add
+     `albedo * throughput` to the accumulated radiance and end the path rather
+     than scattering. Comment it as the path-tracing reading of "returns base
+     colour before any lighting", since the spec text is written for a raster
+     pass.
+  8. Add the new member to `ObjMaterial_natural`'s list in
+     `buildIntegritySuite.cpp` and add its row to `docs/model-loading.md`'s
+     material table — `ModelLoadingDocDocumentsEveryObjMaterialMember` will
+     fail the build until you do.
+
+  **Test:** Two CPU-only gates.
+  (a) `GltfParseUnit.KhrMaterialsUnlitReachesTheMaterial` in
+  `gltfParseSuite.cpp`, following the existing
+  `KhrTextureTransform*ReachesTheMaterial` tests: parse a `.gltf` declaring
+  `"extensions": { "KHR_materials_unlit": {} }` on one material and not on a
+  second, and assert `unlit` is 1 and 0 respectively.
+  (b) `BuildIntegrity.UnlitIsHonouredByEveryShadingPath` in
+  `buildIntegritySuite.cpp`, copied from
+  `MetallicRoughnessTextureIsSampledByEveryShadingPath`: assert each of the
+  four Slang sources mentions `material.unlit` (and that `deferred.slang`
+  additionally mentions the `outAlbedo` alpha channel), reporting which file is
+  missing it. Also extend
+  `ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout` with the new
+  offset/size and
+  `ValueInitializedMaterialCarriesTheDocumentedSentinels` with `unlit == 0`.
+
+  **Build:** `clangcl-debug` with `-FreshContainer` (this appends a member to a
+  header inside `ObjMaterial.ixx`'s global module fragment):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  Recompile the shaders on the host first
+  (`Scripts/Windows/compile-slang-shaders.ps1`), then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParseUnit.*:BuildIntegrity.*:ObjMaterialLayoutUnit.*`
+
+  **Context:** This is the fifth `ObjMaterial` append in two weeks and the
+  pattern is settled — trailing scalar, sentinel on the member, layout gates
+  prove it, doc row required. What is different is step 5: the deferred path
+  needs a G-buffer channel and the only free one is an alpha the lighting pass
+  already ignores, so state the sRGB-alpha reasoning in the shader comment
+  rather than leaving the next reader to re-derive it.
+  `docs/webgpu-renderer-roadmap.md`'s `KHR_materials_unlit` row is the
+  behavioural reference. Do not claim rendered evidence: goldens are blocked
+  over RDP and `path_tracing` device-losts on this host.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Give the metallic-roughness, normal, emissive and occlusion slots their own `KHR_texture_transform`** — the loader reads the extension from the base-colour slot alone, so a transform authored on any other slot is dropped; the C++ twin went per-slot four days ago.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/gltf_loader.rs` — the
+    `base_uv_transform` block (`pbr.base_color_texture().and_then(|info|
+    info.texture_transform())` and its `T * R * S` build), the five
+    `*_texture:` fields beside it, and `uv_set_bit`/`uv_set_mask` for the
+    canonical slot order
+  - `crates/webgpu_renderer/src/scene/mod.rs` — `CpuMaterial::base_uv_transform`
+    and its identity default
+  - `crates/webgpu_renderer/src/render/forward.rs` — `GpuPrimitive`'s
+    `base_uv_transform` field, `PrimUniforms`'
+    `base_uv_row0`/`base_uv_row1`, and the per-frame `uniforms_dirty` loop that
+    packs the rows into `[f32; 4]`s
+  - `Resources/ShadersSlang/forward/forward.slang` — `fs_main`'s five
+    `*In` UV selectors and the single `baseUv` transform applied to only one
+    of them; `fs_shadow_masked` is the shape to copy (it selects the UV set,
+    *then* transforms)
+  - `docs/shader-build-pipeline.md` — the Slang→WGSL step and the staleness
+    rules; `src/shaders/forward.wgsl` is generated, never hand-edited
+  - `Src/shared/scene/ObjMaterial.hpp` and
+    `Resources/ShadersSlang/common/base_color.slang` — the C++ side of the same
+    fix (`4b3f438d`, `f5e27d46`), for naming and for the per-slot rationale
+
+  **Steps:**
+  1. In `gltf_loader.rs`, extract the existing `T * R * S` closure into a
+     helper that takes a `texture_transform()` option and returns
+     `[[f32; 3]; 2]`, defaulting to identity. Keep the negated rotation — it is
+     load-bearing and the C++ twin matches it.
+  2. Call the helper for all five slots and add
+     `mr_uv_transform`, `normal_uv_transform`, `emissive_uv_transform` and
+     `occlusion_uv_transform` to `CpuMaterial` beside `base_uv_transform`,
+     each defaulting to identity. Use the `uv_set_mask` slot order (base, mr,
+     normal, emissive, occlusion) everywhere so the two per-slot concepts stay
+     in one order.
+  3. Carry the four new pairs through `GpuPrimitive` and into `PrimUniforms` as
+     eight more `[f32; 4]` rows, appended after `base_uv_row1` and before
+     `material_flags` — appending keeps every existing offset. Grep the crate's
+     `tests/` for a `PrimUniforms` size or offset pin and update it if one
+     exists.
+  4. In `forward.slang`'s `fs_main`, apply each slot's rows to that slot's
+     selected UV, replacing the four raw `*In` uses at the `Sample` calls.
+     Factor the two-dot-product transform into one small function rather than
+     writing it five times — the C++ side landed exactly this cleanup in
+     `f5e27d46` after twelve hand-written call sites, so do not recreate the
+     shape here.
+  5. Regenerate `src/shaders/forward.wgsl` with
+     `Scripts/Windows/compile-slang-shaders.ps1` and commit it. Note: the
+     `CheckedInWgslIsNotOlderThanItsSlangSource` gate can false-positive when
+     `slangc` output is byte-identical, because Windows `Copy-Item` does not
+     bump the mtime of an unchanged file; if that happens here the output has
+     genuinely changed, so a diff in `forward.wgsl` is the thing to confirm.
+
+  **Test:** Add to `crates/webgpu_renderer/tests/` (a new
+  `texture_transform.rs`, or beside the existing material tests in
+  `headless.rs` if a GPU-free entry point already lives there): build a glTF
+  document in memory whose material puts `KHR_texture_transform` on
+  `normalTexture` **only**, load it through the same path
+  `load_gltf`/`gltf_loader` exposes to tests, and assert
+  `normal_uv_transform` is non-identity while `base_uv_transform` is identity.
+  Add the inverse case (transform on base colour only) asserting the other four
+  stay identity — that is the assertion that fails if someone "fixes" this by
+  copying one transform to all five. Extend `tests/shader_export.rs` only if it
+  already pins `forward` entry points that this changes.
+
+  **Build:** From `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo check -p kataglyphis_webgpu_renderer`,
+  `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings`,
+  `cargo fmt --check`. `cargo test`/`cargo build` do **not** link on this host
+  (incomplete VC++ Build Tools plus Git Bash's `link.exe` shadowing MSVC's) —
+  say so in the commit message and let the Linux lane run the tests.
+
+  **Context:** Batch III cited this loader as the per-slot reference while
+  fixing the C++ side; it is per-slot only in the sense that it never
+  *mis*-applies the base transform. glTF scopes `KHR_texture_transform` to
+  `textureInfo`, so an atlased base colour beside an untiled normal map is the
+  motivating case in both directions. Keep the change additive — appending to
+  `PrimUniforms` and defaulting to identity means every asset without the
+  extension is bit-unchanged.
+
+- [ ] **(S) Emit `metallicFactor`/`roughnessFactor` from `.mtl` `Pm`/`Pr` in the OBJ→glTF converter** — the emitter hard-codes `0.0` and `1.0`, so the two PBR channels the format defines never survive conversion.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs` — `ObjMaterial`,
+    `parse_mtl`'s match arms (`Kd`, `Ke`, `d`, `Tr`, `map_Kd`, the four
+    normal-map spellings, `map_Ke`), and the material-emitting `format!` that
+    writes `"metallicFactor": 0.0, "roughnessFactor": 1.0`
+  - `crates/webgpu_renderer/tests/obj_to_gltf.rs` —
+    `parse_mtl_takes_the_last_token_of_an_option_carrying_map_ke` and the
+    `parse_mtl("newmtl a\n…")` inline-source pattern to follow
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — the C++ twin of this
+    change (task 1 in this batch), including the "`Pr 0.0` is indistinguishable
+    from absent" reasoning
+
+  **Steps:**
+  1. Add `metallic: Option<f32>` and `roughness: Option<f32>` to the
+     converter's `ObjMaterial`. `Option` rather than a defaulted `f32` is the
+     point: it records *whether the directive was present*, which is exactly
+     the information tinyobjloader cannot give the C++ side.
+  2. Add `"Pm"` and `"Pr"` arms to `parse_mtl`, parsing one real each and
+     ignoring a malformed value the same way the existing scalar arms do.
+  3. In the emitter, write `metallicFactor` from `metallic` and
+     `roughnessFactor` from `roughness`, falling back to the current hard-coded
+     `0.0` / `1.0` when absent so every existing `.obj` converts
+     byte-identically.
+  4. Update the module header comment (the `Kd` becomes `baseColorFactor` list)
+     to name the two new directives.
+
+  **Test:** Add `parse_mtl_reads_the_pbr_channels` to
+  `tests/obj_to_gltf.rs`, asserting `parse_mtl("newmtl a\nPm 1.0\nPr 0.25\n")`
+  yields `Some(1.0)`/`Some(0.25)`, and a companion that
+  `parse_mtl("newmtl a\nKd 1 0 0\n")` leaves both `None`. Add one
+  `ObjMesh`-level test in the same file (following
+  `..._emits_..._texture` neighbours) asserting the emitted JSON carries
+  `"metallicFactor": 1` for the first case and the unchanged `0.0`/`1.0` pair
+  for the second — the JSON assertion is what pins the fallback.
+
+  **Build:** From `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo check -p kataglyphis_webgpu_renderer`,
+  `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings`,
+  `cargo fmt --check`. `cargo test` does not link on this host — say so, and
+  let the Linux lane run it.
+
+  **Context:** Same directive pair as task 1, opposite renderer, and the two are
+  independent. The pre-existing asymmetry worth not making worse: the C++
+  loader derives roughness from `Ns` (`shininess`) when no `Pr` is authored,
+  while this converter emits a flat `1.0` — leave that divergence alone here
+  (changing it would alter every existing conversion) and record it in task 5's
+  table instead.
+
+### Docs
+
+- [ ] **(S) Turn `docs/shader-sharing.md`'s one-bullet divergence list into a material-feature matrix, and gate its coverage** — the section is introduced as the place the two loaders stay honest with each other and names one of at least four real divergences.
+
+  **Files to read:**
+  - `docs/shader-sharing.md` — the "Known glTF loader divergences" section (one
+    bullet, about TEXCOORD_1 on the base-colour slot)
+  - `Src/shared/scene/ObjMaterial.hpp` and
+    `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — what the C++ loader
+    actually reads
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/gltf_loader.rs`
+    and `.../src/scene/mod.rs` — `CpuMaterial`'s `unlit`, `occlusion_strength`,
+    `occlusion_texture`, `alpha_mode`, `uv_set_mask`
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang` and
+    `Resources/ShadersSlang/deferred/deferred.slang` — the evidence for the
+    occlusion row: neither has an indirect-light term for an AO map to
+    attenuate
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.ModelLoadingDocDocumentsEveryObjMaterialMember`, the
+    hand-maintained-list-plus-gate shape to copy, and its `readFileText` /
+    `repoRoot()` helpers
+
+  **Steps:**
+  1. Replace the single bullet with a table: feature | C++ `GltfLoader` | Rust
+     `gltf_loader` | note. Keep the TEXCOORD_1 bullet's content as its own row —
+     it is correct, just buried.
+  2. Add rows for `KHR_materials_unlit`, `occlusionTexture` +
+     `occlusionStrength`, per-slot `KHR_texture_transform`, and `alphaMode`
+     `BLEND`. Fill each against the tree you are on, not against this backlog
+     entry: tasks 2 and 3 in this batch each close one of these, so if they
+     have shipped the row records parity, not a gap.
+  3. Give the occlusion row a note saying the divergence is intended: glTF
+     scopes `occlusionTexture` to indirect light and neither C++ raster path has
+     an indirect term (`rasterizer.slang`'s `fs_main` and the deferred lighting
+     pass are `brdf_direct` + shadow + emissive), so there is nothing for an AO
+     map to attenuate. A future IBL or ambient term is what would make the slot
+     meaningful.
+  4. Give the `BLEND` row a note pointing at the existing rationale in
+     `GltfLoader.cpp`'s `alphaCutoff` comment (BLEND needs a sorted transparent
+     pass this engine does not have) rather than restating it.
+  5. Add the roughness-default divergence task 4 leaves standing: the C++ OBJ
+     loader derives roughness from `shininess`, the Rust OBJ→glTF converter
+     emits a flat `1.0`.
+  6. Cite symbols, never `file:line` — `EngineCommentsCiteSymbolsNotLineNumbers`
+     and `ModelLoadingDocCitesSymbolsNotLineNumbers` both exist because these
+     rot.
+
+  **Test:** Add
+  `BuildIntegrity.ShaderSharingDocCoversEveryKnownLoaderDivergence` to
+  `buildIntegritySuite.cpp`, next to
+  `ModelLoadingDocDocumentsEveryObjMaterialMember` and built the same way: a
+  `static constexpr` array of feature keys in the test, `readFileText` on
+  `docs/shader-sharing.md`, locate the divergences section, and assert every
+  key appears in a row of it — reporting the missing keys in the failure
+  message. The gate checks *coverage*, not verdicts; it exists so the next
+  feature that lands in one renderer cannot leave the table silently short a
+  row, which is the failure mode that produced today's one-bullet list.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Context:** Run this **last** in the batch. This is the second gate of this
+  exact shape over a doc that had rotted; the first
+  (`ModelLoadingDocDocumentsEveryObjMaterialMember`, `697349d8`) exists because
+  four consecutive `ObjMaterial` appends left the material table two rows short.
+  The failure mode here is the same one class up: a feature lands in one
+  renderer, nobody writes the divergence down, and the next reader has to
+  re-derive it from two loaders. Do not turn this into a roadmap — it records
+  what the two loaders do today and why, and `docs/webgpu-renderer-roadmap.md`
+  keeps owning what is planned.

@@ -222,6 +222,13 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         material.emission = glm::vec3(mp->emission[0], mp->emission[1], mp->emission[2]);
         material.dissolve = mp->dissolve;
         material.shininess = mp->shininess;
+        material.metallic = mp->metallic;
+        // tinyobjloader defaults roughness to 0.0 and exposes no "was this
+        // authored" flag, so `Pr 0.0` (a perfect mirror) is indistinguishable
+        // from an absent Pr directive - treat it as absent and leave
+        // ObjMaterial's -1.0 sentinel in place so material_roughness() keeps
+        // deriving roughness from shininess.
+        if (mp->roughness > 0.0F) { material.roughness = mp->roughness; }
 
         if (!mp->diffuse_texname.empty()) {
             material.textureID = resolveSlot(mp->diffuse_texname, true);

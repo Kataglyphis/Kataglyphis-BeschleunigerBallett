@@ -117,16 +117,78 @@ TEST(ObjParseUnit, MaterialsHaveZeroMetallic)
     const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
     if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
 
-    // Wavefront .mtl has no metallic channel, so every OBJ material must come
-    // back with ObjMaterial's default metallic (0.0) - OBJ scenes stay
-    // bit-identical to their pre-metallic-field rendering.
+    // dinosaurs.mtl authors no Pm directive, so every material must come back
+    // with ObjMaterial's default metallic (0.0) - the loader now does read
+    // the .mtl's Pm/Pr channels (see MtlPbrChannelsReachTheMaterial below),
+    // but the bundled dinosaurs simply never author either one.
     Kataglyphis::ObjLoader loader;
     ASSERT_TRUE(loader.parseCpu(dino));
 
     ASSERT_FALSE(loader.getMaterials().empty());
     for (const auto &material : loader.getMaterials()) {
-        EXPECT_NEAR(material.metallic, 0.0F, 1e-6F) << "an OBJ material must default to metallic 0.0";
+        EXPECT_NEAR(material.metallic, 0.0F, 1e-6F) << "a .mtl without Pm must default to metallic 0.0";
     }
+}
+
+TEST(ObjParseUnit, MtlPbrChannelsReachTheMaterial)
+{
+    // tinyobjloader parses .mtl Pm/Pr into material_t::metallic/roughness;
+    // the loader used to stop at diffuse/emission/dissolve/shininess and
+    // discard both.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_pbr_channels";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "pbr.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nPm 1.0\nPr 0.25\n";
+    }
+    {
+        std::ofstream obj(dir / "pbr.obj", std::ios::binary);
+        obj << "mtllib pbr.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "usemtl painted\nf 1 2 3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "pbr.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    EXPECT_FLOAT_EQ(loader.getMaterials()[0].metallic, 1.0F);
+    EXPECT_FLOAT_EQ(loader.getMaterials()[0].roughness, 0.25F);
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, AnMtlWithoutPrKeepsTheShininessSentinel)
+{
+    // No Pr directive: roughness must stay at ObjMaterial's negative
+    // sentinel so material_roughness() keeps deriving it from Ns, rather
+    // than being overwritten with tinyobjloader's Pr default of 0.0 (a
+    // perfect mirror indistinguishable from "not authored").
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_no_pr";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "no_pr.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nNs 96.0\n";
+    }
+    {
+        std::ofstream obj(dir / "no_pr.obj", std::ios::binary);
+        obj << "mtllib no_pr.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "usemtl painted\nf 1 2 3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "no_pr.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    EXPECT_LT(loader.getMaterials()[0].roughness, 0.0F)
+      << "an .mtl without Pr must keep the shininess-derived sentinel";
+
+    std::filesystem::remove_all(dir);
 }
 
 TEST(ObjParseUnit, MultiShapeObjRecordsPerShapeMeshRanges)
