@@ -103,6 +103,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
 
     std::vector<glm::vec3> tangentAccum(rangeSize, glm::vec3(0.0F));
     std::vector<glm::vec3> bitangentAccum(rangeSize, glm::vec3(0.0F));
+    std::vector<uint8_t> finalized(rangeSize, 0);
 
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
         const unsigned int corners[3] = { indices[i + 0], indices[i + 1], indices[i + 2] };
@@ -130,12 +131,23 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
         }
     }
 
+    // The loop below visits each corner once per incident triangle - the
+    // visitation order - but the write it performs is per-vertex, keyed only
+    // on accumTangent/accumBitangent/normal, none of which depend on which
+    // triangle we arrived from. A vertex of average valence ~6 in a closed
+    // triangle mesh would otherwise redo the same Gram-Schmidt, normalize and
+    // cross six times and write the same result six times; `finalized` makes
+    // the write happen once.
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
         for (unsigned int corner : { indices[i + 0], indices[i + 1], indices[i + 2] }) {
+            const std::size_t slot = corner - minCorner;
+            if (finalized[slot] != 0) { continue; }
+            finalized[slot] = 1;
+
             Vertex &v = vertices[corner];
             const glm::vec3 n = v.normal;
-            const glm::vec3 &accumTangent = tangentAccum[corner - minCorner];
-            const glm::vec3 &accumBitangent = bitangentAccum[corner - minCorner];
+            const glm::vec3 &accumTangent = tangentAccum[slot];
+            const glm::vec3 &accumBitangent = bitangentAccum[slot];
 
             glm::vec3 t = accumTangent - (n * glm::dot(n, accumTangent));
             if (glm::dot(t, t) > 1e-12F) {

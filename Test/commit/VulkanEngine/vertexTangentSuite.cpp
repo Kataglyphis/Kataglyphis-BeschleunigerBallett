@@ -7,11 +7,13 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <numbers>
 #include <vector>
 
 import kataglyphis.vulkan.vertex;
@@ -177,6 +179,67 @@ TEST(VertexUnit, TangentsForALaterRangeLeaveEarlierVerticesUntouched)
         EXPECT_NEAR(glm::dot(glm::vec3(v.tangent), v.normal), 0.0F, 1e-4F);
         EXPECT_EQ(v.tangent.w, 1.0F) << "an unmirrored chart must be right-handed";
     }
+}
+
+TEST(VertexUnit, SharedVertexTangentIsIndependentOfIncidenceCount)
+{
+    // A hexagonal fan: the centre vertex (index 0) is shared by all six
+    // triangles. computeTangents' finalize loop used to revisit and rewrite
+    // that vertex once per incident triangle; this pins that visiting it six
+    // times or once yields the exact same value, by comparing against the
+    // tangent/bitangent accumulation computeTangents itself performs,
+    // finalized here exactly once.
+    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
+    std::vector<Vertex> vertices;
+    vertices.emplace_back(glm::vec3(0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
+
+    constexpr int kSpokes = 6;
+    for (int i = 0; i < kSpokes; ++i) {
+        const float angle =
+          (2.0F * std::numbers::pi_v<float> * static_cast<float>(i)) / static_cast<float>(kSpokes);
+        const glm::vec3 pos(std::cos(angle), std::sin(angle), 0.0F);
+        vertices.emplace_back(pos, normal, glm::vec4(1.0F), glm::vec2(pos.x, pos.y));
+    }
+
+    std::vector<unsigned int> indices;
+    for (unsigned int i = 0; i < kSpokes; ++i) {
+        const unsigned int outer = 1U + i;
+        const unsigned int next = 1U + ((i + 1U) % kSpokes);
+        indices.push_back(0U);
+        indices.push_back(outer);
+        indices.push_back(next);
+    }
+
+    glm::vec3 expectedTangentAccum(0.0F);
+    glm::vec3 expectedBitangentAccum(0.0F);
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const Vertex &v0 = vertices[indices[i + 0]];
+        const Vertex &v1 = vertices[indices[i + 1]];
+        const Vertex &v2 = vertices[indices[i + 2]];
+        const glm::vec3 e1 = v1.position - v0.position;
+        const glm::vec3 e2 = v2.position - v0.position;
+        const glm::vec2 d1 = v1.texture_coords - v0.texture_coords;
+        const glm::vec2 d2 = v2.texture_coords - v0.texture_coords;
+        const float det = (d1.x * d2.y) - (d2.x * d1.y);
+        if (glm::abs(det) < 1e-8F) { continue; }
+        const float invDet = 1.0F / det;
+        expectedTangentAccum += ((e1 * d2.y) - (e2 * d1.y)) * invDet;
+        expectedBitangentAccum += ((e2 * d1.x) - (e1 * d2.x)) * invDet;
+    }
+    glm::vec3 expectedTangent = expectedTangentAccum - (normal * glm::dot(normal, expectedTangentAccum));
+    ASSERT_GT(glm::dot(expectedTangent, expectedTangent), 1e-12F)
+      << "fixture must not hit the degenerate-UV fallback path";
+    expectedTangent = glm::normalize(expectedTangent);
+    const float expectedW =
+      glm::dot(glm::cross(normal, expectedTangent), expectedBitangentAccum) < 0.0F ? -1.0F : 1.0F;
+
+    vertex::computeTangents(vertices, indices);
+
+    const glm::vec4 &actual = vertices[0].tangent;
+    EXPECT_NEAR(actual.x, expectedTangent.x, 1e-5F);
+    EXPECT_NEAR(actual.y, expectedTangent.y, 1e-5F);
+    EXPECT_NEAR(actual.z, expectedTangent.z, 1e-5F);
+    EXPECT_EQ(actual.w, expectedW);
 }
 
 TEST(VertexUnit, TangentParticipatesInEqualityAndHash)

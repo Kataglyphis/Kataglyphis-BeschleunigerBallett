@@ -11507,58 +11507,6 @@ task 4 is where most of that ratio comes from.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Make `computeTangents` finalize each vertex once instead of once per incident triangle** — the finalize loop walks corners, so a vertex shared by six triangles runs Gram-Schmidt, a `normalize` and a `cross` six times and writes the same `vec4` six times.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:85-156` — `computeTangents`.
-    `:94-105` is the min/max scan that already gives the function a
-    `[minCorner, maxCorner]` range and two range-sized accumulators;
-    `:133-155` is the finalize loop that iterates `indices` three corners at a
-    time instead of iterating that range.
-  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:19-51` — `computeFlatNormals`,
-    the sibling whose per-corner writes are genuinely order-dependent (last
-    triangle wins) and therefore must NOT get the same treatment.
-  - `Test/commit/VulkanEngine/vertexTangentSuite.cpp:139-181` —
-    `TangentsForALaterRangeLeaveEarlierVerticesUntouched`: the test that pins
-    the one behaviour this change must not break.
-  - `Test/perf/perfSuite.cpp:344-404` — `BM_ComputeTangents` and its
-    fixtures.
-
-  **Steps:**
-  1. Allocate `std::vector<uint8_t> finalized(rangeSize, 0);` next to the two
-     accumulators at `:104-105`.
-  2. In the finalize loop, skip a corner whose `finalized[corner - minCorner]`
-     is already set, and set it on the first visit. Do **not** switch the loop
-     to a plain `minCorner..maxCorner` sweep: the range is contiguous by
-     construction but nothing guarantees every index inside it belongs to this
-     primitive, and writing a fallback tangent onto an unreferenced vertex
-     would be a real behaviour change (exactly what
-     `TangentsForALaterRangeLeaveEarlierVerticesUntouched` exists to catch).
-  3. Extend the function comment: the per-corner iteration is the visitation
-     order, the per-vertex write is the semantics, and the two differ by the
-     average valence of the mesh (~6 for a closed triangle mesh).
-
-  **Test:** The output must be **bit-identical**, which the existing
-  `VertexUnit.*` suite already asserts on five fixtures — run it unchanged.
-  Add `VertexUnit.SharedVertexTangentIsIndependentOfIncidenceCount`: build a
-  fan where one centre vertex is shared by six triangles, compute tangents,
-  and assert the centre vertex's tangent equals the value obtained from the
-  same accumulators — i.e. that dropping the repeat visits changed nothing.
-
-  **Build:** `clangcl-debug` for correctness, `clangcl-profile` for the
-  numbers. Run `.\build-clangcl-profile\perfTestSuite.exe --benchmark_filter=BM_ComputeTangents`
-  before and after and quote both; the baseline row for `/512` is currently
-  45961.34 ns against `BM_ComputeFlatNormals/512`'s 3210.57 ns for the same
-  walk shape. Refresh the three `BM_ComputeTangents/*` baseline rows.
-
-  **Context:** Load-time cost, not per-frame — worth doing because it is a
-  three-line change to a function both loaders call once per primitive, and
-  because the 14× gap against the flat-normal sibling is the kind of number
-  that gets mistaken for an algorithmic problem later. `computeFlatNormals`
-  and `fillMissingFlatNormals` are deliberately out of scope: their
-  per-corner writes are the semantics (`fillMissingFlatNormals` only writes a
-  vertex whose normal is still zero, so visit order is load-bearing there).
-
 - [ ] **(S) Complete the "KEY Bindings" panel and gate it against the bindings the code actually implements** — the panel lists WASD and QE; the engine also quits on ESC and turns the camera on right-mouse-drag, neither of which appears anywhere in the UI.
 
   **Files to read:**
