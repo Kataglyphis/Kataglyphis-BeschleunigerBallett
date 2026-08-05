@@ -5830,6 +5830,111 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
                                      }();
 }
 
+// docs/model-loading.md's "srgb" row hand-summarises which `.mtl` directives
+// are sRGB-uploaded vs. linear; nothing enforced that summary against the
+// per-slot rows (textureID/emissiveTextureID/normalTextureID/
+// metallicRoughnessTextureID) that actually name those directives, so
+// `map_Ke` went missing from the srgb row three commits after
+// ObjLoader.cpp's emissive slot started resolving it. Every backtick-quoted
+// `map_...` directive named in a *TextureID row's `.mtl` cell must also
+// appear (case-insensitively) in the `srgb` row's `.mtl` cell - a mechanical
+// consequence of the table's own content, not a second hand-maintained list.
+TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "model-loading.md";
+    const auto doc_content = readFileText(doc_path);
+    ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
+
+    const auto table_start = doc_content->find("Material fields and where they come from");
+    ASSERT_NE(table_start, std::string::npos)
+      << doc_path.string() << " is missing its \"Material fields and where they come from\" section";
+    const auto table_end = doc_content->find("\n## ", table_start);
+    const std::string table_text = doc_content->substr(
+      table_start, table_end == std::string::npos ? std::string::npos : table_end - table_start);
+
+    // Split the table into "| cell | cell | ... |" rows, each row into its
+    // pipe-delimited cells (Member / glTF source / .mtl source / Read by).
+    // Non-table prose lines (no leading '|') are skipped, so the heading's
+    // own prose paragraph before the table does not confuse row 0/1 below.
+    std::vector<std::vector<std::string>> rows;
+    {
+        std::istringstream stream(table_text);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.empty() || line.front() != '|') { continue; }
+            std::vector<std::string> cells;
+            std::size_t pos = 1;// skip the leading '|'
+            while (pos < line.size()) {
+                const std::size_t next = line.find('|', pos);
+                const std::size_t end = next == std::string::npos ? line.size() : next;
+                std::string cell = line.substr(pos, end - pos);
+                const std::size_t first = cell.find_first_not_of(" \t");
+                cell = first == std::string::npos ? ""
+                                                   : cell.substr(first, cell.find_last_not_of(" \t") - first + 1);
+                cells.push_back(std::move(cell));
+                pos = end + 1;
+            }
+            rows.push_back(std::move(cells));
+        }
+    }
+    // Row 0 is the header ("| Member | ... |"), row 1 the "| --- | ... |"
+    // separator; data rows start at index 2.
+    ASSERT_GE(rows.size(), 2U) << doc_path.string() << "'s material table has no data rows";
+
+    static const std::regex kBacktickToken(R"(`([^`]*)`)");
+
+    std::string srgb_mtl_cell;
+    std::vector<std::string> required_directives;
+    for (std::size_t i = 2; i < rows.size(); ++i) {
+        const auto &cells = rows[i];
+        if (cells.size() < 3) { continue; }
+
+        std::smatch member_match;
+        if (!std::regex_search(cells[0], member_match, kBacktickToken)) { continue; }
+        const std::string member = member_match[1].str();
+
+        if (member == "srgb") { srgb_mtl_cell = cells[2]; }
+
+        const bool is_texture_id_row = member == "textureID"
+          || (member.size() > 9 && member.compare(member.size() - 9, 9, "TextureID") == 0);
+        if (!is_texture_id_row) { continue; }
+
+        for (auto it = std::sregex_iterator(cells[2].begin(), cells[2].end(), kBacktickToken);
+             it != std::sregex_iterator(); ++it) {
+            const std::string token = (*it)[1].str();
+            if (token.rfind("map_", 0) == 0) { required_directives.push_back(token); }
+        }
+    }
+
+    ASSERT_FALSE(srgb_mtl_cell.empty())
+      << doc_path.string() << "'s material table has no `srgb` row (or its `.mtl` cell is empty)";
+
+    std::string srgb_mtl_cell_lower = srgb_mtl_cell;
+    std::transform(srgb_mtl_cell_lower.begin(), srgb_mtl_cell_lower.end(), srgb_mtl_cell_lower.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    std::vector<std::string> missing;
+    for (const std::string &directive : required_directives) {
+        std::string needle = directive;
+        std::transform(
+          needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (srgb_mtl_cell_lower.find(needle) == std::string::npos) { missing.push_back(directive); }
+    }
+    std::sort(missing.begin(), missing.end());
+    missing.erase(std::unique(missing.begin(), missing.end()), missing.end());
+
+    EXPECT_TRUE(missing.empty())
+      << doc_path.string() << "'s `srgb` row's `.mtl` cell (\"" << srgb_mtl_cell
+      << "\") is missing the following directive(s) named in a *TextureID row's `.mtl` cell:" << [&missing] {
+             std::string joined;
+             for (const auto &entry : missing) { joined += "\n  add `" + entry + "` to the srgb row's .mtl column"; }
+             return joined;
+         }();
+}
+
 // docs/shader-sharing.md's "Known glTF loader divergences" section claims to
 // be the place the C++ and Rust glTF loaders stay honest with each other, but
 // nothing enforced that claim - it shipped with one bullet while at least
