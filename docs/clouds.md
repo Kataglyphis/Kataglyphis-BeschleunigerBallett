@@ -46,9 +46,9 @@ bespoke uniform buffer of its own.
 Per pixel, `clouds_main` reconstructs a view ray from the precomputed
 `inv_projection`/`inv_view` (no per-pixel `inverse()` - Slang has none for
 SPIR-V), intersects an axis-aligned box (the cloud "mesh": iquilezles' ray-box
-formula, `box_intersect`, with the inverse model matrix precomputed on the
-CPU side of the shader itself since a diagonal scale+translate inverts
-trivially) and, on a hit, ray-marches it in `num_march_steps` steps of
+formula, `box_intersect`, with the inverse model matrix formed in the shader
+itself from the box half-extents and offset, since a diagonal scale+translate
+inverts trivially) and, on a hit, ray-marches it in `num_march_steps` steps of
 **constant length** (`marchLength / num_march_steps`, not a fraction of
 distance already travelled -
 `BuildIntegrity.CloudRayMarchesUseAConstantStepLength` guards the distinction,
@@ -74,8 +74,9 @@ which once made the quality slider a de-facto density slider). Each step:
 
 `BuildIntegrity.CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance`
 pins both the phase-function sign and the powder/transmittance separation as
-text-shape guards - neither bug has a numerical oracle in this suite, so this
-is what stops either from silently reappearing.
+text-shape guards; `GoldenRender.EnablingCloudsChangesTheFrameAndAddsDetail`
+is the numerical oracle that now covers them, so a regression in either has
+both a cheap CI-side text-shape guard and a host-only rendered-pixel check.
 
 ## Resource lifecycle
 

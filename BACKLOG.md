@@ -11112,3 +11112,227 @@ the executor *does* get a console session, running
   "not in this batch" list unchanged; it still needs the image
   decode/encode decision stated up front, and nothing in this batch moved it.
 
+## 2026-08-05 batch XII — planner (refactor: a cloud model matrix that is filled in seven times and read zero, under a file header, a struct comment and an inline comment that all three describe a CPU-side inverse the C++ never writes; a post pass that hands `beginRenderPass` a clear colour its own `eLoad` attachment can never consume, next to a texture it samples twice for one texel; and the file:line citation gate — widened twice already, still stopping one directory short of `Test/`, where eighteen citations sit and five of them already point at unrelated code)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XI's five tasks all shipped
+(`d2be7ae6`, `09812a21`, `53853c9a`, `bf3e7fbc`, `146fa517`). Everything below
+was read out of the tree at `146fa517`.
+
+Tasks 1 and 2 are the two items batch XI explicitly deferred to "next batch"
+with the merge-conflict reason now gone (`09812a21` landed, so nothing else is
+editing `clouds.slang`). Both were re-verified against the current tree rather
+than carried over on trust. Task 3 is new.
+
+**No ordering constraint** — the three touch disjoint files. Tasks 1 and 2
+edit shaders that are `"targets": ["spirv"]` in `shader-manifest.json`, so
+**no WGSL regeneration is needed** and the WGSL staleness gates cannot fire on
+either; but both land gates in `buildIntegritySuite.cpp`, so all three need a
+container build plus a direct `commitTestSuite.exe` run.
+
+**Note on the `- [b]` entries.** None were flipped; none of the three tasks
+below touches a blocker. The path-tracing device-lost entry near line 2030 and
+the SBT entry near line 3563 still need a live host GPU/console session.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Stop the post pass building a clear colour its `eLoad`
+  attachment can never consume, and sampling `noisyTxt` twice for one texel** —
+  two small dead things in the one pass that composites the final frame.
+
+  `PostStage::recordCommands` builds a one-element `std::array<vk::ClearValue, 1>`
+  and sets it to `{0.2F, 0.65F, 0.4F, 1.0F}` before every
+  `buildRenderPassBeginInfo` call. But `PostStage::createRenderpass` builds its
+  single colour attachment with `vk::AttachmentLoadOp::eLoad` — deliberately,
+  and its own comment says why ("the skybox pass already rendered into this
+  swapchain image, so its contents are LOADED (not cleared)"). A clear value
+  is only ever read for an attachment whose `loadOp` is `eClear`, so this one
+  is dead: the green never reaches a pixel, and its presence invites the
+  reading that the post pass clears.
+
+  This is the *only* such site. Verified across all five
+  `buildRenderPassBeginInfo` callers: `Rasterizer`, `DeferredRasterizer`,
+  `SkyBox` and `CascadedShadowMap` all clear for real (`SkyBox` and the
+  raster stages take `buildAttachmentDescription`'s clearing default);
+  `PostStage` is the one pass that overrides all three attachment defaults.
+  The helper derives `clearValueCount` from `clear_values.size()`, so passing
+  an empty span yields `clearValueCount = 0, pClearValues = nullptr`, which is
+  correct Vulkan for a pass with no clear ops — no helper change is needed.
+
+  Second, in `Resources/ShadersSlang/post/post.slang`, `fs_main` opens with
+  two identical fetches of the same texel:
+
+  ```slang
+  float3 color = noisyTxt.Sample(In.uv).rgb;
+  float  alpha = noisyTxt.Sample(In.uv).a;
+  ```
+
+  Be honest about the payoff: any sane compiler CSEs these into one fetch, so
+  this is a readability and idiom fix, not a measured win — the value is that
+  one `float4 sampled = noisyTxt.Sample(In.uv);` makes it obvious the two
+  values come from the same texel, which is the property the compositing
+  below depends on.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp` — `recordCommands` and
+    `createRenderpass` (its comment is the evidence, keep it).
+  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` —
+    `buildRenderPassBeginInfo` and the "clearValueCount is deliberately
+    DERIVED from `clear_values.size()`" comment above it.
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp` — the two-element
+    colour+depth clear, i.e. what a pass that genuinely clears looks like.
+    Do not change it.
+  - `Resources/ShadersSlang/post/post.slang` — `fs_main` only.
+  - `Test/commit/VulkanEngine/renderPassBeginHelperSuite.cpp` —
+    `RenderPassBeginHelperUnit.ClearValueCountIsDerivedFromTheSpan` is the
+    existing pattern and the place to add the empty-span case.
+
+  **Steps:**
+  1. In `PostStage::recordCommands`, delete the `clear_values` array and its
+     assignment; pass an empty `std::span<const vk::ClearValue>{}` to
+     `buildRenderPassBeginInfo`. Add a one-line comment saying the attachment
+     is `eLoad` (see `createRenderpass`), so no clear value is declared —
+     cite the symbol, not a line number.
+  2. In `post.slang`'s `fs_main`, fetch once into a `float4` and take `.rgb`
+     and `.a` from it. Leave the compositing, the tonemap and the
+     `linear_to_srgb` encode untouched.
+  3. Recompile the shader on the host:
+     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
+
+  **Test:** Two additions.
+  - In `renderPassBeginHelperSuite.cpp`, add
+    `RenderPassBeginHelperUnit.AnEmptySpanYieldsNoClearValues` asserting that
+    for an empty span the helper produces `clearValueCount == 0` and
+    `pClearValues == nullptr`. Pure CPU, no device — matches the existing
+    tests in that file, which already run with null handles.
+  - In `buildIntegritySuite.cpp`, add
+    `BuildIntegrity.TheLoadingPostPassDeclaresNoClearValue`: read
+    `Src/GraphicsEngineVulkan/renderer/PostStage.cpp` and assert that it
+    contains `vk::AttachmentLoadOp::eLoad` **and** contains no
+    `ClearColorValue` / `vk::ClearValue`. Guard the pairing explicitly in the
+    failure message ("this pass loads its attachment, so a clear value can
+    never be consumed"), so if someone later switches the pass back to
+    `eClear` the test tells them to update the gate rather than just deleting
+    it. In the same test, assert `post.slang` contains exactly one
+    `noisyTxt.Sample` occurrence.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then from the repo root:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=RenderPassBeginHelperUnit.*:BuildIntegrity.TheLoadingPostPassDeclaresNoClearValue`
+
+  **Context:** The post pass is the last thing between the offscreen image and
+  the swapchain, so a reader who believes it clears will misread every
+  compositing question that lands here. `RenderPassHelper.hpp` already states
+  the "derive the count, never pass it" rule that makes the empty-span form
+  safe — this change is what that rule was for. Note this touches
+  `PostStage.cpp` (an implementation unit, not an `.ixx`), so
+  `-FreshContainer` is **not** required.
+
+### Test coverage / build gates
+
+- [ ] **(M) (refactor) Extend the file:line citation gate to `Test/`, and fix
+  the eighteen citations it exposes** — the gate has been widened twice for
+  exactly this rot, and the directory with the most comments in the repo is
+  still outside it. Five of the eighteen already point at unrelated code.
+
+  `BuildIntegrity.SourceAndDocsCiteSymbolsNotLineNumbers` scans `Src/`
+  (`.cpp`/`.hpp`/`.ixx`), `Resources/ShadersSlang/` (`.slang`),
+  `docs/model-loading.md` and `docs/clouds.md`. Its own comment records why it
+  keeps growing: it started scoped to one doc, "the same rotting shape had
+  already spread into `Src/` and the shaders unobserved: eighteen sites, at
+  least eight already pointing at unrelated code by the time they were found".
+  `Test/` was never added — and it is where the heavily-commented suites live.
+
+  Current state under `Test/`, measured against the gate's own two patterns:
+  **14 `file:line` citations and 7 bare `:NNN` citations**, in
+  `asyncModelParseSuite.cpp`, `buildIntegritySuite.cpp`,
+  `cascadedShadowMapSuite.cpp`, `descriptorPoolSizesSuite.cpp`,
+  `frustumSuite.cpp`, `gltfParseSuite.cpp`, `goldenRenderSuite.cpp`,
+  `guiModelTransformSuite.cpp`, `pipelineLayoutHelperSuite.cpp`,
+  `sceneUboMarshalSuite.cpp`. Five were confirmed **already stale** — the
+  cited line no longer contains anything like what the comment claims:
+
+  | Citation | Claimed | Actually there now |
+  | --- | --- | --- |
+  | `sceneUboMarshalSuite` → `clouds.slang:150-155` | the division by the mesh scale | `cloud.threshold = scene.cloudMeshOffset.w;` |
+  | `descriptorPoolSizesSuite` → `VulkanRenderer.cpp:1459-1462` | the `MAX_TEXTURE_COUNT` descriptor sizing | `supportsHardwareAcceleratedRRT()` + a deferred-lighting comment |
+  | `buildIntegritySuite` → `SkyBox.cpp:334` | the skybox push-constant site | `createGraphicsPipeline(sharedLayout);` |
+  | `goldenRenderSuite` → `cascadedShadowMapSuite.cpp:288` | the light-direction proof | `far_plane_params.splitLambda = 0.0F;` |
+  | `asyncModelParseSuite` → `GltfLoader.ixx:41-43` | "documented device-free" | `bool supported;` — a struct member |
+
+  **One wrinkle the executor must handle:** three of the seven bare-`:NNN`
+  hits are in the gate's *own* explanatory comment, which illustrates the
+  shorthand with literal examples. Adding `Test/` to the scan makes the gate
+  fail on itself. Do **not** add a path exemption for `buildIntegritySuite.cpp`
+  — that would silently un-scan the largest test file in the tree. Rewrite the
+  comment to describe the shorthand in words (a colon followed by digits,
+  optionally a range) with no literal example. A gate with no escape hatch is
+  the point.
+
+  Also note one citation lives inside a `EXPECT_*` failure-message string
+  literal, not a comment (`buildIntegritySuite.cpp`'s
+  "see raytrace.rchit.slang:75-77's SampleLevel(..., 0.0) for the fix
+  pattern"). It rots the same way and the gate catches it because it scans
+  file text, not comments — rewrite the message to name `rchit_main`'s
+  base-colour sample instead.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.SourceAndDocsCiteSymbolsNotLineNumbers`: its
+    `kFileLinePattern` / `kBareLinePattern`, the `scan_file` lambda, the two
+    `recursive_directory_iterator` loops, and the long comment above it.
+  - Each suite named in the table above, plus `frustumSuite.cpp`,
+    `gltfParseSuite.cpp`, `guiModelTransformSuite.cpp` and
+    `pipelineLayoutHelperSuite.cpp`, which also carry citations that are not
+    yet stale but will be.
+  - `docs/cpp-renderer-improvements.md` is the sole *legitimate* exemption
+    (a chronological log where a citation pinned to a historical commit is
+    correct) — read the gate comment's reasoning before deciding whether any
+    test file deserves the same treatment. None does.
+
+  **Steps:**
+  1. Add a third `recursive_directory_iterator` loop over
+     `repo_root / "Test"` scanning `.cpp` and `.hpp`, reusing `scan_file` and
+     the existing `kSrcExtensions`-style filter (drop `.ixx` — `Test/` has
+     none, but including it is harmless and future-proof).
+  2. Rewrite the gate's own comment to drop the three literal shorthand
+     examples, keeping the *reasoning* (why the shorthand rots identically)
+     intact.
+  3. Run the test. It will fail with the full violation list — that list is
+     the work queue, and it is authoritative; do not work from the table
+     above, which is a sample.
+  4. Fix every violation by replacing the location with the symbol it meant:
+     the function, member, test name or constant. Where the citation is
+     already stale, find what the comment was *describing* and cite that —
+     for the five in the table, the intended targets are respectively
+     `clouds.slang`'s `cloud.radius` / `inv_model_to_world` diagonal,
+     `VulkanRenderer.cpp`'s descriptor-pool sizing for `MAX_TEXTURE_COUNT`,
+     `SkyBox`'s push-constant range setup, `cascadedShadowMapSuite`'s
+     light-direction test by name, and `GltfLoader`'s device-free parse
+     entry point. Verify each replacement actually exists before writing it.
+  5. Re-run until the gate is green.
+
+  **Test:** The gate itself is the test — extending
+  `BuildIntegrity.SourceAndDocsCiteSymbolsNotLineNumbers` is the deliverable.
+  Confirm it is a real gate and not a no-op by temporarily reinserting one
+  `file:line` citation into any `Test/` file, watching it fail, then removing
+  it. Do not add a second overlapping test.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then from the repo root:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.SourceAndDocsCiteSymbolsNotLineNumbers`
+  Follow with a full `commitTestSuite.exe` run: this task edits comments and
+  one failure-message string across ten suites, and a mangled string literal
+  is the plausible way to break something.
+
+  **Context:** This is the third widening of the same gate, and the pattern
+  each time has been identical — the shape was already rotting in the
+  unscanned directory before anyone looked. `Test/` is the last large
+  hand-commented tree outside it. The rule the repo settled on is in the
+  gate's own comment: cite the function or member name, never a location,
+  because a function moves ten lines and the citation now points at unrelated
+  code *silently*. Note that `BACKLOG.md` is deliberately not scanned, which
+  is why this entry may quote line numbers freely.
+

@@ -7566,6 +7566,63 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
     }
 }
 
+// clouds.slang used to carry a write-only `model_to_world` (seven assignments
+// feeding nothing - box_intersect only ever consumes inv_model_to_world)
+// under three comments that all claimed the inverse was "precomputed on the
+// CPU", which is false: Slang has no inverse() for SPIR-V, so it is formed
+// inline in clouds_main from cloud.radius/cloud.offset. Guards against the
+// dead forward matrix and the CPU-precompute claim both reappearing.
+TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto clouds_contents_opt = readFileText(clouds_path);
+    ASSERT_TRUE(clouds_contents_opt.has_value()) << "missing " << clouds_path.string();
+    const std::string &clouds_contents = *clouds_contents_opt;
+
+    // std::regex here is ECMAScript, which has no lookbehind, so "not
+    // preceded by inv_" cannot be expressed directly. Every surviving
+    // occurrence of "model_to_world" must be part of "inv_model_to_world" -
+    // the two counts diverge the instant a forward matrix is reintroduced.
+    auto countOccurrences = [](const std::string &text, const std::string &needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = text.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    const std::size_t model_to_world_count = countOccurrences(clouds_contents, "model_to_world");
+    const std::size_t inv_model_to_world_count = countOccurrences(clouds_contents, "inv_model_to_world");
+    EXPECT_EQ(model_to_world_count, inv_model_to_world_count)
+      << clouds_path.string() << " contains a \"model_to_world\" occurrence that is not part of "
+                                 "\"inv_model_to_world\" - the write-only forward matrix must stay deleted";
+
+    static const std::regex kCpuAttributionClaim(
+      R"((inverse model matrix|inv_model_to_world)[^.]{0,80}(CPU|host))", std::regex::icase);
+    std::smatch clouds_match;
+    EXPECT_FALSE(std::regex_search(clouds_contents, clouds_match, kCpuAttributionClaim))
+      << clouds_path.string()
+      << " re-attributes the inverse model matrix to the CPU/host: \"" << (clouds_match.empty() ? "" : clouds_match.str())
+      << "\" - it is formed in clouds_main, not precomputed on the host";
+
+    const fs::path clouds_doc_path = repo_root / "docs" / "clouds.md";
+    const auto clouds_doc_contents_opt = readFileText(clouds_doc_path);
+    ASSERT_TRUE(clouds_doc_contents_opt.has_value()) << "missing " << clouds_doc_path.string();
+    const std::string &clouds_doc_contents = *clouds_doc_contents_opt;
+
+    std::smatch doc_match;
+    EXPECT_FALSE(std::regex_search(clouds_doc_contents, doc_match, kCpuAttributionClaim))
+      << clouds_doc_path.string()
+      << " re-attributes the inverse model matrix to the CPU/host: \"" << (doc_match.empty() ? "" : doc_match.str())
+      << "\" - it is formed in the shader, not precomputed on the host (this window is bounded to one "
+         "sentence so it cannot collide with the doc's legitimate statement that inv_projection/inv_view "
+         "ARE CPU-precomputed into GlobalUBO)";
+}
+
 // The nine cloud.<field> <- scene.<field>.<component> pairs SceneUboMarshal.hpp's
 // fillSceneUboClouds (host) and clouds_main's unpack block (shader) must
 // agree on. Shared by CloudUboPackingMatchesTheShaderUnpack (checks it

@@ -6,8 +6,10 @@ import scene_types;
 // Ray-marches a cloud volume, sampling a 3D noise texture for density,
 // with Henyey-Greenstein phase function and Beer-Lambert transmittance.
 // The box intersection (iquilezles' ray-box formula, see box_intersect
-// below) is inlined here; the inverse model matrix is precomputed on the
-// CPU (Slang has no inverse() for SPIR-V).
+// below) is inlined here; Slang has no inverse() for SPIR-V, so the inverse
+// of this diagonal-scale-plus-translate box transform is formed directly in
+// clouds_main from cloud.radius and cloud.offset instead of inverting a
+// forward matrix.
 
 static const float PI = 3.14159265358979323846;
 
@@ -23,8 +25,7 @@ struct Clouds
     int num_march_steps_to_light;
     float3 radius;
     float3 offset;
-    float4x4 model_to_world;
-    float4x4 inv_model_to_world; // precomputed on CPU
+    float4x4 inv_model_to_world;
     float threshold;
     float scale;
     float pillowness;
@@ -160,15 +161,11 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     cloud.radius = scene.cloudMeshScale.xyz * cloud.scale * 10.0;
     cloud.offset = scene.cloudMeshOffset.xyz;
 
-    cloud.model_to_world = float4x4(1.0);
-    cloud.model_to_world[0][0] = cloud.radius.x;
-    cloud.model_to_world[1][1] = cloud.radius.y;
-    cloud.model_to_world[2][2] = cloud.radius.z;
-    cloud.model_to_world[3][0] = cloud.offset.x;
-    cloud.model_to_world[3][1] = cloud.offset.y;
-    cloud.model_to_world[3][2] = cloud.offset.z;
-    // inv_model_to_world must be set on the CPU side (Slang has no inverse()).
-    // For a diagonal scale + translate, the inverse is trivial; compute it here.
+    // Slang has no inverse() for SPIR-V, so this diagonal-scale-plus-translate
+    // box transform's inverse is formed directly from cloud.radius and
+    // cloud.offset instead of inverting a forward matrix. See
+    // SceneUboMarshal.hpp's clampCloudMeshScale for why each divisor below is
+    // guaranteed non-zero.
     cloud.inv_model_to_world = float4x4(1.0);
     cloud.inv_model_to_world[0][0] = 1.0 / cloud.radius.x;
     cloud.inv_model_to_world[1][1] = 1.0 / cloud.radius.y;
