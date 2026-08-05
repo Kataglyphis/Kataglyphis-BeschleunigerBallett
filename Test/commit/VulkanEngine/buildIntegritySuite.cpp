@@ -7190,18 +7190,18 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
-// Parses the min bound out of clouds.slang's
-// `cloud.num_march_steps = int(max(scene.cloudParameters.w, MIN));`. Returns
-// nullopt if the assignment is not found, matching parse_numthreads's
+// Parses the [min, max] bounds out of clouds.slang's
+// `cloud.num_march_steps = int(clamp(scene.cloudParameters.w, MIN, MAX));`.
+// Returns nullopt if the assignment is not found, matching parse_numthreads's
 // convention so a rewritten expression fails loudly rather than matching
 // zero times.
-std::optional<float> parse_cloud_march_steps_min(const std::string &contents)
+std::optional<std::pair<float, float>> parse_cloud_march_steps_range(const std::string &contents)
 {
     static const std::regex kPattern(
-      R"(num_march_steps\s*=\s*int\(\s*max\(\s*scene\.cloudParameters\.w\s*,\s*([0-9.]+)\s*\)\s*\))");
+      R"(num_march_steps\s*=\s*int\(\s*clamp\(\s*scene\.cloudParameters\.w\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)\s*\))");
     std::smatch match;
     if (!std::regex_search(contents, match, kPattern)) { return std::nullopt; }
-    return std::stof(match[1].str());
+    return std::make_pair(std::stof(match[1].str()), std::stof(match[2].str()));
 }
 
 // Parses the [min, max] bounds out of clouds.slang's
@@ -7230,12 +7230,15 @@ TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
     const auto contents = readFileText(clouds_path);
     ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
 
-    const auto march_steps_min = parse_cloud_march_steps_min(*contents);
-    ASSERT_TRUE(march_steps_min.has_value())
-      << clouds_path.string() << ": no `num_march_steps = int(max(scene.cloudParameters.w, ...))` found";
-    EXPECT_FLOAT_EQ(*march_steps_min, static_cast<float>(Kataglyphis::kMinCloudMarchSteps))
-      << clouds_path.string() << "'s num_march_steps floor does not match CloudDispatch.hpp's kMinCloudMarchSteps ("
+    const auto march_steps_range = parse_cloud_march_steps_range(*contents);
+    ASSERT_TRUE(march_steps_range.has_value())
+      << clouds_path.string() << ": no `num_march_steps = int(clamp(scene.cloudParameters.w, ...))` found";
+    EXPECT_FLOAT_EQ(march_steps_range->first, static_cast<float>(Kataglyphis::kMinCloudMarchSteps))
+      << clouds_path.string() << "'s num_march_steps lower bound does not match CloudDispatch.hpp's kMinCloudMarchSteps ("
       << Kataglyphis::kMinCloudMarchSteps << ')';
+    EXPECT_FLOAT_EQ(march_steps_range->second, static_cast<float>(Kataglyphis::kMaxCloudMarchSteps))
+      << clouds_path.string() << "'s num_march_steps upper bound does not match CloudDispatch.hpp's kMaxCloudMarchSteps ("
+      << Kataglyphis::kMaxCloudMarchSteps << ')';
 
     const auto light_march_steps_range = parse_cloud_light_march_steps_range(*contents);
     ASSERT_TRUE(light_march_steps_range.has_value()) << clouds_path.string()

@@ -153,12 +153,8 @@ compositing branch through a push constant
 `CloudDispatch.hpp` is the single source for every dispatch-grid and
 march-step-bound constant shared between `Clouds.cpp`, `SceneUboMarshal.hpp`,
 `GUI.cpp`'s slider ranges and the two shaders' own defensive clamps. A shader
-must not trust a UBO, so `clouds_main` re-clamps both march-step counts even
-though the host already clamped them before packing - but only
-`num_march_steps_to_light` gets a shader-side ceiling; `num_march_steps`
-gets only a shader-side floor, relying on the host clamp
-(`SceneUboMarshal.hpp`'s `clampCloudMarchSteps`) and the GUI slider range for
-its ceiling.
+must not trust a UBO, so `clouds_main` re-clamps both march-step counts on
+both sides even though the host already clamped them before packing.
 
 <!-- cloud-constants:begin -->
 | Constant | Value | Shader token it pins |
@@ -167,7 +163,7 @@ its ceiling.
 | `kNoiseWorkgroupSize` | 8 | `noise.slang`'s `[numthreads(8, 8, 8)]` |
 | `kCloudWorkgroupSize` | 16 | `clouds.slang`'s `[numthreads(16, 16, 1)]` |
 | `kMinCloudMarchSteps` | 4 | `clouds.slang`'s `num_march_steps` floor |
-| `kMaxCloudMarchSteps` | 128 | Host-only (`SceneUboMarshal.hpp`'s `clampCloudMarchSteps`) - `clouds.slang` does not re-clamp this ceiling |
+| `kMaxCloudMarchSteps` | 128 | `clouds.slang`'s `num_march_steps` clamp, upper bound |
 | `kMinCloudLightMarchSteps` | 1 | `clouds.slang`'s `num_march_steps_to_light` clamp, lower bound |
 | `kMaxCloudLightMarchSteps` | 128 | `clouds.slang`'s `num_march_steps_to_light` clamp, upper bound |
 <!-- cloud-constants:end -->

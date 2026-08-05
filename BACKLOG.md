@@ -11134,3 +11134,408 @@ container build plus a direct `commitTestSuite.exe` run.
 below touches a blocker. The path-tracing device-lost entry near line 2030 and
 the SBT entry near line 3563 still need a live host GPU/console session.
 
+## 2026-08-05 batch XIII — planner (the one march-step bound whose ceiling exists on the host, in the GUI slider and in the shader's own comment — but not in the shader; a perf baseline that never grew the three rows for the function it was captured to protect, behind a comparator that reports an unmatched benchmark and exits 0; a "look mode" whose two predicates are named `should_capture_cursor`/`should_release_cursor` while the engine never calls `glfwSetInputMode` once, so a right-drag stops turning at the screen edge; the one `Scene` load entry point that neither resolves its path nor documents that it will not; and a Rust frame graph whose `PassDesc` doc promises a field it does not have)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XII's three tasks all shipped
+(`5e365528`, `7a23ad06`, `8061e608`). Everything below was read out of the
+tree at `732eee61`.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so every task here is accepted on CPU
+suites. That is not a compromise for four of the five: tasks 1, 2 and 4 land
+or extend gates that run in `commitTestSuite.exe`, task 5 is `cargo test`.
+Task 3 is the exception and says so in its own entry — the *pure* half is unit
+tested, the `glfwSetInputMode` call itself is a one-line GLFW state change
+with no headless observer.
+
+**The headline is that `kMaxCloudMarchSteps` is a host-only clamp that three
+places claim is a shader clamp too.** `CloudDispatch.hpp` declares four
+march-step bounds. `SceneUboMarshal.hpp`'s `clampCloudMarchSteps` /
+`clampCloudLightMarchSteps` apply all four before packing; `GUI.cpp`'s two
+`SliderInt` ranges use all four. `clouds.slang` re-clamps — "a shader must not
+trust a UBO" — but only three of the four literals are actually there:
+
+| bound | host | GUI slider | `clouds_main` |
+| --- | --- | --- | --- |
+| `kMinCloudMarchSteps` (4) | yes | yes | yes (`max(scene.cloudParameters.w, 4.0)`) |
+| `kMaxCloudMarchSteps` (128) | yes | yes | **no** |
+| `kMinCloudLightMarchSteps` (1) | yes | yes | yes (`clamp(..., 1.0, 128.0)`) |
+| `kMaxCloudLightMarchSteps` (128) | yes | yes | yes |
+
+The comment sitting directly above that block says "The four literals here are
+owned by `CloudDispatch.hpp`'s `kMinCloudMarchSteps`/`kMaxCloudMarchSteps`/
+`kMinCloudLightMarchSteps`/`kMaxCloudLightMarchSteps` and pinned against them
+by `BuildIntegrity.CloudMarchStepBoundsMatchTheShaderClamps`" — there are
+three literals, and the gate checks three. `docs/clouds.md`'s constants table
+says the opposite of the comment (`kMaxCloudMarchSteps` → "Host-only …
+`clouds.slang` does not re-clamp this ceiling"), so the two documents already
+disagree about the same line of code. The missing ceiling is also the more
+expensive of the two: `num_march_steps` is the OUTER loop of a nested march
+whose inner `light_march` is itself up to 128 steps, so an unclamped
+`cloudParameters.w` is the one value in the UBO that can turn a compute
+dispatch into a TDR. Task 1 makes the comment true rather than making the
+doc's exception permanent.
+
+**Second, `Test/perf/baselines/win-9070xt-32core.json` has 17 rows and
+`perfSuite.cpp` registers 20.** The three missing ones are
+`BM_ComputeTangents/1`, `/64` and `/512` — the benchmark added alongside the
+per-vertex tangent work (`bb7092ae`) and then used as the acceptance evidence
+for `0f22247c` ("scope `computeTangents`' accumulators to the touched vertex
+range"), i.e. the one function in the suite with a *known* quadratic-in-
+primitive-count history. The baseline's `context.date` is `2026-07-31`, before
+either commit. `Compare-PerfBaseline.ps1`'s header states the behaviour that
+makes this silent: "Benchmarks present in only one file are reported but never
+fatal - the suite grows over time and that alone should not fail a
+comparison." That is the right default for a *fresh* benchmark and the wrong
+one for a benchmark that has been unmatched for five days; nothing anywhere
+fails when the baseline stops covering the suite. Every other hand-maintained
+list in this repo has a gate; this one does not.
+
+**Third, "look mode" never captures anything.** `handle_mouse_button_callback`
+enters look mode on a right-press through `should_capture_cursor` and leaves
+it through `should_release_cursor`, and `WindowInputCallbacks.ixx` carries
+three separate comments about re-seeding "after (re)capture". `grep -rn
+"glfwSetInputMode\|GLFW_CURSOR" Src/` returns **nothing**: the OS cursor is
+never hidden, never grabbed, and never confined. The consequence is not
+cosmetic — with the cursor free, a right-drag that reaches a screen edge stops
+producing motion events, so the camera stops turning mid-turn and the user has
+to release, re-centre and drag again; on a multi-monitor desktop the drag
+walks onto the other screen and every subsequent event is delivered to
+whatever is there. The delta plumbing is already correct for the fix (it
+accumulates raw deltas and re-seeds on every capture transition), so this is
+the missing half of a feature the rest of the file assumes exists.
+
+**Fourth, `Scene` has four load entry points and three path-resolution
+policies.** `loadModel()` and `beginModelLoadAsync()` take no path and use
+`sceneConfig::getModelFile()` (already resolved). `loadAdditionalModel()`
+takes a `Resources/`-relative path and resolves it itself, with a comment
+saying why ("callers pass a path relative to `Resources/`, and the working
+directory differs between the app and the test executables").
+`reloadModel()` takes the same-shaped parameter, resolves nothing, and is the
+only one of the four with **no doc comment at all** in `Scene.ixx`. It works
+today for exactly one reason: its single caller,
+`VulkanRenderer::handleModelReloadRequest`, resolves first. A second caller
+reading the header — or a test — passes what `getAvailableModelPaths()`
+returns (relative to `Resources/`, e.g. `Models\Dinosaurs\dinosaurs.obj`) and
+gets `reloadModel: '…' failed to load; scene is now empty.` after
+`reloadModel` has already called `cleanUp()` and cleared `model_list`. The fix
+is safe because `resolveResourceRelativePath` is idempotent on an
+already-resolved absolute path: it builds `cwd + RELATIVE_RESOURCE_PATH /
+relativePath`, and `operator/` with an absolute right-hand side replaces the
+left, so the absolute path is tested for existence and returned unchanged.
+
+**Fifth, `render/graph.rs` documents three properties and has one.**
+`PassDesc`'s doc comment reads "A recorded pass: what it touches, and how to
+encode it" — the struct is `name`/`reads`/`writes`, with no encode field or
+callback. The module header's third selling point is "One place to add
+cross-cutting behavior — timing scopes, debug markers, or a 'disable this
+pass' toggle apply to every pass at once"; nothing in `src/` outside this file
+references `forward_frame_graph` or `validate` (`grep` finds only the module
+declaration in `render/mod.rs` and the file's own `#[cfg(test)] mod tests`).
+What *does* work is `every_timed_pass_has_a_graph_row`, and it is one-way:
+adding a `TimedPass` without a row fails, adding a row without timing passes
+silently.
+
+**Ordering.** Land 1 → 2 first and in that order: both add tests to
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` and will otherwise conflict.
+Tasks 3 and 4 each change a C++23 module interface
+(`Src/shared/frontend/WindowInputCallbacks.ixx`,
+`Src/GraphicsEngineVulkan/scene/Scene.ixx`) and therefore need
+`-FreshContainer`; tasks 1 and 2 change no compiled `Src/` output at all.
+Task 5 is Rust-only and independent of everything above. Task 1 edits a
+shader that is `"targets": ["spirv"]` in `shader-manifest.json`, so **no WGSL
+regeneration is needed** and the WGSL staleness gates cannot fire — but it
+does need `compile-slang-shaders.ps1` before the SPIR-V staleness gate is
+re-run.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Gate the perf baseline against the benchmarks `perfSuite.cpp` actually registers, and add the three `BM_ComputeTangents` rows it has been missing since 2026-07-31** — the comparator reports an unmatched benchmark and exits 0, so the suite silently outgrew its baseline on exactly the function whose optimisation the baseline exists to protect.
+
+  **Files to read:**
+  - `Test/perf/perfSuite.cpp` — every `BENCHMARK(...)` registration, in
+    particular `BENCHMARK(BM_ComputeTangents)->Arg(1)->Arg(64)->Arg(512);`
+    (the only three-arg registration) and `BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3);`
+    / `BENCHMARK(BM_FrustumCull)->Arg(64)->Arg(512);` (the two-arg shape the
+    baseline *does* cover, which is what the expansion rule must reproduce).
+  - `Test/perf/baselines/win-9070xt-32core.json` — the 17 `benchmarks[].name`
+    values and the `context` block.
+  - `Scripts/Compare-PerfBaseline.ps1` — its header comment: the
+    "present in only one file … never fatal" rule and the deliberate absence
+    of a capture mode ("a bad run should never be able to silently become the
+    new baseline"). Both constrain this task; neither is to be changed.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — it already includes
+    `<nlohmann/json.hpp>` and `<regex>`, already reads files under `Test/`,
+    and `BuildIntegrity.CloudDispatchGridsMatchTheShaderWorkgroupSizes` is
+    the "parse source text, compare against a checked-in value" shape to copy.
+  - `Test/commit/VulkanEngine/RepoFiles.hpp` — the repo-root resolution and
+    `readFileText` helpers the new gate should reuse rather than re-open
+    files by hand.
+
+  **Steps:**
+  1. Add `BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow` to
+     `buildIntegritySuite.cpp`. Parse `Test/perf/perfSuite.cpp` for
+     `BENCHMARK\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)` plus the trailing
+     `->Arg(N)` chain on the same statement (up to the `;`). Expand each
+     registration to its Google-Benchmark names: no `Arg` → the bare name;
+     one or more `->Arg(N)` → one `NAME/N` per argument. Ignore `->Unit(...)`
+     and any other chained call.
+  2. Parse `Test/perf/baselines/win-9070xt-32core.json` with `nlohmann::json`
+     and collect `benchmarks[].name`. Assert set equality in **both**
+     directions, with distinct messages: a registered benchmark with no
+     baseline row (the coverage gap this task closes) and a baseline row for
+     a benchmark that no longer exists (a stale row that should be deleted).
+     `ASSERT_TRUE` on the file reads first so a missing/renamed baseline is a
+     clear failure, not a crash.
+  3. Build `clangcl-profile` and run
+     `.\build-clangcl-profile\perfTestSuite.exe --benchmark_filter=BM_ComputeTangents --benchmark_out=tangents.json --benchmark_out_format=json`
+     from the repo root. Sanity-check the three numbers before using them
+     (they should be monotonic in the argument and in the same order of
+     magnitude as `BM_FrustumCull`; a run with a wildly noisy `cpu_time` vs
+     `real_time` split is a bad run — re-run rather than accept it).
+  4. Merge **only** the three new `benchmarks[]` objects into
+     `Test/perf/baselines/win-9070xt-32core.json`, inserted after
+     `BM_GltfParse_CubeTextured` so the file order matches registration order.
+     Do not touch the existing 17 rows and do not touch `context` — this is an
+     append, not a recapture, which is what keeps step 3's run from silently
+     becoming the baseline for anything already measured. Say so in the commit
+     message.
+  5. Re-run the new gate; it must be green with 20 == 20.
+
+  **Test:** `BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow` is
+  the deliverable. Prove both directions are live: temporarily add a
+  `BENCHMARK(BM_CameraViewMatrix)->Arg(7);` line and watch the missing-row
+  message fire, then temporarily rename one baseline row and watch the
+  stale-row message fire. Revert both.
+
+  **Build:** both presets — `clangcl-debug` for the gate,
+  `clangcl-profile` for the measurement:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations "clangcl-debug,clangcl-profile"`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow`.
+
+  **Context:** `Compare-PerfBaseline.ps1` stays exactly as it is — its
+  never-fatal rule for unmatched benchmarks is correct for a comparison run,
+  and the gate is the right place for "the baseline must cover the suite"
+  because it fails at commit time rather than at measurement time. This is the
+  same reasoning as every other list-pinning `BuildIntegrity` test in the
+  file.
+
+- [ ] **(M) Actually capture the cursor in look mode — right-drag currently stops turning the camera at the screen edge** — `should_capture_cursor` / `should_release_cursor` are named for a `glfwSetInputMode` call that does not exist anywhere in `Src/`.
+
+  **Files to read:**
+  - `Src/shared/frontend/WindowInputCallbacks.ixx` —
+    `should_capture_cursor`, `should_release_cursor`,
+    `handle_mouse_button_callback`, `handle_focus_lost` and
+    `handle_mouse_callback`'s two "track position without emitting a delta"
+    branches. Note that both capture transitions already set
+    `mouse_first_moved = true`, which is what makes a cursor warp harmless.
+  - `Src/GraphicsEngineVulkan/window/Window.cpp` —
+    `Window::mouse_button_callback`, `Window::window_focus_callback`,
+    `Window::init_callbacks` (and its comment about why the cursor-pos
+    callback must stay unconditional — do not undo that).
+  - `Src/shared/frontend/WindowInputState.hpp` — the state struct the
+    callbacks mutate.
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp` —
+    `WindowInputUnit.LookModeEntryReSeedsTheMouseOrigin`,
+    `WindowInputUnit.FocusLossEndsLookModeAndReSeedsTheMouseOrigin`,
+    `WindowInputUnit.CursorCaptureDecisionIgnoresImGuiState` and
+    `WindowInputUnit.OnlyTheRightButtonReleaseEndsLookMode` — the four tests
+    that already cover the pure half.
+
+  **Steps:**
+  1. Add a pure helper to `WindowInputCallbacks.ixx`:
+     `inline int cursor_input_mode_for(bool look_mode_active)` returning
+     `GLFW_CURSOR_DISABLED` when true and `GLFW_CURSOR_NORMAL` when false.
+     Keep it pure and window-free — the existing callbacks are unit-testable
+     precisely because they touch no GLFW state, and that property must
+     survive.
+  2. In `Window::mouse_button_callback`, after
+     `handle_mouse_button_callback` returns, compare `look_mode_active`
+     against its value before the call and, on a change, call
+     `glfwSetInputMode(window, GLFW_CURSOR, cursor_input_mode_for(...))`.
+     When entering look mode, additionally enable raw motion if available:
+     `if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);`
+     and turn it back off on exit. Only act on a transition — issuing the
+     call on every button event would fight ImGui.
+  3. In `Window::window_focus_callback`, restore `GLFW_CURSOR_NORMAL` (and
+     clear raw motion) after `handle_focus_lost`, which already forces
+     `look_mode_active = false`. Without this, alt-tabbing mid-drag leaves
+     the cursor hidden.
+  4. Leave `handle_mouse_callback` alone. Under `GLFW_CURSOR_DISABLED` GLFW
+     delivers unbounded virtual coordinates, and the existing
+     re-seed-then-accumulate logic already produces a zero first delta.
+
+  **Test:** Add `WindowInputUnit.CursorInputModeFollowsLookMode` to
+  `frontendInputSuite.cpp`: assert `cursor_input_mode_for(true) == GLFW_CURSOR_DISABLED`
+  and `cursor_input_mode_for(false) == GLFW_CURSOR_NORMAL`, then drive
+  `handle_mouse_button_callback` through press → release and
+  `handle_focus_lost`, asserting `cursor_input_mode_for(look_mode_active)`
+  ends at `GLFW_CURSOR_NORMAL` in both exit paths. Extend
+  `LookModeEntryReSeedsTheMouseOrigin` rather than duplicating its setup if
+  that reads more naturally.
+
+  **Build:** `clangcl-debug` with **`-FreshContainer`** (this edits a C++23
+  module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=WindowInputUnit.*:FrameInputUnit.*`
+
+  **Context and the honest limit:** the CPU suite can only prove the pure
+  helper and the state machine around it; that the cursor is genuinely hidden
+  and unbounded is a GLFW state change with no headless observer, and the host
+  GPU/console session that would let anyone drive the real window is the
+  blocked `- [b]` entry near the end of this file. Land it anyway — the
+  failure it fixes (a drag that dies at the monitor edge) is deterministic and
+  the call is three lines. Note for later: the Rust twin's `OrbitController`
+  has the same gap (`winit`'s `set_cursor_grab`/`set_cursor_visible` are never
+  called), but its left-drag orbit is a different interaction and does not
+  belong in this task.
+
+- [ ] **(S) Give `Scene`'s four load entry points one path-resolution contract — `reloadModel` is the only one that neither resolves nor documents that it will not** — a caller that reads `Scene.ixx` and passes what `getAvailableModelPaths()` returns wipes the scene and gets an empty one back.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp` — `loadModel`,
+    `loadAdditionalModel` (its `resolveModelPath` call and the comment
+    explaining it), `reloadModel` (no resolve, and the `cleanUp()` +
+    `model_list.clear()` that happen *before* the load can fail).
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx` — the doc comments on
+    `pollModelLoad`, `cancelPendingModelLoad`, `loadAdditionalModel` and
+    `add_model`, and the bare declaration of `reloadModel` between them.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` —
+    `handleModelReloadRequest`: the `resolveModelPath` call that is currently
+    the only reason `reloadModel` works.
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp` — `resolveModelPath` and
+    its build-relative fallback.
+  - `Src/shared/util/ResourcePaths.ixx` — `resolveResourceRelativePath`: the
+    `cwd + RELATIVE_RESOURCE_PATH / relativePath` candidate is what makes an
+    already-absolute path resolve to itself (`operator/` with an absolute
+    right-hand side replaces the left), and the `".."` rejection that an
+    absolute Windows path does not trip.
+  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` —
+    `SceneConfigUnit.ResolveModelPathFindsBundledModel` and
+    `SceneConfigUnit.AvailableModelListingsAreConsistent` are the pattern to
+    follow.
+
+  **Steps:**
+  1. In `Scene::reloadModel`, resolve the incoming path exactly as
+     `loadAdditionalModel` does
+     (`const std::string resolved = sceneConfig::resolveModelPath(modelPath);`)
+     and pass `resolved` to `loadModelByExtension`. Keep the failure log
+     printing the caller's original `modelPath` — that is what the user
+     picked — but add the resolved path to it so a miss is diagnosable.
+  2. Delete the now-redundant `resolveModelPath` call in
+     `VulkanRenderer::handleModelReloadRequest` and pass `selected_path`
+     straight through, so there is exactly one resolution point. This is safe
+     in the other direction too (resolution is idempotent), but one call site
+     is the point.
+  3. Add the missing doc comment to `reloadModel` in `Scene.ixx`, stating the
+     same contract `loadAdditionalModel`'s comment states — the path is
+     relative to `Resources/` and is resolved here — plus the fact that the
+     previous scene is torn down *before* the new load is attempted, so a
+     failed reload leaves the scene empty by design.
+  4. Re-read the four declarations together and make the parameter naming
+     consistent (`modelPath` everywhere) if it is not already.
+
+  **Test:** Add `SceneConfigUnit.ResolveModelPathIsIdempotent` to
+  `cameraSceneConfigSuite.cpp`: resolve a bundled relative model
+  (`Models/GltfTest/cube.glb`), assert the result exists, then resolve the
+  *result* and assert the two are equal. That is the property step 2 relies
+  on, and it is device-free. Do not add a `reloadModel` test — it needs a
+  device and the GPU suites are unavailable (see the `- [b]` entry).
+
+  **Build:** `clangcl-debug` with **`-FreshContainer`** (`Scene.ixx` is a
+  C++23 module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneConfigUnit.*:ModelPickerUnit.*:CameraSceneConfigUnit.*`
+
+  **Context:** this is the same class of finding as the `reloadModel`
+  extension-dispatch bug already fixed in this function ("`reloadModel`
+  constructed `ObjLoader` directly, so picking a `.glb` from the GUI fed glTF
+  bytes to the OBJ parser") — one entry point that did not adopt a rule the
+  others share. Fix the rule, not just this caller.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) (refactor) Make `render/graph.rs` describe what it is, and make its one real check bidirectional** — `PassDesc`'s doc promises "how to encode it" on a struct with no encode field, the module header promises a cross-cutting-behaviour hook that nothing uses, and adding a graph row with no GPU timing passes silently.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/graph.rs` — the module header's three
+    numbered claims, `PassDesc`'s doc comment, `forward_frame_graph`'s
+    "maximal frame" comment, `graph_pass_name` and
+    `every_timed_pass_has_a_graph_row`.
+  - `crates/webgpu_renderer/src/render/gpu_timing.rs` — `TimedPass`, its
+    `ALL` array and what each variant is scoped around.
+  - `crates/webgpu_renderer/src/render/mod.rs` — confirms `pub mod graph;` is
+    the only reference to the module outside its own tests.
+
+  **Steps:**
+  1. Rewrite `PassDesc`'s doc comment to describe the three fields it has:
+     a declared pass — its name and the resources it reads and writes. Drop
+     "and how to encode it".
+  2. Rewrite the module header's claim 3. The module is a *declaration* of
+     the frame plus a validator, checked against `TimedPass`; it is not a
+     hook point and no pass is recorded through it. Say that plainly and keep
+     claims 1 and 2, which are true. Do not add a "future work" note.
+  3. Make the timing check bidirectional: keep
+     `every_timed_pass_has_a_graph_row`, and add
+     `every_graph_row_is_timed_or_explicitly_untimed` — a test that walks
+     `forward_frame_graph()` and requires each row's name to be either the
+     target of some `graph_pass_name(pass)` or a member of a small
+     `UNTIMED_ROWS` const in the test module. Seed `UNTIMED_ROWS` with
+     `"depth_resolve"` (the one row with no `TimedPass` today) and give the
+     const a comment saying that adding to it is a deliberate statement that
+     a pass is not worth timing, not a way to silence the test.
+  4. `graph_pass_name` stays `#[cfg(test)]` and stays a `match` — that is
+     what makes a new `TimedPass` variant a compile error, and the new test
+     depends on the same exhaustiveness.
+
+  **Test:** the two `#[cfg(test)]` tests in `graph.rs` are the deliverable.
+  Prove the new one is live by temporarily adding a `PassDesc` row named
+  `"overlay"` to `forward_frame_graph()` with `reads: &[Resource::Output]`
+  and `writes: &[]`, watching `every_graph_row_is_timed_or_explicitly_untimed`
+  fail, then removing it. (Do not leave that row in: an egui overlay reads
+  *and* writes `Output`, which `validate`'s write-once rule cannot express —
+  worth its own task if the overlay is ever wanted in the graph.)
+
+  **Build / verify:** the host MSVC linker is broken for this crate (see the
+  submodule note in memory and the always-on Linux lane), so verify with
+  `cargo test -p kataglyphis_webgpu_renderer --lib graph` if it links, and
+  otherwise with
+  `cargo clippy -p kataglyphis_webgpu_renderer --all-targets -- -D warnings`
+  plus `cargo fmt --check`, from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. The always-on
+  `ubuntu-24.04` lane runs `Scripts/Linux/run-cargo-tests.sh` on push and is
+  the authoritative signal. No C++ build is needed and no shader is touched.
+
+  **Context:** this is not a request to build a real render graph — the
+  module's own header explains why explicit ordering is the right call at this
+  scale, and that reasoning still holds. It is a request that the file stop
+  claiming two capabilities it does not have, and that the one invariant it
+  does enforce close in both directions.
+
+**Not in this batch, recorded so it is not lost.**
+
+- **`sceneConfig::scanAvailableModels()` latches on a partially-failed walk.**
+  The `s_models_scanned = true` assignment is placed after the
+  `exists(models_dir)` check specifically so that a call made before the
+  working directory can see `Resources/Models` is free to retry — its comment
+  says so. But it is placed *before* the `recursive_directory_iterator`
+  constructor, which takes its own `std::error_code`; if that fails (or
+  `it.increment(ec)` fails on the first entry) the empty list is cached for
+  the rest of the process and the GUI shows "No loadable models" forever. Two
+  lines to move. Not sized because inducing an iterator-construction failure
+  in a test needs a filesystem fixture this suite has no pattern for; fold it
+  into the next task that touches `SceneConfig.cpp` and can justify the
+  harness.
+
+- **`DeferredRasterizer::recordCommands` indexes `descriptorSets[0]` without
+  the empty-span guard its sibling has.** `Clouds::recordComputeCommands`
+  opens with an `if (descriptorSets.empty())` error-and-return;
+  `DeferredRasterizer` and `Rasterizer` both dereference index 0 immediately.
+  All callers pass a non-empty span today. Too small for its own task and the
+  wrong shape for a gate; pick it up with the next change to either stage.
+
+- **`obj_to_gltf`'s `map_d` gap is still open** — carried over unchanged from
+  batches X, XI and XII. It still needs the image decode/encode decision
+  stated up front, and nothing in this batch moved it.
+

@@ -145,7 +145,7 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     // CloudDispatch.hpp's kMinCloudMarchSteps/kMaxCloudMarchSteps/
     // kMinCloudLightMarchSteps/kMaxCloudLightMarchSteps and pinned against
     // them by BuildIntegrity.CloudMarchStepBoundsMatchTheShaderClamps.
-    cloud.num_march_steps = int(max(scene.cloudParameters.w, 4.0));
+    cloud.num_march_steps = int(clamp(scene.cloudParameters.w, 4.0, 128.0));
     cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, 1.0, 128.0));
     cloud.scale = scene.cloudMeshScale.w;
     cloud.threshold = scene.cloudMeshOffset.w;
