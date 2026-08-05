@@ -50,8 +50,10 @@ struct CascadeFitParams {
     float shadowDistance{ 0.0F };
     // splitLambda blends logarithmic (1.0) against uniform (0.0) splits. See
     // the measurements in the implementation before raising it: high lambda
-    // starves subjects that are framed from a distance.
-    float splitLambda{ 0.5F };
+    // starves subjects that are framed from a distance. Defaults to 0.0F to
+    // track GUISceneSharedVars::cascade_split_lambda, whose 0.0F is the
+    // measured choice pinned in guiSceneVarsRoundTripSuite.cpp.
+    float splitLambda{ 0.0F };
     // shadowMapResolution (optional): when > 0, cascades are STABILIZED - the
     // light basis is world-fixed (pure rotation), the ortho box is sized from
     // the slice's bounding radius (camera-motion invariant), and its center
@@ -133,7 +135,7 @@ class CascadedShadowMap
       float farPlane,
       const glm::vec3 &lightDir,
       float shadowDistance = 0.0F,
-      float splitLambda = 0.5F);
+      float splitLambda = 0.0F);
     const std::vector<CascadeData>& getCascadeData() const { return cascadeData; }
 
     // Uploads the current cascadeData into this swapchain image's own light

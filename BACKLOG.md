@@ -11277,3 +11277,241 @@ re-run.
   batches X, XI and XII. It still needs the image decode/encode decision
   stated up front, and nothing in this batch moved it.
 
+## 2026-08-05 batch XIV — planner (two shadow tunables that exist in the struct, in the renderer and in a measured comment, and in no GUI control; a model scan that latches its empty result when the directory walk fails rather than when the directory is missing; the engine's own chronological change log, 44 commits stale and quoting a test count that is off by 573; seventeen read-only accessors that are the only non-`const` ones left in the tree; and the two flat-normal siblings of the one benchmark that had to be added by hand last cycle)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XIII's five tasks all shipped
+(`f4e6d623`, `33f6e016`, `6c4191ab`, `d41eb037`, `1e2b1c50`). Everything
+below was read out of the tree at `1e2b1c50`.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so every task here is accepted on CPU
+suites — and unusually, that costs nothing this cycle: none of the five
+changes what a frame looks like. Tasks 1, 3, 4 and 5 land or extend gates in
+`commitTestSuite.exe`; task 2 is a pure-function unit test. Task 1's two new
+sliders are the only runtime-visible change, and they default to exactly the
+values the renderer already passes.
+
+**The headline is that `shadow_distance` and `cascade_split_lambda` are the
+only two `GUISceneSharedVars` tunables with no control anywhere in
+`GUI.cpp`.** Both are read every frame by `VulkanRenderer::updateUniformBuffers`
+and handed to `CascadedShadowMap::updateCascades`; both carry the longest
+comments in the struct, and both comments read as instructions to a user who
+can change them:
+
+| field | struct comment says | GUI control |
+| --- | --- | --- |
+| `pcf_radius` | — | `SliderInt("PCF radius", …)` |
+| `cascaded_shadow_intensity` | — | `SliderFloat("Shadow intensity", …)` |
+| `num_shadow_cascades` | — | `SliderInt("# cascades", …)` |
+| `shadow_map_res_index` | — | `Combo("Shadow Map Resolution", …)` |
+| `shadow_distance` | "How far shadows are fitted, independent of the camera far plane … Geometry past this is unshadowed, which is the intended trade." | **none** |
+| `cascade_split_lambda` | "Defaults OFF because measurement did not support turning it on for the scenes we ship … **Raise it only for a camera that sits close to its subject, where it does help** (1.52 -> 1.01 cm/texel at 0.35). See the table in `CascadedShadowMap.cpp`." | **none** |
+
+"Raise it only for…" is advice that currently requires an edit-and-rebuild.
+Both are also safe to expose today without new clamping: `computeCascadeDataInto`
+already clamps `splitLambda` into `[0,1]` itself and already falls back to
+`farPlane` when `shadowDistance <= 0`. The same reading turns up one default
+drift: `CascadedShadowMapParams::splitLambda` and `updateCascades`' trailing
+parameter both default to `0.5F` while the GUI default — the one every frame
+actually uses, and the one `guiSceneVarsRoundTripSuite.cpp` pins with a
+measured rationale — is `0.0F`. That is the same "startup path reads its
+default from the wrong side of the boundary" shape batch VIII already fixed
+once for the cascade count.
+
+**Second, `sceneConfig::scanAvailableModels()` latches on the wrong event.**
+Its `s_models_scanned = true` was deliberately moved *after* the
+`exists(models_dir)` check — its comment says why: "a call made before the
+working directory finds `Resources/Models` must be free to retry". But it
+sits *before* the `recursive_directory_iterator` constructor, which takes its
+own `std::error_code`. If that constructor fails, the loop body never runs,
+the two caches stay empty, and the empty result is cached for the life of the
+process: the GUI shows "No loadable models (.obj/.gltf/.glb) found in
+Resources/Models/" forever, and `defaultSelectedModelIndex` returns `-1`,
+which is the value `handleModelTransformChange` gates the Position/Rotation
+controls on. This was recorded in batch XIII's not-in-batch list as unsizable
+because "inducing an iterator-construction failure in a test needs a
+filesystem fixture this suite has no pattern for". That is no longer true and
+is the reason it is sized now: **constructing a `recursive_directory_iterator`
+over an existing regular file sets the error code**, so `AGENTS.md` — a file
+guaranteed to exist at the repo root, already located by `repoRoot()` — is the
+whole fixture.
+
+**Third, `docs/cpp-renderer-improvements.md` is 44 commits stale.**
+`AGENTS.md`'s routing table sends every agent refactoring the renderer to it
+("log the change in `docs/cpp-renderer-improvements.md`") and its Docs table
+names it the owner of the "C++ engine chronological change log". Its last row
+landed at `fc637887`; since then 44 commits have touched `Src/` or
+`Resources/ShadersSlang/` with no entry — including the glTF material
+completion (normal/metallic-roughness/emissive textures, per-slot
+`KHR_texture_transform`, `KHR_materials_unlit`, `Pm`/`Pr`, `map_Bump`/`norm`,
+`map_Ke`, `map_d`), the shared-Slang-module consolidation, four ray/path
+tracing correctness fixes, six clouds fixes, the TBN multiply-order fix, and
+both input fixes. The header is worse than absent: it states "72 tests at
+campaign start, 103 as of 2026-07-23" against a suite that today registers
+676 `TEST`/`TEST_F`/`TEST_P` cases across 58 files. Every other
+hand-maintained number in this repo has a gate; this one is quoted in the
+first paragraph of the most-linked doc in the tree and has none.
+
+**Fourth, seventeen accessors are the last non-`const` read-only members in
+`Src/`.** `VulkanDevice` marks all sixteen of its query accessors `const`;
+`Scene`, `Model`, `Mesh`, `Window`, `DeferredRasterizer`, `SkyBox`, `Clouds`
+and `CascadedShadowMap` mark none of theirs. The blocker people assume — that
+`Scene::findModel`/`findMesh` return mutable pointers — is not real:
+`model_list` is `std::vector<std::shared_ptr<Model>>`, and `.get()` on a
+`const shared_ptr<Model>&` yields a plain `Model*`, so constness does not
+propagate through. The same is true of the four `unique_ptr`-backed
+`get*Texture()`/`getMesh()` accessors.
+
+**Fifth, `computeFlatNormals` and `fillMissingFlatNormals` have no
+benchmark** while their sibling `computeTangents` does — and
+`BM_ComputeTangents` only exists because the quadratic-accumulator fix
+(`0f22247c`) needed acceptance evidence, i.e. it was added *after* the bug.
+All three walk the same `indices[firstIndex..]` shape and all three are
+called once per primitive by both loaders. `transformAABB` has none either,
+and it is the one function here that runs per mesh per pass per frame (the
+camera walk and the shadow walk each call it for every mesh in the scene).
+Task 5 is measurement, not optimisation: the numbers are the prerequisite for
+deciding whether the per-frame `transformAABB` deserves caching at all.
+
+**Ordering.** Land 1 → 3 → 4 → 5 in that order: all four add tests to
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` and will otherwise
+conflict. Task 2 touches only `SceneConfig.{ixx,cpp}` and
+`cameraSceneConfigSuite.cpp` and is independent of the other four. Tasks 1, 2
+and 4 change C++23 module interfaces and therefore need `-FreshContainer`;
+tasks 3 and 5 change no `Src/` output at all. No task in this batch touches a
+`.slang` file, so no shader recompile and no WGSL regeneration is needed and
+the staleness gates cannot fire.
+
+- [ ] **(M) Make `sceneConfig::scanAvailableModels()` latch on a *successful* walk, not a reachable directory, behind a seam a test can fail** — a failed `recursive_directory_iterator` construction currently caches "no models" for the rest of the process.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp` — `scanAvailableModels()` in the anonymous namespace: the `s_models_scanned = true` assignment, its comment, and the `recursive_directory_iterator it(models_dir, skip_permission_denied, ec)` construction two lines below it
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.ixx` — the exported surface (`getAvailableModelPaths`, `getAvailableModelDisplayNames`, `defaultSelectedModelIndex`)
+  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` — the existing `defaultSelectedModelIndex` tests and the `repoRoot()` usage pattern
+  - `Test/fuzz/scene_config_fuzz_test.cpp` — `SceneConfigFuzz.ListingModelsIsStable`, which exercises the cached path and must keep passing
+
+  **Steps:**
+  1. Add an exported struct and free function to `SceneConfig.ixx`:
+     `struct ModelScanResult { std::vector<std::string> paths; std::vector<std::string> displayNames; bool complete; };`
+     and `auto scanModelsUnder(const std::filesystem::path &resourcesRoot) -> ModelScanResult;`. Document that `complete` is false iff the walk could not be started or was aborted by an error, and that a false `complete` means the caller must be free to retry.
+  2. Move the body of `scanAvailableModels()` — everything from the `models_dir` computation through the iteration loop — into `scanModelsUnder`, taking the resources root as a parameter instead of calling `findResourcesBasePath()`. Set `complete = false` and return early when `!exists(models_dir, ec) || ec`, and set `complete = false` when the `recursive_directory_iterator` constructor sets `ec` or when the loop exits with `ec` set. Per-entry failures (`is_regular_file`, `relative`) keep the existing `continue` and do **not** clear `complete` — one unreadable file is not a failed scan.
+  3. Rewrite `scanAvailableModels()` as: call `scanModelsUnder(findResourcesBasePath())`, and only if `result.complete` move the two vectors into the caches and set `s_models_scanned = true`. Replace the existing comment with one that names the actual invariant: the latch means "a complete walk has happened", not "the directory existed".
+  4. Verify `getAvailableModelPaths()` / `getAvailableModelDisplayNames()` still return spans over the caches and that both vectors stay the same length — the two are indexed in lockstep by `GUI.cpp`'s combo.
+
+  **Test:** Add to `cameraSceneConfigSuite.cpp`:
+  - `SceneConfigUnit.ScanningARegularFileReportsAnIncompleteWalk` — call `scanModelsUnder(repoRoot() / "AGENTS.md")` and assert `complete == false` with both vectors empty. Constructing a `recursive_directory_iterator` over a regular file sets its `std::error_code`; this is the fixture-free way to induce the failure batch XIII could not.
+  - `SceneConfigUnit.ScanningAMissingDirectoryReportsAnIncompleteWalk` — same for `repoRoot() / "NoSuchDirectory"`, pinning the pre-existing retry contract.
+  - `SceneConfigUnit.ScanningTheRepoResourcesFindsTheDefaultDebugModel` — call `scanModelsUnder(repoRoot() / "Resources")`, assert `complete == true`, `paths.size() == displayNames.size()`, and that `defaultSelectedModelIndex(result.paths, defaultModelRelativePath())` is `>= 0`. Skip with `GTEST_SKIP()` if `Resources/Models` is absent, matching how the other repo-reading tests in this suite guard themselves.
+
+  **Build:** `clangcl-debug` with `-FreshContainer` (`SceneConfig.ixx` gains exports):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneConfig*:CameraSceneConfig*` and the fuzz executable's `SceneConfigFuzz.*` from the repo root.
+
+  **Context:** Carried over from batch XIII's not-in-batch list, now sized because the fixture problem has an answer (see the batch preamble). Keep the extraction mechanical — this task's value is entirely in the latch condition and the error contract, so do not also change what counts as a supported model, how display names are computed, or the caches' types. The `complete` flag is deliberately a plain `bool` rather than a `std::expected`: the caller has nothing to do with *which* error occurred, only whether to retry.
+
+- [ ] **(M) Bring `docs/cpp-renderer-improvements.md` up to date — 44 commits of drift — and pin the test count it quotes** — the doc `AGENTS.md` sends every renderer change to has no entry for anything that shipped since `fc637887`, and its opening paragraph claims a suite size that is off by 573.
+
+  **Files to read:**
+  - `docs/cpp-renderer-improvements.md` — the header paragraph ("72 tests at campaign start, 103 as of 2026-07-23") and the `## Shipped` table's row format, including the existing multi-hash rows (`\`876a151f\`, \`c743d99d\`, …`) that group a theme into one row
+  - `AGENTS.md` — the routing table row and the Docs table row that both name this file as the owner
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `BuildIntegrity.ModelLoadingDocMatchesMaxTextureCount` and its `parse_max_texture_count_marker` helper: the `<!-- key: N -->` marker-plus-gate shape to copy
+  - `git log --oneline fc637887..HEAD -- Src Resources/ShadersSlang` — the 44 commits to cover
+
+  **Steps:**
+  1. Append grouped rows to the `## Shipped` table, one per theme, each citing its commit hashes the way the existing multi-hash rows do. Derive the grouping from `git log` rather than trusting this list, but it should come out close to: glTF material completion (`47371a1a`, `e0e25ee6`, `4bf4bba0`, `54a39af2`, `4b3f438d`, `f01fb288`, `3143e92a`, `f5e27d46`, `135aebb8`, `8a728c26`, `937ad16d`, `ddbdb1b4`, `c812eef8`, `70658a67`); shared-Slang-module consolidation (`0c5c57b0`, `13f377b6`, `c9ba1be6`, `9ee460cb`, `a94358e1`, `e5ad0863`, `53853c9a`); ray/path-tracing correctness (`f2cb4cb4`, `1df30964`, `b7f2ecc4`, `d2be7ae6`); clouds (`2802c163`, `9ae2679b`, `fb278765`, `09812a21`, `5e365528`, `f4e6d623`); normal mapping and tangents (`e1d3fb8b`, `0f22247c`); input and window (`fafa67f2`, `6c4191ab`); loader/renderer plumbing (`bc021c43`, `d41eb037`, `86371ffd`, `caba3c20`, `994cbf4a`, `7a23ad06`); gates and tooling (`c1cd8fad`, `aec130c2`, `8061e608`, `33f6e016`, `45011e7d`, `146fa517`, `bf3e7fbc`).
+  2. Write each Notes cell the way the existing ones are written: what was wrong, what it now does, and the evidence — not a restatement of the commit subject. Where a commit's own message already contains the measurement (the clouds fixes, `0f22247c`, `33f6e016`), quote the number.
+  3. Replace the header's parenthetical with the current figure and add a marker line `<!-- commit-suite-test-count: N -->` directly beneath the paragraph, where N is the count the gate below computes.
+  4. Do not add `file:line` citations anywhere — `SourceAndDocsCiteSymbolsNotLineNumbers` does not scan this file (it is the one deliberate exemption, for exactly the historical-citation reason this doc exists), but the rest of the tree's convention is symbol names and the new rows should read the same way.
+
+  **Test:** Add `BuildIntegrity.ImprovementLogQuotesTheCurrentCommitSuiteTestCount`: parse `<!-- commit-suite-test-count: N -->` out of `docs/cpp-renderer-improvements.md`, then count lines matching `^(TEST|TEST_F|TEST_P)\(` across every `.cpp` under `Test/commit/VulkanEngine/`, and assert equality. Fail loudly (not skip) when the marker is missing, so deleting it cannot pass. The failure message must say the marker is a one-line update and point at the doc. This gate is deliberately churny — every test-adding change will now also touch one line of this doc; that is the price of the number in the first paragraph being true, and it is the same trade `PerfBaselineCoversEveryRegisteredBenchmark` already makes.
+
+  **Build:** `clangcl-debug` (no `Src/` change, so no `-FreshContainer` needed):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
+
+  **Context:** This doc is linked from `AGENTS.md` twice, from `BACKLOG.md`, and from the per-unit verification loop in `docs/gpu-golden-testing.md`; it is the first thing a new agent reads to learn what the renderer already does and why. A 44-commit hole in it is why the same material-loading gaps kept being rediscovered one field at a time through batches XI–XVII. Write the rows as a chronologist, not a changelog generator: the table's value is the *why*, and the git history already has the *what*.
+
+- [ ] **(S) (refactor) Make the seventeen remaining read-only accessors `const`, and gate the rule** — `VulkanDevice` marks all of its query accessors `const` and eight other types mark none of theirs, so a read-only helper cannot take a `const` reference to any of them.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.ixx` — the convention to match (every `get*`/`supports*` accessor is `const`)
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx` — `getModelCount`, `getModelMatrix`, `getMeshCount`, `getTextureCount`, `getTextureCountPerModel`, `getMeshBounds`, `getObjectDescriptions`, `get_model_list`, and `findModel`/`findMesh`
+  - `Src/GraphicsEngineVulkan/scene/Model.ixx` — `getTextureCount`, `getMeshCount`, `getModel`
+  - `Src/GraphicsEngineVulkan/scene/Mesh.ixx` — `getVertexCount`, `getIndexCount`
+  - `Src/GraphicsEngineVulkan/window/Window.ixx` — `get_should_close`, `get_keys`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx` — `getGBufferNormal`, `getGBufferAlbedo`, `getGBufferMaterial`, `getDepthBufferImageView`
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx` (`getMesh`), `.../atmospheric_effects/clouds/Clouds.ixx` (`getCloudOutputTexture`), `.../light/directional_light/CascadedShadowMap.ixx` (`getShadowMapArray`)
+  - `Src/GraphicsEngineVulkan/renderer/QueueFamilyIndices.ixx` — `is_valid()`, the same shape one level down
+
+  **Steps:**
+  1. Add `const` to each accessor above whose body is a plain read. The four `unique_ptr`-backed ones (`getCloudOutputTexture`, `getShadowMapArray`, `getMesh`, `getDepthBufferImageView`) are safe: `std::unique_ptr<T>::get() const` returns `T*`, so constness does not propagate to the pointee. The same argument covers `Scene::findModel`/`findMesh` over `std::vector<std::shared_ptr<Model>>` — do them too, and let that carry `getModelMatrix`/`getMeshCount`/`getTextureCount`/`getMeshBounds` along.
+  2. Work bottom-up (`Mesh` → `Model` → `Scene`) and let the compiler drive: anything that will not compile `const` stays non-`const` and gets a one-line comment saying which member forced it. Do not reach for `mutable` or `const_cast`.
+  3. Add `const` to `QueueFamilyIndices::is_valid()` in the same pass.
+  4. **Do not** change any function *signature* that takes these types — in particular leave `walkSceneMeshes`/`recordSceneMeshDraws` taking `Kataglyphis::Scene *`. Widening the draw walk to `const Scene *` is a separate change with its own review surface; this task is the prerequisite, not the change.
+  5. Do not touch `getObjectDescriptions`' return-by-value — that copy is a real cost but its single caller copies anyway, and changing it to a span is a separate task.
+
+  **Test:** Add `BuildIntegrity.ReadOnlyAccessorsAreConst`: scan every `.ixx` and `.hpp` under `Src/` for inline accessor definitions matching a `get[A-Z_]…` / `get_[a-z]…` / `is[A-Z]…` name followed by a parameter list and an opening brace on the same line, and fail for any whose declaration does not contain ` const`. Carry an explicit exemption array of the accessors step 2 proved cannot be `const`, each with the member that forced it, so the list is self-documenting. Report all violations at once. Existing coverage (`sceneAccessorSuite.cpp`, `meshRangeSliceSuite.cpp`) must stay green unchanged — a pure `const` addition changes no behaviour.
+
+  **Build:** `clangcl-debug` with `-FreshContainer` (many module interfaces change):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe` in full — a `const` sweep either compiles or it does not, and the whole suite is the check.
+
+  **Context:** Seventeen is a small enough number to finish in one pass and large enough that the rule is worth pinning; without the gate the next accessor added will be non-`const` like its neighbours. The gate is also the reason to write the exemption list honestly rather than silently skipping whatever fails — an accessor that *cannot* be `const` is a fact about the type worth recording next to it.
+
+- [ ] **(S) Benchmark the two flat-normal functions and `transformAABB`, and re-capture the baseline rows the new gate now demands** — `computeTangents` is the only one of the three vertex-pass functions with perf coverage, and it only got it because a quadratic bug needed acceptance evidence after the fact.
+
+  **Files to read:**
+  - `Test/perf/perfSuite.cpp` — `BM_ComputeTangents` (the per-primitive `firstIndex` walk to mirror), `BM_FrustumCull` / `makeRandomAABBs` / `representativeFrustumPlanes` (the fixed-seed generator and camera constants to reuse)
+  - `Src/GraphicsEngineVulkan/scene/Vertex.ixx` — the contracts for `computeFlatNormals`, `fillMissingFlatNormals`, `computeTangents`
+  - `Src/GraphicsEngineVulkan/scene/Frustum.ixx` / `Frustum.cpp` — `transformAABB`, and `MeshDrawRecorder.ixx`'s `walkSceneMeshes` for where it is called from
+  - `Test/perf/baselines/win-9070xt-32core.json` — the 20 existing rows and the `context` block
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow`, which asserts set equality in both directions and will go red the moment a benchmark is registered without a row
+  - `Scripts/Compare-PerfBaseline.ps1` — its header states the refresh procedure
+
+  **Steps:**
+  1. Add `BM_ComputeFlatNormals` and `BM_FillMissingFlatNormals` next to `BM_ComputeTangents`, reusing its quad-strip fixture and its `->Arg(1)->Arg(64)->Arg(512)` shape so the three are directly comparable. For `BM_FillMissingFlatNormals`, zero the normals of a deterministic subset (say every third vertex) before the loop so the function's "only fill near-zero corners" branch is actually exercised — a fixture where every normal is already valid measures the wrong path.
+  2. Add `BM_TransformAABB` over `makeRandomAABBs(state.range(0))` with a non-trivial model matrix (translate × rotate × non-uniform scale — the mirrored/non-uniform case is the one whose eight-corner walk exists for), `->Arg(64)->Arg(512)` to match `BM_FrustumCull`'s arguments so the cull and the transform can be read side by side.
+  3. Build `clangcl-profile` and run `perfTestSuite.exe` twice; keep the run only if the two agree and the numbers are monotonic in the argument. Append the six new rows to `win-9070xt-32core.json` — **append only**, exactly as `33f6e016` did: leave the existing 20 rows and the `context` block untouched, and say so in the commit message.
+  4. Re-run `BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow` and confirm it is green in both directions.
+
+  **Test:** The gate above *is* the test and it is currently green — the task's own success criterion is that it stays green after six new registrations, which it can only do if the baseline was updated. Additionally run `Scripts/Compare-PerfBaseline.ps1` against the fresh run and confirm it reports zero unmatched benchmarks (its never-fatal-on-unmatched rule means a non-empty unmatched list is the signal, not the exit code).
+
+  **Build:** `clangcl-profile` — the only configuration where benchmarks mean anything:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile`
+  then run `.\build-clangcl-profile\perfTestSuite.exe --benchmark_out=... --benchmark_out_format=json` from the repo root, and `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*Benchmark*` for the gate.
+
+  **Context:** This is measurement, not optimisation, and the entry should not turn into one. `transformAABB` runs `models × meshes × 2 passes` times per frame (sponza is 373 meshes), each call eight `mat4 × vec4` products plus sixteen component-wise min/max — whether that is worth caching per mesh is a question this benchmark exists to answer, and nobody should cache anything before the number is on paper. The flat-normal pair is the cheaper half of the task and the more historically-motivated: `computeTangents`' accumulator bug was quadratic in primitive count, both siblings walk the same `firstIndex` shape, and neither has ever been measured.
+
+### Not in this batch, recorded so it is not lost
+
+- **`Camera::set_fov` / `set_near_plane` / `set_far_plane` have no production
+  callers** — only `cameraSceneConfigSuite.cpp` calls them. That also means
+  `PathTracingHistoryKey`'s omission of the projection matrix is currently
+  harmless: the only runtime path that changes the projection is a resize,
+  and `createPathTracingAccumulationResources` already resets the frame
+  counter there. If a FOV control is ever added to the GUI, the key must gain
+  the projection in the same change or the running mean will blend samples
+  from two different fields of view. Not sized because the right fix depends
+  on whether the setters are wanted at all — `Mesh`'s unread model-matrix
+  setter was deleted for the same reason (`fc637887`), but a camera's FOV is a
+  more defensible piece of API to keep unused.
+
+- **`sample_alpha`/`sample_alpha_lod0` transform their UV with the
+  *base-colour* slot's `KHR_texture_transform`** while the normal,
+  metallic-roughness and emissive slots each got their own named accessor in
+  `base_color.slang`. It is a no-op today by construction — `alphaTextureID`
+  is set only by the OBJ loader (`map_d`) and OBJ materials always carry
+  identity transform rows — so this is a latent inconsistency, not a bug. Fold
+  it into the next task that touches `material_textures.slang` and can justify
+  either an `alpha_uv()` accessor or a comment saying why the base-colour pair
+  is the right one for `map_d`.
+
+- **`DeferredRasterizer::recordCommands` still indexes `descriptorSets[0]`
+  without the empty-span guard its sibling has** — carried over unchanged from
+  batch XIII. `Clouds::recordComputeCommands` opens with an
+  `if (descriptorSets.empty())` error-and-return; `DeferredRasterizer` and
+  `Rasterizer` both dereference index 0 immediately. Still too small for its
+  own task and still the wrong shape for a gate; pick it up with the next
+  change to either stage.
+

@@ -11693,3 +11693,48 @@ TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
         return joined;
     }();
 }
+
+// GUISceneSharedVars.ixx has grown eleven fields since GUI.cpp's shadow block
+// was written, and nothing has ever checked that a new one is reachable from
+// the GUI. shadow_distance and cascade_split_lambda were the latest to slip
+// through - both documented tunables that needed a rebuild to change. This
+// hand-maintained list must be kept in sync with GUISceneSharedVars.ixx; a
+// member added there needs either a control here or an entry in the
+// exemption comment above the list.
+TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path gui_path = repo_root / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp";
+    const auto gui_text = readFileText(gui_path);
+    ASSERT_TRUE(gui_text.has_value()) << "could not open " << gui_path.string();
+
+    // Every GUISceneSharedVars member a user can tune, excluding the
+    // *_changed / *_requested latches (written by the GUI, not read from it),
+    // selected_model_index (driven by the model list, not a slider), and
+    // available_shadow_map_resolutions (labels, not a tunable value).
+    static constexpr std::array<const char *, 23> kTunables{ "directional_light_radiance",
+        "directional_light_color", "directional_light_direction", "shadow_map_res_index", "num_shadow_cascades",
+        "pcf_radius", "cascaded_shadow_intensity", "shadow_distance", "cascade_split_lambda",
+        "cloud_num_march_steps", "cloud_num_march_steps_to_light", "cloud_density_multiplier",
+        "cloud_coverage_threshold", "cloud_pillowness", "cloud_cirrus_effect", "cloud_powder_effect",
+        "clouds_enabled", "cloud_mesh_scale", "cloud_mesh_offset", "shadows_enabled", "skybox_enabled",
+        "model_position", "model_rotation" };
+
+    std::vector<std::string> missing;
+    for (const char *member : kTunables) {
+        const std::string needle = std::string("guiSceneSharedVars.") + member;
+        if (gui_text->find(needle) == std::string::npos) { missing.emplace_back(member); }
+    }
+
+    EXPECT_TRUE(missing.empty())
+      << gui_path.string()
+      << " does not read/write the following GUISceneSharedVars tunable(s) - add a control, or if it is not "
+         "meant to be user-facing, add it to the exemption list in this test:"
+      << [&missing] {
+             std::string joined;
+             for (const auto &entry : missing) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

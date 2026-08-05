@@ -210,7 +210,7 @@ TEST(CascadedShadowMapUnit, LambdaZeroReproducesUniformSplits)
 // that makes near geometry crisp - and the same property that STARVES a
 // subject framed from a distance, which measurement showed and intuition did
 // not: at lambda 0.85 the debug scene's subject falls into the last cascade
-// and its texel density gets 3x worse than uniform. The default is 0.5 for
+// and its texel density gets 3x worse than uniform. The default is 0.0 for
 // that reason; this test exists so raising it is a deliberate act.
 TEST(CascadedShadowMapUnit, HigherLambdaPullsSplitsTowardTheCamera)
 {
@@ -615,9 +615,10 @@ TEST(CascadedShadowMapUnit, DefaultFitParamsMatchTheRetiredTrailingDefaults)
 {
     // Pins the values that used to live as trailing default arguments on
     // computeCascadeData/computeCascadeDataInto, so a later edit to the struct
-    // cannot silently move one of them.
+    // cannot silently move one of them. splitLambda's default tracks
+    // GUISceneSharedVars::cascade_split_lambda (0.0F, the measured choice).
     const CascadeFitParams params{};
     EXPECT_EQ(params.shadowDistance, 0.0F);
-    EXPECT_EQ(params.splitLambda, 0.5F);
+    EXPECT_EQ(params.splitLambda, 0.0F);
     EXPECT_EQ(params.shadowMapResolution, 0U);
 }

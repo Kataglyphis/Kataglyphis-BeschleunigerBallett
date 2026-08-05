@@ -15,6 +15,11 @@ export constexpr uint32_t kShadowMapResolutions[] = { 512, 1024, 2048, 4096 };
 
 export inline constexpr int kShadowMapResolutionCount = static_cast<int>(std::size(kShadowMapResolutions));
 
+// Range for the "Shadow distance" slider (GUI.cpp). One owner for the bounds,
+// the same way kShadowMapResolutions is the one owner of the resolution combo.
+export inline constexpr float kMinShadowDistance = 5.0F;
+export inline constexpr float kMaxShadowDistance = 500.0F;
+
 // Clamps out-of-range indices into [0, kShadowMapResolutionCount - 1] rather
 // than silently falling through to 512 the way the old if/else chain did.
 export constexpr uint32_t shadowResolutionForIndex(int index)

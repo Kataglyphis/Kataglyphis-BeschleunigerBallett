@@ -195,6 +195,9 @@ void GUI::render()
 
                     ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 0, MAX_PCF_RADIUS);
                     ImGui::SliderFloat("Shadow intensity", &guiSceneSharedVars.cascaded_shadow_intensity, 0.0F, 1.0F);
+                    ImGui::SliderFloat(
+                      "Shadow distance", &guiSceneSharedVars.shadow_distance, kMinShadowDistance, kMaxShadowDistance);
+                    ImGui::SliderFloat("Cascade split lambda", &guiSceneSharedVars.cascade_split_lambda, 0.0F, 1.0F);
                 }
 
                 ImGui::TreePop();
