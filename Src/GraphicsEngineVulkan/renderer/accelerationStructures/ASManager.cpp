@@ -133,8 +133,15 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
           {});
     }
 
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer));
+    bool const build_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
+    if (!build_submitted) {
+        spdlog::error("ASManager::createBLAS: failed to submit BLAS build commands for {} model(s); no "
+                      "acceleration structures were built.",
+          scene->getModelCount());
+        scratchBuffer.cleanUp();
+        return false;
+    }
 
     for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
 
@@ -175,8 +182,14 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
     query_cmd.resetQueryPool(query_pool, 0, count);
     query_cmd.writeAccelerationStructuresPropertiesKHR(
       count, handles.data(), vk::QueryType::eAccelerationStructureCompactedSizeKHR, query_pool, 0);
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      logical, commandPool, device->getGraphicsQueue(), query_cmd));
+    bool const query_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      logical, commandPool, device->getGraphicsQueue(), query_cmd);
+    if (!query_submitted) {
+        spdlog::error(
+          "ASManager::compactBLAS: failed to submit compacted-size query commands; keeping uncompacted BLAS.");
+        logical.destroyQueryPool(query_pool);
+        return;
+    }
 
     std::vector<vk::DeviceSize> compacted_sizes(count);
     vk::Result const query_result = logical.getQueryPoolResults(query_pool,
@@ -427,8 +440,16 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     command_buffer.buildAccelerationStructuresKHR(
       1, &acceleration_structure_build_geometry_info, &acceleration_structure_build_range_infos);
 
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer));
+    bool const build_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
+    if (!build_submitted) {
+        // createTLAS returns void and createASForScene does not gate on it, so this
+        // log is the only signal: tlas.vulkanAS was already created above
+        // (ASSERT_VULKAN'd) but buildAccelerationStructuresKHR never ran, so the
+        // next ray/path-traced frame reads that handle over unbuilt AS data.
+        spdlog::error("ASManager::createTLAS: failed to submit TLAS build commands; the top-level "
+                      "acceleration structure handle exists but was never built.");
+    }
     scratchBuffer.cleanUp();
     geometryInstanceBuffer.cleanUp();
 }

@@ -10155,3 +10155,70 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
     EXPECT_LE(count_occurrences(outside, "assignTextureSlot("), 1U)
       << "assignTextureSlot must be called from one loop over gltfTextureSlots' table, not once per texture slot";
 }
+
+// endAndSubmitCommandBuffer's contract (CommandBufferManager.cpp) is that
+// `false` means the submitted work never happened - the command buffer is
+// freed either way, but nothing it recorded ran on the device. Discarding
+// that result with static_cast<void>(...) silently treats a submit failure
+// the same as success: the 2026-08 BLAS/TLAS/clouds/path-tracing cohort of
+// fixes converted every such discard at the time this gate was added, each
+// to whatever degraded behaviour its own call site defines. This test stops
+// a new discard from being reintroduced. A genuinely intentional discard is
+// still allowed via a trailing "// SUBMIT_RESULT_IGNORED_OK: <reason>"
+// comment on the same line, the same exemption shape
+// NoStageHandRollsTheColorAttachmentChain uses.
+TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kCallMarker = "endAndSubmitCommandBuffer";
+    static const char *const kDiscardMarker = "static_cast<void>(";
+    static const char *const kExemptionPrefix = "SUBMIT_RESULT_IGNORED_OK: ";
+
+    std::vector<std::string> violations;
+    bool call_site_seen = false;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".hpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        std::size_t line_number = 0;
+        for (const auto &line : *lines) {
+            ++line_number;
+            if (line.find(kCallMarker) == std::string::npos) { continue; }
+            if (line.find(kDiscardMarker) == std::string::npos) {
+                call_site_seen = true;
+                continue;
+            }
+            if (line.find(kExemptionPrefix) != std::string::npos) { continue; }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " endAndSubmitCommandBuffer() call(s) found under Src/ whose [[nodiscard]] result is thrown away with "
+         "static_cast<void>(...) - capture the bool and handle the false case (it means the submitted work "
+         "never happened), or add a trailing \"// SUBMIT_RESULT_IGNORED_OK: <reason>\" comment on the line if "
+         "the discard is a deliberate, reasoned exception:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(call_site_seen) << "expected to find at least one non-discarded endAndSubmitCommandBuffer() call "
+                                    "site under Src/ - if this fired, either the function was renamed (update "
+                                    "kCallMarker) or every call site started discarding its result, and this gate "
+                                    "would be silently checking nothing";
+}

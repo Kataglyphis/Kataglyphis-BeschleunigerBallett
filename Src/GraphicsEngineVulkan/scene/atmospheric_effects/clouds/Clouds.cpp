@@ -44,7 +44,13 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
         ASSERT_VULKAN(VK_ERROR_INITIALIZATION_FAILED, "Clouds: failed to begin a command buffer for a storage texture!");
     }
     texture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer));
+    bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+    if (!transition_submitted) {
+        // Same reasoning as the !commandBuffer branch above: a half-initialized
+        // clouds subsystem has no defined rendering behaviour, and the descriptor
+        // written later declares eGeneral for an image still in eUndefined.
+        ASSERT_VULKAN(VK_ERROR_INITIALIZATION_FAILED, "Clouds: failed to submit the layout transition for a storage texture!");
+    }
 
     return texture;
 }
@@ -120,7 +126,11 @@ void Clouds::dispatchNoiseGeneration(vk::CommandPool commandPool)
       kNoiseVolumeExtent / kNoiseWorkgroupSize,
       kNoiseVolumeExtent / kNoiseWorkgroupSize);
 
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer));
+    bool const dispatch_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+    if (!dispatch_submitted) {
+        spdlog::error("Clouds::dispatchNoiseGeneration: failed to submit noise dispatch commands (cloud noise "
+                      "volume will render as uniform haze).");
+    }
 }
 
 void Clouds::shaderHotReload(vk::DescriptorSetLayout sharedLayout)

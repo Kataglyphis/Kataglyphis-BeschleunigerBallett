@@ -1347,8 +1347,13 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     }
     pathTracingAccumulation.getVulkanImage().transitionImageLayout(
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer));
+    bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer);
+    if (!transition_submitted) {
+        spdlog::error("Failed to submit path tracing accumulation image transition!");
+        pathTracingAccumulation.cleanUp();
+        return;
+    }
 
     pathTracingAccumulatedFrames = 0;
 }
