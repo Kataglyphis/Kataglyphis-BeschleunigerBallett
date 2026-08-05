@@ -163,6 +163,13 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
     float const aspect_ratio = aspectRatioOf(extent.width, extent.height);
 
+    // GUISceneSharedVars is also written programmatically (tests, config
+    // load), so the clamp lives here rather than trusting the slider range
+    // alone. The camera stays the single source of truth: both the
+    // projection below and dirShadowMap.updateCascades() keep reading
+    // get_fov() rather than the GUI value directly.
+    camera_data->set_fov(std::clamp(guiSceneSharedVars.camera_fov, 20.0F, 110.0F));
+
     globalUBO.view = camera_data->calculate_viewmatrix();
     globalUBO.projection = makeVulkanProjection(camera_data->get_fov(),
       aspect_ratio,
@@ -1162,6 +1169,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
         // samples lit by two different lights.
         const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history{
             .view = camera->calculate_viewmatrix(),
+            .projection = globalUBO.projection,
             .lightDirection = sceneUBO.dirLight.direction,
             .lightColorAndRadiance = sceneUBO.dirLight.color,
             .samplesPerPixel = guiRendererSharedVars.pathTracingSamplesPerPixel,

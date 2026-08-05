@@ -11458,3 +11458,312 @@ Do not re-run these three sweeps without new evidence.
 
 ### Test and gate infrastructure
 
+## 2026-08-05 batch XVI — planner (the field of view: three setters with no production caller, no GUI control, and a path-tracing history key that does not include the projection the kernel builds every primary ray from; a GUI-coverage gate whose "every tunable has a control" list is 23 hand-typed strings, so the one failure mode it exists for — a NEW field with no control — still slips through silently; the eight-corner AABB transform, now that last cycle's benchmark answered the caching question it was captured to answer; a per-vertex tangent pass that runs Gram-Schmidt, a normalize and a cross once per INCIDENT TRIANGLE instead of once per vertex; and a "KEY Bindings" panel that lists six keys out of eight bindings and has never mentioned the right mouse button)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XV's three tasks all shipped
+(`4b1445fe`, `ccd9c1ad`, `dd375e1d`). Every `file:line` below was read out of
+the tree at `dd375e1d`.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so every task here is accepted on CPU
+suites alone and all five were chosen to be checkable that way. Task 1 is the
+only one that can change a rendered frame at all, and only when the user
+moves a slider that does not exist today; tasks 3 and 4 are output-identical
+by construction (the equivalence is the acceptance test); tasks 2 and 5 touch
+a gate, a panel string and one dead comment line. **No task in this batch
+touches a `.slang` file**, so no shader recompile, no WGSL regeneration, and
+the staleness gates cannot fire.
+
+**Two of these close the same gap from opposite ends.** Batch XV's
+"not in this batch" list recorded that `Camera::set_fov`/`set_near_plane`/
+`set_far_plane` have no production caller, and that `PathTracingHistoryKey`'s
+omission of the projection matrix "is currently harmless" *only* because
+nothing can change the FOV at runtime — "if a FOV control is ever added to
+the GUI, the key must gain the projection in the same change". Task 1 is that
+change, both halves together, and it is sized rather than left as an owner
+decision because the precedent is settled: batch XIV shipped GUI sliders for
+`shadow_distance`/`cascade_split_lambda` on exactly the "documented tunable
+that needs a rebuild to change" argument (`c1881290`). Task 2 then removes
+the reason this keeps being a planner finding rather than a test failure —
+`EveryTunableGuiSceneVarHasAControl` (`buildIntegritySuite.cpp:11379`) checks
+a hand-typed list of 23 member names against `GUI.cpp`, so it catches a
+control being *deleted* and cannot catch a member being *added*, which is the
+exact direction both prior misses travelled.
+
+**Tasks 3 and 4 are the follow-through on last cycle's measurement**, and
+task 3 answers its open question rather than leaving it open: batch XIV added
+`BM_TransformAABB` because "the numbers are the prerequisite for deciding
+whether the per-frame `transformAABB` deserves caching at all". The numbers
+are in (`Test/perf/baselines/win-9070xt-32core.json`: 7500.54 ns for 512
+boxes, i.e. ~14.6 ns per box, ~11 µs/frame at sponza's 373 meshes × 2
+passes). **Decision: it does not deserve caching** — a cache would need
+invalidation on every model-matrix write for 0.07 % of a 16 ms frame. What it
+does deserve is the standard center/extent form, which is the same answer in
+a third of the arithmetic. The same baseline shows `BM_ComputeTangents/512`
+at 45961.34 ns against `BM_ComputeFlatNormals/512` at 3210.57 ns — a 14×
+ratio between two functions that walk the same `indices[firstIndex..]` shape;
+task 4 is where most of that ratio comes from.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Replace the eight-corner AABB transform with the center/extent form, and record the no-caching decision** — the benchmark batch XIV added to answer "does this deserve caching" has answered it; the remaining win is a third of the arithmetic for a provably identical result.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Frustum.cpp:95-118` — `transformAABB`: 8
+    corner points, 8 `mat4 * vec4` products, 14 min/max reductions.
+  - `Test/commit/VulkanEngine/frustumSuite.cpp:167-210` —
+    `TransformAABBCoversTheRotatedBox`,
+    `TransformAABBHandlesTranslationAndScale`, and the culling tests that
+    compose `transformAABB` with `isVisible`.
+  - `Test/perf/perfSuite.cpp:516-541` — `BM_TransformAABB` and the comment
+    describing the call frequency (`models × meshes × 2 passes` per frame).
+  - `Test/perf/baselines/win-9070xt-32core.json` — the two
+    `BM_TransformAABB/{64,512}` rows to refresh.
+
+  **Steps:**
+  1. Rewrite `transformAABB` in the standard (Arvo) center/extent form:
+     `center = 0.5F * (box.min + box.max)`,
+     `extents = 0.5F * (box.max - box.min)`;
+     `newCenter = glm::vec3(model * glm::vec4(center, 1.0F))`;
+     `newExtents.k = |model[0][k]| * extents.x + |model[1][k]| * extents.y +
+     |model[2][k]| * extents.z` for k in 0..2 (GLM is column-major: `model[c][r]`);
+     return `{ newCenter - newExtents, newCenter + newExtents }`.
+  2. Keep the `if (!box.isValid()) { return box; }` guard exactly as it is —
+     it is what makes an unset AABB pass culling instead of collapsing.
+  3. Add a comment stating the precondition the new form has and the old one
+     did not: the matrix must be **affine** (bottom row `[0 0 0 1]`), which
+     every caller supplies (model matrices from `Model`/`Mesh`, never a
+     projection). A projective row would need the per-corner `/w` the eight-
+     corner walk did implicitly.
+  4. Add a one-paragraph note to `docs/cpp-renderer-improvements.md` recording
+     the measurement and the decision **not** to cache per-mesh world AABBs
+     (~11 µs/frame at sponza scale; a cache would need invalidation on every
+     model-matrix write), so the question is not re-opened a third time. The
+     doc's `<!-- commit-suite-test-count: N -->` marker is gated
+     (`ImprovementLogQuotesTheCurrentCommitSuiteTestCount`) — bump it for the
+     test added below.
+
+  **Test:** Add `FrustumUnit.TransformAabbMatchesTheEightCornerReference` to
+  `frustumSuite.cpp`: keep a file-local copy of the old eight-corner loop as
+  the reference oracle, and assert both forms agree to `1e-4F` on a
+  deterministic set of affine matrices — identity, pure translation, uniform
+  and non-uniform scale (including a **negative** scale, i.e. a mirror), a
+  rotation about a non-axis vector, and a translate×rotate×scale composition
+  matching `BM_TransformAABB`'s. Keep the two existing tests unchanged; they
+  are what proves the new form still covers a rotated box.
+
+  **Build:** `clangcl-debug` for the unit tests, then `clangcl-profile` for
+  the benchmark (the only configuration where numbers mean anything):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations "clangcl-debug,clangcl-profile"`.
+  Run `.\build-clangcl-profile\perfTestSuite.exe --benchmark_filter=BM_TransformAABB`
+  before and after, quote both numbers in the commit message, and refresh the
+  two baseline rows.
+
+  **Context:** `PerfBaselineCoversEveryRegisteredBenchmark` gates row
+  coverage, not values, so refreshing the two rows is a value edit and cannot
+  break the gate. Land this **before** task 4 — both edit
+  `Test/perf/baselines/win-9070xt-32core.json`.
+
+- [ ] **(S) Make `computeTangents` finalize each vertex once instead of once per incident triangle** — the finalize loop walks corners, so a vertex shared by six triangles runs Gram-Schmidt, a `normalize` and a `cross` six times and writes the same `vec4` six times.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:85-156` — `computeTangents`.
+    `:94-105` is the min/max scan that already gives the function a
+    `[minCorner, maxCorner]` range and two range-sized accumulators;
+    `:133-155` is the finalize loop that iterates `indices` three corners at a
+    time instead of iterating that range.
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:19-51` — `computeFlatNormals`,
+    the sibling whose per-corner writes are genuinely order-dependent (last
+    triangle wins) and therefore must NOT get the same treatment.
+  - `Test/commit/VulkanEngine/vertexTangentSuite.cpp:139-181` —
+    `TangentsForALaterRangeLeaveEarlierVerticesUntouched`: the test that pins
+    the one behaviour this change must not break.
+  - `Test/perf/perfSuite.cpp:344-404` — `BM_ComputeTangents` and its
+    fixtures.
+
+  **Steps:**
+  1. Allocate `std::vector<uint8_t> finalized(rangeSize, 0);` next to the two
+     accumulators at `:104-105`.
+  2. In the finalize loop, skip a corner whose `finalized[corner - minCorner]`
+     is already set, and set it on the first visit. Do **not** switch the loop
+     to a plain `minCorner..maxCorner` sweep: the range is contiguous by
+     construction but nothing guarantees every index inside it belongs to this
+     primitive, and writing a fallback tangent onto an unreferenced vertex
+     would be a real behaviour change (exactly what
+     `TangentsForALaterRangeLeaveEarlierVerticesUntouched` exists to catch).
+  3. Extend the function comment: the per-corner iteration is the visitation
+     order, the per-vertex write is the semantics, and the two differ by the
+     average valence of the mesh (~6 for a closed triangle mesh).
+
+  **Test:** The output must be **bit-identical**, which the existing
+  `VertexUnit.*` suite already asserts on five fixtures — run it unchanged.
+  Add `VertexUnit.SharedVertexTangentIsIndependentOfIncidenceCount`: build a
+  fan where one centre vertex is shared by six triangles, compute tangents,
+  and assert the centre vertex's tangent equals the value obtained from the
+  same accumulators — i.e. that dropping the repeat visits changed nothing.
+
+  **Build:** `clangcl-debug` for correctness, `clangcl-profile` for the
+  numbers. Run `.\build-clangcl-profile\perfTestSuite.exe --benchmark_filter=BM_ComputeTangents`
+  before and after and quote both; the baseline row for `/512` is currently
+  45961.34 ns against `BM_ComputeFlatNormals/512`'s 3210.57 ns for the same
+  walk shape. Refresh the three `BM_ComputeTangents/*` baseline rows.
+
+  **Context:** Load-time cost, not per-frame — worth doing because it is a
+  three-line change to a function both loaders call once per primitive, and
+  because the 14× gap against the flat-normal sibling is the kind of number
+  that gets mistaken for an algorithmic problem later. `computeFlatNormals`
+  and `fillMissingFlatNormals` are deliberately out of scope: their
+  per-corner writes are the semantics (`fillMissingFlatNormals` only writes a
+  vertex whose normal is still zero, so visit order is load-bearing there).
+
+- [ ] **(S) Complete the "KEY Bindings" panel and gate it against the bindings the code actually implements** — the panel lists WASD and QE; the engine also quits on ESC and turns the camera on right-mouse-drag, neither of which appears anywhere in the UI.
+
+  **Files to read:**
+  - `Src/shared/frontend/CommonGuiPanels.ixx:32-37` — `renderCommonKeyBindings`,
+    the whole panel: one `TextUnformatted` naming six keys.
+  - `Src/shared/frontend/CameraController.ixx:54-59` — the six movement/turn
+    keys (`GLFW_KEY_W/A/S/D/Q/E`).
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:56` —
+    `GLFW_KEY_ESCAPE` closes the window; `:118-134` —
+    `should_capture_cursor`/`should_release_cursor`/`cursor_input_mode_for`,
+    the right-mouse look mode (`GLFW_MOUSE_BUTTON_RIGHT`) that captures the
+    cursor while held.
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:367-386` — the tests that
+    already pin the right-button and cursor-mode behaviour, i.e. the
+    behaviour the panel is silent about.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11379-11412` —
+    `EveryTunableGuiSceneVarHasAControl`, the "source names a thing, the UI
+    must mention it" gate shape to copy.
+
+  **Steps:**
+  1. Rewrite the panel text to cover every binding: `W`/`A`/`S`/`D` move,
+     `Q`/`E` rotate, **right mouse button (hold) to look**, **ESC to quit**.
+     Keep it one `TextUnformatted` with `\n`s — the gate in step 2 searches
+     the literal.
+  2. Add `BuildIntegrity.KeyBindingsPanelListsEveryBinding` to
+     `buildIntegritySuite.cpp`: read `Src/shared/frontend/CameraController.ixx`
+     and collect every `GLFW_KEY_<X>` it tests, read
+     `Src/shared/frontend/WindowInputCallbacks.ixx` and collect every
+     `GLFW_KEY_<X>` / `GLFW_MOUSE_BUTTON_<X>` it acts on, then assert the
+     panel literal in `CommonGuiPanels.ixx` mentions each one. Map symbol to
+     prose with a small in-test table (`GLFW_KEY_W` -> `"W"`,
+     `GLFW_KEY_ESCAPE` -> `"ESC"`, `GLFW_MOUSE_BUTTON_RIGHT` -> `"right
+     mouse"`), and fail with the unmapped symbol's name when a new binding
+     appears with no table entry — a new binding must force a decision, not
+     be silently ignored.
+  3. Exempt nothing silently: if a symbol is deliberately not user-facing,
+     it goes in a named exemption list in the test with a reason comment.
+
+  **Test:** the gate above is the test. Verify it fails as intended by
+  temporarily deleting `ESC` from the panel string before committing.
+
+  **Build:** `clangcl-debug` with **`-FreshContainer`** (module-interface
+  change: `CommonGuiPanels.ixx`). Run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** The right-mouse look mode shipped this cycle (`6c4191ab`, the
+  cursor-capture fix) and the panel was not touched; ESC has never been
+  listed. This is the cheapest class of user-facing defect in the tree — the
+  UI documents the controls, and the documentation is a string literal
+  nothing checks. Same reasoning as `MaxTextureCountInDocsMatchesTheHeader`:
+  a hand-maintained claim next to the code that could derive it.
+
+### Test and gate infrastructure
+
+- [ ] **(S) (refactor) Derive `EveryTunableGuiSceneVarHasAControl`'s member list from the header instead of hand-typing it, and cover `GUIRendererSharedVars` too** — the gate as written catches a control being deleted and cannot catch the thing it was created for: a new field with no control.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11372-11412` — the gate,
+    its `std::array<const char *, 23> kTunables` and the exemption comment
+    above it. Its own header comment says the list "must be kept in sync with
+    `GUISceneSharedVars.ixx`" — which is the hand-maintained claim this repo
+    gates everywhere else.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:20-92` — the struct
+    to parse: plain `type name = value;` members, plus the
+    `available_shadow_map_resolutions` table and the `*_changed` /
+    `*_requested` latches that must stay exempt.
+  - `Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx:74-110` —
+    `GUIRendererSharedVars`, which has no coverage gate at all. All nine
+    members are referenced in `GUI.cpp` today, so the new check passes on
+    arrival and exists to keep it that way.
+  - `Test/commit/VulkanEngine/RepoFiles.hpp` — `readFileText`/`readFileLines`
+    and `joinViolations`; use them rather than hand-rolling
+    (`dd375e1d` removed 102 hand-rolled copies of the join).
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11048` —
+    `ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath`, an existing
+    "parse the struct, check every member" gate to copy the parsing shape from.
+
+  **Steps:**
+  1. Add a file-local helper that, given a header path and a struct name,
+     returns the declared member names between that struct's `{` and its
+     matching `}` — match `^\s*[\w:<>,\s\*&]+?\s+(\w+)\s*(=|;|\{)` per line,
+     skipping lines that start with `//`, `static_assert`, or a nested
+     `struct`/function. Assert the parse found a plausible count (`>= 20` for
+     `GUISceneSharedVars`) so a regex that silently matches nothing cannot
+     pass the gate.
+  2. Replace `kTunables` with that call plus an explicit
+     `kExempt` list carrying the existing rationale verbatim: the
+     `*_changed`/`*_requested` latches, `selected_model_index`, and
+     `available_shadow_map_resolutions`. A member that is neither found in
+     `GUI.cpp` nor in `kExempt` fails with a message telling the author to add
+     a control **or** an exemption with a reason.
+  3. Add the twin check for `GUIRendererSharedVars` against
+     `guiRendererSharedVars.` in `GUI.cpp`, exempting nothing initially
+     (`gpuTimings` and `visibility` are read by the panels at `GUI.cpp:248-268`).
+     Either a second `TEST` or a table-driven loop over both (struct, prefix)
+     pairs — one gate per struct reads better in failure output.
+  4. While in `GUI.cpp`, delete the dead commented-out
+     `// ImGui::Checkbox("Ray tracing", &guiRendererSharedVars.raytracing);`
+     at `:166` — superseded by the radio-button block at `:127-159`, which is
+     the single source of truth for the three render modes.
+
+  **Test:** the gate is the test. Verify both directions by hand before
+  committing: add a throwaway `float zzz_probe = 0.0F;` to each struct and
+  confirm each gate fails naming it, then remove.
+
+  **Build:** `clangcl-debug` (no `Src/` output changes if step 4 is the only
+  source edit, but `GUI.cpp` is compiled either way). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
+
+  **Context:** Land **after** task 1 (both edit `GUI.cpp` and this file, and
+  task 1's `camera_fov` is the first member the derived gate will check).
+  This is the same lesson as `PerfBaselineCoversEveryRegisteredBenchmark` and
+  `ImprovementLogQuotesTheCurrentCommitSuiteTestCount`: a gate that reads a
+  hand-maintained list is a gate on the list, not on the thing.
+
+### Not in this batch, recorded so it is not lost
+
+- **`Camera::set_near_plane`/`set_far_plane` still have no production caller**
+  after task 1. Deliberate: their defaults are configuration-dependent (150
+  in debug, 4000 in release — `Camera.cpp:51-75`), so a single GUI default
+  would contradict one build, and `far_plane` interacts with the cascade fit
+  (`shadowFar = min(shadowDistance, farPlane)`). Exposing them needs a
+  decision about which default the slider shows, which is why task 1 stops at
+  FOV.
+
+- **`qem.rs::into_primitive` drops `morph_targets`/`morph_weights` with no
+  comment**, while its clustering sibling `lod.rs::simplify_primitive:182-185`
+  explains the same drop in place ("simplification changes the vertex count,
+  so per-vertex morph deltas can't be carried"). Harmless today —
+  `forward.rs:1383` excludes morphed primitives from LOD entirely — but the
+  two files disagree about how much of that reasoning is written down. Fold
+  into the next task that touches `qem.rs`; too thin for its own entry.
+
+- **`DeferredRasterizer::recordCommands` still indexes `descriptorSets[0]`
+  without the empty-span guard its sibling has** — carried unchanged from
+  batches XIII and XV. Still too small for its own task and still the wrong
+  shape for a gate; pick it up with the next change to either raster stage.
+
+- **A scan of the Rust crate's `scene/qem.rs` and `scene/lod.rs` found
+  nothing actionable** — worth recording because neither file had ever been
+  mentioned in this backlog (0 occurrences before this batch). Both carry
+  dense in-file test suites (`qem.rs:673-815`, `lod.rs:284-630`) plus
+  integration suites (`tests/qem.rs`, `tests/lod_pipeline.rs`) covering
+  order-independence, medoid attribute selection, fold rejection, degenerate
+  input and the ratio conventions. `Simplifier::Quadric` and
+  `simplify_primitive_qem` both have production callers (`forward.rs:1384-1388`).
+  Do not re-run this sweep without new evidence.
+

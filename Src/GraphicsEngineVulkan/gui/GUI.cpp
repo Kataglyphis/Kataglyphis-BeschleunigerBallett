@@ -170,6 +170,11 @@ void GUI::render()
     if (ImGui::CollapsingHeader("Graphic Settings")) {
         ImGui::Checkbox("Enable Skybox", &guiSceneSharedVars.skybox_enabled);
 
+        if (ImGui::TreeNode("Camera")) {
+            ImGui::SliderFloat("Field of view", &guiSceneSharedVars.camera_fov, 20.0F, 110.0F, "%.0f deg");
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Directional Light")) {
             ImGui::Separator();
             ImGui::SliderFloat("Radiance", &guiSceneSharedVars.directional_light_radiance, 0.0F, 50.0F);

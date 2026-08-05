@@ -11389,13 +11389,13 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
     // *_changed / *_requested latches (written by the GUI, not read from it),
     // selected_model_index (driven by the model list, not a slider), and
     // available_shadow_map_resolutions (labels, not a tunable value).
-    static constexpr std::array<const char *, 23> kTunables{ "directional_light_radiance",
+    static constexpr std::array<const char *, 24> kTunables{ "directional_light_radiance",
         "directional_light_color", "directional_light_direction", "shadow_map_res_index", "num_shadow_cascades",
         "pcf_radius", "cascaded_shadow_intensity", "shadow_distance", "cascade_split_lambda",
         "cloud_num_march_steps", "cloud_num_march_steps_to_light", "cloud_density_multiplier",
         "cloud_coverage_threshold", "cloud_pillowness", "cloud_cirrus_effect", "cloud_powder_effect",
         "clouds_enabled", "cloud_mesh_scale", "cloud_mesh_offset", "shadows_enabled", "skybox_enabled",
-        "model_position", "model_rotation" };
+        "model_position", "model_rotation", "camera_fov" };
 
     std::vector<std::string> missing;
     for (const char *member : kTunables) {

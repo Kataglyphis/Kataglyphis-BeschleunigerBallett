@@ -86,6 +86,15 @@ export struct GUISceneSharedVars
     // Skybox
     bool skybox_enabled = true;
 
+    // Camera
+    // 45 mirrors Camera's own default (Camera.cpp's NDEBUG and debug
+    // initialisers both use 45.F) - the two must not drift apart. Scope:
+    // FOV only. near_plane/far_plane stay unexposed here because their
+    // Camera defaults are configuration-dependent (150 debug / 4000
+    // release), so a single GUI default would contradict one of them;
+    // that is a separate decision, not this one.
+    float camera_fov = 45.0F;
+
     // Model selection
     int selected_model_index = -1;
     bool model_reload_requested = false;

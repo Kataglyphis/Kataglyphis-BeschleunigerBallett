@@ -21,6 +21,7 @@ auto make_key() -> PathTracingHistoryKey
 {
     return PathTracingHistoryKey{
         .view = glm::mat4(1.0F),
+        .projection = glm::mat4(1.0F),
         .lightDirection = glm::vec4(0.0F, -1.0F, 0.0F, 1.0F),
         .lightColorAndRadiance = glm::vec4(1.0F, 1.0F, 1.0F, 2.0F),
         .samplesPerPixel = 4,
@@ -65,6 +66,19 @@ TEST(PathTracingHistoryUnit, ACameraMoveStillInvalidatesTheHistory)
     const PathTracingHistoryKey a = make_key();
     PathTracingHistoryKey b = make_key();
     b.view = glm::translate(glm::mat4(1.0F), glm::vec3(1.0F, 0.0F, 0.0F));
+
+    EXPECT_TRUE(a != b);
+}
+
+// FOV (and any other projection input - near/far/aspect) changes the primary
+// rays path_tracing.slang builds from globalUBO.inv_projection; without this,
+// a FOV slider change would silently blend samples from two different fields
+// of view into the same running mean.
+TEST(PathTracingHistoryUnit, ProjectionChangeInvalidatesTheHistory)
+{
+    const PathTracingHistoryKey a = make_key();
+    PathTracingHistoryKey b = make_key();
+    b.projection = glm::perspective(glm::radians(60.0F), 16.0F / 9.0F, 0.1F, 150.0F);
 
     EXPECT_TRUE(a != b);
 }

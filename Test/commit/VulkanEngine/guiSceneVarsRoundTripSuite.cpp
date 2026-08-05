@@ -24,13 +24,14 @@
 #include <iterator>
 #include <string>
 
+import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui_scene_shared_vars;
 
 namespace {
 
 // Byte size of GUISceneSharedVars as of the last time makeNonDefaultVars()
 // below was checked against it. See the size test at the bottom.
-constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 176;
+constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 184;
 
 // Every field a caller can flip, set to something distinguishable from the
 // default. Kept exhaustive on purpose: a field added to GUISceneSharedVars
@@ -75,6 +76,7 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.cloud_mesh_offset[2] = 15.0F;
     vars.shadows_enabled = false;
     vars.skybox_enabled = false;
+    vars.camera_fov = 77.0F;
     vars.selected_model_index = 7;
     vars.model_reload_requested = true;
     vars.model_transform_changed = true;
@@ -179,6 +181,21 @@ TEST(GuiSceneVarsRoundTrip, CascadeCountDefaultIsWithinTheSliderRange)
     const GUISceneSharedVars defaults;
 
     EXPECT_LE(defaults.num_shadow_cascades, MAX_CASCADES);
+}
+
+// GUISceneSharedVars::camera_fov and Camera's own default (Camera.cpp) must
+// not drift apart - this is what stops the GUI default and the engine
+// default from silently disagreeing. It must also sit inside the "Field of
+// view" slider's [20, 110] range (GUI.cpp), the same way the cascade count
+// default is pinned against its own slider above.
+TEST(GuiSceneVarsRoundTrip, CameraFovDefaultMatchesTheCameraAndSitsInTheSliderRange)
+{
+    const GUISceneSharedVars defaults;
+    const Camera camera;
+
+    EXPECT_FLOAT_EQ(defaults.camera_fov, camera.get_fov());
+    EXPECT_GE(defaults.camera_fov, 20.0F);
+    EXPECT_LE(defaults.camera_fov, 110.0F);
 }
 
 // available_shadow_map_resolutions and shadowResolutionForIndex used to be
