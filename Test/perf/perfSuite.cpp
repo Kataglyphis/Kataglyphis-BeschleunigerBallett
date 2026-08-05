@@ -18,6 +18,7 @@
 #include <array>
 #include <filesystem>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,7 @@ import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.cascaded_shadow_map;
 import kataglyphis.vulkan.frustum;
+import kataglyphis.vulkan.vertex;
 
 namespace {
 
@@ -337,6 +339,69 @@ void BM_GltfParse_CubeTextured(benchmark::State &state)
     parse_and_walk_gltf(find_model("GltfTest/cube_textured.gltf"), state);
 }
 BENCHMARK(BM_GltfParse_CubeTextured)->Unit(benchmark::kMicrosecond);
+
+// -------------------------------------------------------- tangent gen --
+// vertex::computeTangents runs once per glTF/OBJ primitive over the shared,
+// growing vertex array (GltfLoader::processPrimitive), each call scoped to
+// just that primitive's index range via firstIndex - the shape this
+// benchmark reproduces. Parameterised on primitive count so a regression
+// back to a vertices.size()-sized accumulator pair (quadratic total work
+// across a multi-primitive document) shows up here instead of needing a
+// real multi-primitive asset to notice.
+
+void BM_ComputeTangents(benchmark::State &state)
+{
+    const auto primitiveCount = static_cast<std::size_t>(state.range(0));
+    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
+
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    std::vector<std::size_t> firstIndices;
+    // GltfLoader::processPrimitive calls computeTangents right after
+    // appending only the current primitive's vertices/indices - earlier
+    // primitives are already in the array, later ones are not. Record the
+    // vertex/index count "so far" at each primitive's call time and slice
+    // to it below, rather than handing every call the full, fully-built
+    // arrays (which would make every call pay for every OTHER primitive's
+    // triangles too, masking the fix this benchmark is meant to guard).
+    std::vector<std::size_t> vertexCountSoFar;
+    std::vector<std::size_t> indexCountSoFar;
+    vertices.reserve(primitiveCount * 4);
+    indices.reserve(primitiveCount * 6);
+    firstIndices.reserve(primitiveCount);
+    vertexCountSoFar.reserve(primitiveCount);
+    indexCountSoFar.reserve(primitiveCount);
+
+    for (std::size_t p = 0; p < primitiveCount; ++p) {
+        const auto base = static_cast<unsigned int>(vertices.size());
+        const float ox = static_cast<float>(p) * 2.0F;
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
+
+        firstIndices.push_back(indices.size());
+        indices.push_back(base + 0);
+        indices.push_back(base + 1);
+        indices.push_back(base + 2);
+        indices.push_back(base + 0);
+        indices.push_back(base + 2);
+        indices.push_back(base + 3);
+
+        vertexCountSoFar.push_back(vertices.size());
+        indexCountSoFar.push_back(indices.size());
+    }
+
+    for (auto _ : state) {
+        for (std::size_t p = 0; p < primitiveCount; ++p) {
+            vertex::computeTangents(std::span<Vertex>(vertices.data(), vertexCountSoFar[p]),
+              std::span<const unsigned int>(indices.data(), indexCountSoFar[p]),
+              firstIndices[p]);
+        }
+        benchmark::DoNotOptimize(vertices.data());
+    }
+}
+BENCHMARK(BM_ComputeTangents)->Arg(1)->Arg(64)->Arg(512);
 
 }// namespace
 

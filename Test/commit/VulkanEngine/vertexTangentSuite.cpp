@@ -136,6 +136,49 @@ TEST(VertexUnit, TangentBasisMapsAFlatSampleToTheGeometricNormal)
       << "mul(float3x3(t, b, n), nTs) is the world-to-tangent transform and must NOT return the geometric normal";
 }
 
+TEST(VertexUnit, TangentsForALaterRangeLeaveEarlierVerticesUntouched)
+{
+    // Two disjoint quads in one vertex array, mirroring GltfLoader's
+    // per-primitive call shape (each primitive's corners are contiguous, but
+    // later primitives sit at growing offsets into the shared vertex array).
+    // Calling computeTangents with firstIndex pointing at the second quad
+    // must not touch the first quad's vertices at all - the invariant the
+    // range-scoped accumulator sizing in computeTangents can break if the
+    // corner offset is computed wrong.
+    const glm::vec4 sentinel(-1.0F, -2.0F, -3.0F, -4.0F);
+    std::vector<Vertex> vertices = unitQuadVertices();
+    for (Vertex &v : vertices) { v.tangent = sentinel; }
+    for (Vertex &v : unitQuadVertices()) { vertices.push_back(v); }
+
+    const std::vector<unsigned int> indices = {
+        // First quad (untouched): included in the array but not in the
+        // range passed to computeTangents.
+        0U, 1U, 2U, 0U, 2U, 3U,
+        // Second quad, offset by 4 - the range computeTangents must act on.
+        4U, 5U, 6U, 4U, 6U, 7U
+    };
+
+    vertex::computeTangents(vertices, indices, /*firstIndex=*/6);
+
+    for (std::size_t i = 0; i < 4; ++i) {
+        const glm::vec4 &t = vertices[i].tangent;
+        EXPECT_EQ(t.x, sentinel.x) << "first quad must stay untouched";
+        EXPECT_EQ(t.y, sentinel.y) << "first quad must stay untouched";
+        EXPECT_EQ(t.z, sentinel.z) << "first quad must stay untouched";
+        EXPECT_EQ(t.w, sentinel.w) << "first quad must stay untouched";
+    }
+
+    for (std::size_t i = 4; i < 8; ++i) {
+        const Vertex &v = vertices[i];
+        EXPECT_NEAR(v.tangent.x, 1.0F, 1e-4F) << "tangent should follow +U == +X";
+        EXPECT_NEAR(v.tangent.y, 0.0F, 1e-4F);
+        EXPECT_NEAR(v.tangent.z, 0.0F, 1e-4F);
+        EXPECT_NEAR(glm::length(glm::vec3(v.tangent)), 1.0F, 1e-4F);
+        EXPECT_NEAR(glm::dot(glm::vec3(v.tangent), v.normal), 0.0F, 1e-4F);
+        EXPECT_EQ(v.tangent.w, 1.0F) << "an unmirrored chart must be right-handed";
+    }
+}
+
 TEST(VertexUnit, TangentParticipatesInEqualityAndHash)
 {
     // Vertex::operator== and its std::hash specialization must both include

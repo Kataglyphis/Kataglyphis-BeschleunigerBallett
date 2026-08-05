@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <glm/glm.hpp>
@@ -83,8 +84,25 @@ auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescrip
 // rather than being split at the seam.
 void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
 {
-    std::vector<glm::vec3> tangentAccum(vertices.size(), glm::vec3(0.0F));
-    std::vector<glm::vec3> bitangentAccum(vertices.size(), glm::vec3(0.0F));
+    if (firstIndex + 2 >= indices.size()) { return; }
+
+    // GltfLoader::processPrimitive calls this once per primitive over the
+    // growing global vertex array, so a vertices.size()-sized accumulator
+    // pair is re-allocated and re-zeroed per primitive: quadratic in
+    // primitive count. Scan the referenced corners first and size the
+    // accumulators to just that contiguous range instead.
+    unsigned int minCorner = indices[firstIndex];
+    unsigned int maxCorner = indices[firstIndex];
+    for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
+        for (unsigned int corner : { indices[i + 0], indices[i + 1], indices[i + 2] }) {
+            minCorner = std::min(minCorner, corner);
+            maxCorner = std::max(maxCorner, corner);
+        }
+    }
+    const std::size_t rangeSize = static_cast<std::size_t>(maxCorner - minCorner) + 1;
+
+    std::vector<glm::vec3> tangentAccum(rangeSize, glm::vec3(0.0F));
+    std::vector<glm::vec3> bitangentAccum(rangeSize, glm::vec3(0.0F));
 
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
         const unsigned int corners[3] = { indices[i + 0], indices[i + 1], indices[i + 2] };
@@ -107,8 +125,8 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
         const glm::vec3 bitangent = ((e2 * d1.x) - (e1 * d2.x)) * invDet;
 
         for (unsigned int corner : corners) {
-            tangentAccum[corner] += tangent;
-            bitangentAccum[corner] += bitangent;
+            tangentAccum[corner - minCorner] += tangent;
+            bitangentAccum[corner - minCorner] += bitangent;
         }
     }
 
@@ -116,8 +134,10 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
         for (unsigned int corner : { indices[i + 0], indices[i + 1], indices[i + 2] }) {
             Vertex &v = vertices[corner];
             const glm::vec3 n = v.normal;
+            const glm::vec3 &accumTangent = tangentAccum[corner - minCorner];
+            const glm::vec3 &accumBitangent = bitangentAccum[corner - minCorner];
 
-            glm::vec3 t = tangentAccum[corner] - (n * glm::dot(n, tangentAccum[corner]));
+            glm::vec3 t = accumTangent - (n * glm::dot(n, accumTangent));
             if (glm::dot(t, t) > 1e-12F) {
                 t = glm::normalize(t);
             } else {
@@ -129,7 +149,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
                 t = glm::normalize(fallback);
             }
 
-            const float w = glm::dot(glm::cross(n, t), bitangentAccum[corner]) < 0.0F ? -1.0F : 1.0F;
+            const float w = glm::dot(glm::cross(n, t), accumBitangent) < 0.0F ? -1.0F : 1.0F;
             v.tangent = glm::vec4(t, w);
         }
     }
