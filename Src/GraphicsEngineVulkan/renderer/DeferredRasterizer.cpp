@@ -203,10 +203,10 @@ void DeferredRasterizer::createRenderPass()
     vk::AttachmentReference lightingColorRef{0, vk::ImageLayout::eColorAttachmentOptimal};
     
     std::array<vk::AttachmentReference, 4> lightingInputRefs = {
-        vk::AttachmentReference{1, vk::ImageLayout::eShaderReadOnlyOptimal},
-        vk::AttachmentReference{2, vk::ImageLayout::eShaderReadOnlyOptimal},
-        vk::AttachmentReference{3, vk::ImageLayout::eShaderReadOnlyOptimal},
-        vk::AttachmentReference{4, vk::ImageLayout::eShaderReadOnlyOptimal}
+        vk::AttachmentReference{1, vk::ImageLayout::eShaderReadOnlyOptimal}, // -> GBUFFER_NORMAL_BINDING
+        vk::AttachmentReference{2, vk::ImageLayout::eShaderReadOnlyOptimal}, // -> GBUFFER_ALBEDO_BINDING
+        vk::AttachmentReference{3, vk::ImageLayout::eShaderReadOnlyOptimal}, // -> GBUFFER_MATERIAL_BINDING
+        vk::AttachmentReference{4, vk::ImageLayout::eShaderReadOnlyOptimal}  // -> GBUFFER_DEPTH_BINDING
     };
 
     const vk::SubpassDescription lightingSubpass = buildSubpassDescription(

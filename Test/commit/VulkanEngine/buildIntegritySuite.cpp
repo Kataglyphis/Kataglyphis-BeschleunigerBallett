@@ -326,7 +326,8 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
 const std::vector<std::string> kSharedConstantNames = {
     "MAX_TEXTURE_COUNT", "MAX_CASCADES", "MAX_PCF_RADIUS", "globalUBO_BINDING", "sceneUBO_BINDING", "OBJECT_DESCRIPTION_BINDING",
     "TEXTURES_BINDING", "SAMPLER_BINDING", "SHADOW_MAP_BINDING", "TLAS_BINDING", "OUT_IMAGE_BINDING",
-    "ACCUMULATION_IMAGE_BINDING"
+    "ACCUMULATION_IMAGE_BINDING", "GBUFFER_NORMAL_BINDING", "GBUFFER_ALBEDO_BINDING", "GBUFFER_MATERIAL_BINDING",
+    "GBUFFER_DEPTH_BINDING"
 };
 
 bool is_identifier_char(char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_'; }
@@ -1814,6 +1815,10 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("TLAS_BINDING"), TLAS_BINDING);
     EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
+    EXPECT_EQ(shader.at("GBUFFER_NORMAL_BINDING"), GBUFFER_NORMAL_BINDING);
+    EXPECT_EQ(shader.at("GBUFFER_ALBEDO_BINDING"), GBUFFER_ALBEDO_BINDING);
+    EXPECT_EQ(shader.at("GBUFFER_MATERIAL_BINDING"), GBUFFER_MATERIAL_BINDING);
+    EXPECT_EQ(shader.at("GBUFFER_DEPTH_BINDING"), GBUFFER_DEPTH_BINDING);
 }
 
 // Windows.yml now runs every CPU suite by default and excludes GPU suites by
@@ -3741,21 +3746,23 @@ struct SharedDescriptorBinding
 
 // The shared render descriptor set's nineteen set-0 declarations
 // (globalUBO_BINDING / sceneUBO_BINDING / OBJECT_DESCRIPTION_BINDING /
-// TEXTURES_BINDING / SAMPLER_BINDING / SHADOW_MAP_BINDING) plus the
-// ray-tracing set-1 declarations that share the same shared descriptor set
-// resources (TLAS_BINDING / OUT_IMAGE_BINDING / ACCUMULATION_IMAGE_BINDING),
-// across the files that declare them. common/alpha_test.slang is not listed:
-// it already used the named constants before this gate existed.
+// TEXTURES_BINDING / SAMPLER_BINDING / SHADOW_MAP_BINDING), the ray-tracing
+// set-1 declarations that share the same shared descriptor set resources
+// (TLAS_BINDING / OUT_IMAGE_BINDING / ACCUMULATION_IMAGE_BINDING), plus
+// deferred.slang's four gbuffer input-attachment set-1 declarations
+// (GBUFFER_NORMAL_BINDING / GBUFFER_ALBEDO_BINDING / GBUFFER_MATERIAL_BINDING
+// / GBUFFER_DEPTH_BINDING) - twenty-three declarations in total, across the
+// files that declare them. common/alpha_test.slang is not listed: it already
+// used the named constants before this gate existed.
 // textures/textureSamplers now declare once in common/material_textures.slang
 // (TextureSlotSamplingHasOneOwner below pins that no consumer redeclares
 // them) rather than once per consumer, so rasterizer.slang, deferred.slang,
 // shadow_map.slang and raytrace.rchit.slang no longer have their own
 // textures/textureSamplers rows here. Deliberately NOT the full set of every
 // [vk::binding(...)] in these files - shadow_map.slang's own
-// [vk::binding(1, 1)] lightSpaceMatrices and deferred.slang's four set-1
-// subpass-input bindings are pipeline-local sets with no named constant in
-// scene_types.slang, so listing them here would be a permanent, unfixable
-// violation rather than a real regression.
+// [vk::binding(1, 1)] lightSpaceMatrices is a pipeline-local set with no
+// named constant in scene_types.slang, so listing it here would be a
+// permanent, unfixable violation rather than a real regression.
 const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     {"common/material_fetch.slang", "objectDescription"},
     {"common/material_textures.slang", "textures"},
@@ -3766,6 +3773,10 @@ const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     {"deferred/deferred.slang", "globalUBO"},
     {"deferred/deferred.slang", "globalUBO_lighting"},
     {"deferred/deferred.slang", "sceneUBO_lighting"},
+    {"deferred/deferred.slang", "inNormal"},
+    {"deferred/deferred.slang", "inAlbedo"},
+    {"deferred/deferred.slang", "inMaterial"},
+    {"deferred/deferred.slang", "inDepth"},
     {"raytracing/raytrace.rchit.slang", "sceneUBO"},
     {"raytracing/raytrace.rchit.slang", "TLAS"},
     {"raytracing/raytrace.rgen.slang", "globalUBO"},

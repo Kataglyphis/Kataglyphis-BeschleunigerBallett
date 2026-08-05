@@ -11415,3 +11415,259 @@ the staleness gates cannot fire.
   own task and still the wrong shape for a gate; pick it up with the next
   change to either stage.
 
+## 2026-08-05 batch XV — planner (refactor: the four G-buffer channel indices, spelled as bare `0..3` in the shader, in two host loops and in a render-pass attachment table, under a gate comment that writes them off as "a permanent, unfixable violation"; the five `KHR_texture_transform` row pairs in `forward.slang`, hand-paired at eleven call sites in the one renderer the existing row-pairing gate's regex cannot see; and 102 verbatim copies of the same five-line violation-joining lambda in a gate suite whose own support header says it is "the one place those helpers live now")
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XIV's five tasks all shipped
+(`c1881290`, `6eb9e454`, `bc0745ac`, `1ee42ee9`, `59bbff3a`). Every
+`file:line` below was read out of the tree at `59bbff3a`.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so all three tasks here are accepted on CPU
+suites alone — and none of them changes what a frame looks like. Task 1
+renumbers nothing (every constant it introduces equals the literal it
+replaces), task 2 factors five affine transforms into five named functions
+without touching the arithmetic, and task 3 only edits test-failure message
+formatting.
+
+**Two of the three close a duplication the codebase has already fixed once,
+on the other side of a boundary.** Task 1 is the same "name the binding, do
+not spell the integer" change batch IX shipped for set 0 (`9ee460cb`), now for
+set 1 — the difference is that the gate written in that commit explicitly
+declares set 1 out of scope forever. Task 2 is the same per-slot UV-accessor
+change batch IV shipped for the C++ shaders (`base_color.slang`'s
+`normal_uv()` / `metallic_roughness_uv()` / `emissive_uv()`), now for the
+WGSL-emitting `forward.slang` — the renderers swapped, exactly as in batch V.
+
+**A scan for dead C++ API found essentially nothing this cycle**, which is
+worth recording so the next planner does not repeat it: across all 281
+function declarations in `Src/**/*.{ixx,hpp}`, the only identifier with no
+reference other than its own definition is
+`GpuTimingSubsystem::timestampMask()` (`GpuTimingSubsystem.ixx:238`) — already
+noted as rejected in the batch-XX candidate list, and still one accessor,
+still too thin for a task. The Rust-side pair that list named
+(`ForwardRenderer::animation_duration`, `disable_gpu_timing`) no longer exists
+in `crates/webgpu_renderer` at all. `MeshDrawRecorder.ixx` already owns the
+bind-VB/bind-IB/`drawIndexed` sequence for every raster path, and all seven
+`vk::WriteDescriptorSet` sites are still inside `DescriptorSetGroup.cpp`.
+Do not re-run these three sweeps without new evidence.
+
+### C++ Vulkan engine
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) (refactor) Give `forward.slang`'s five texture slots one named UV accessor each, and extend the row-pairing gate to reach them** — the C++ shaders got exactly these accessors in batch IV; `forward.slang` still hand-pairs a `_row0` with a `_row1` and a UV-set mask bit at eleven call sites, and the gate that forbids this cannot see them because its regex only matches the C++ struct's member names.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/base_color.slang:28-53` — the shape to
+    copy. `base_color_uv()` / `normal_uv()` / `metallic_roughness_uv()` /
+    `emissive_uv()` each own exactly one slot's row pair, and no caller names a
+    row member.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3378-3426` —
+    `BuildIntegrity.PerSlotUvTransformRowsAreSpelledInExactlyOnePlace`, the gate
+    to extend. Its comment already states the failure mode in full ("can pair a
+    slot's row0 with another slot's row1 — both are float3 on the same struct,
+    so the mismatch is well-typed and silently samples the wrong UV"); its
+    regex is `(normal|metallic_roughness|emissive)_uv_transform_row[01]`, which
+    matches nothing in `forward.slang` because that file's members are named
+    `base_uv_row0`, `mr_uv_row0`, `normal_uv_row0`, `emissive_uv_row0`,
+    `occlusion_uv_row0`.
+  - `Resources/ShadersSlang/forward/forward.slang` — `PrimUniforms` (`:35-53`,
+    the five `float4` row pairs and `material_flags.y`), `apply_uv_transform`
+    (`:57-62`), `fs_shadow_masked` (`:216-221`), `vs_shadow_masked` (`:200-213`,
+    where the base slot's mask bit is applied), and `fs_main` (`:379-396`, the
+    five mask selections followed by the five row pairings).
+  - `Resources/ShadersSlang/shader-manifest.json:81-86` and `:119` — the five
+    `forward.slang` entries are all `"targets": ["wgsl"]`, and the emitted
+    `forward.wgsl` is copied into
+    `crates/webgpu_renderer/src/shaders`. This shader has **no SPIR-V target**;
+    it is the Rust renderer's only.
+
+  **Steps:**
+  1. In `forward.slang`, keep `apply_uv_transform` exactly as it is and add,
+     directly under it, five accessors that each take the two interpolated UV
+     sets and return the final UV for one slot — folding both the mask bit and
+     the row pair into the function body:
+     `float2 base_color_uv(float2 uv0, float2 uv1)`, `metallic_roughness_uv`,
+     `normal_uv`, `emissive_uv`, `occlusion_uv`. Use the same names as
+     `base_color.slang` where a slot exists on both sides, so the two renderers
+     read alike; `occlusion_uv` has no C++ twin (the C++ engine has no occlusion
+     slot) — say so in a one-line comment.
+  2. Split the base slot into the two halves it actually needs, because
+     `vs_shadow_masked` applies the mask in the vertex stage and
+     `fs_shadow_masked` applies the rows in the fragment stage:
+     `float2 base_color_uv_select(float2 uv0, float2 uv1)` (owns mask bit 1) and
+     `float2 base_color_uv_rows(float2 uv)` (owns `base_uv_row0`/`_row1`), with
+     `base_color_uv(uv0, uv1)` defined as the composition of the two. Only the
+     base slot gets this split — do not add it to the other four.
+  3. Rewrite `fs_main:379-390` to five calls
+     (`float2 baseUv = base_color_uv(In.uv, In.uv1);` …), deleting the ten
+     intermediate locals (`uvMask`, `baseIn`/`mrIn`/`normalIn`/`emissiveIn`/
+     `occlusionIn`). Leave `:392-396`'s five `Sample` calls untouched.
+  4. Rewrite `vs_shadow_masked:209-210` to
+     `o.uv = base_color_uv_select(In.uv, In.uv1);` and `fs_shadow_masked:218` to
+     `float2 uv = base_color_uv_rows(In.uv);`. Do **not** change
+     `VsShadowMaskedOut` — adding an interpolator here is not needed and would
+     change the emitted vertex-output layout.
+  5. Extend the gate. Change its regex to also match this file's member spelling
+     — e.g. add a second pattern
+     `(base|mr|normal|emissive|occlusion)_uv_row[01]` — and add
+     `Resources/ShadersSlang/forward/forward.slang` to `kAllowedFiles` **only**
+     if you instead scope the check to "outside an accessor body"; the simpler
+     and preferred shape is: keep the whole-file rule and let `forward.slang`
+     pass because after steps 1–4 the only lines naming a row member are the
+     seven accessor bodies and the `PrimUniforms` declaration. Add a
+     `forward.slang`-specific allowance for those two regions the same way
+     `base_color.slang` and `scene_types.slang` are allowed today (whole-file
+     allowance is acceptable and matches the existing precedent), then add a
+     **second, narrower** test that asserts `material_flags.y` appears in
+     `forward.slang` on at most as many lines as there are selectors, so a
+     future hand-rolled mask selection is still caught. Update the gate's
+     comment to name both renderers.
+  6. Regenerate the WGSL:
+     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`,
+     and commit the regenerated
+     `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders/forward.wgsl`
+     together with the `.slang` change.
+  7. **Diff the regenerated `forward.wgsl` against the previous version and
+     read it.** Slang inlines these accessors, so the arithmetic in
+     `fs_main`/`fs_shadow_masked` must come out equivalent — identifier names
+     and statement order may move, but no `*_uv_row*` field should end up
+     paired with a different slot's partner than before. This diff is the
+     acceptance evidence for behaviour; state in the commit message that you
+     read it.
+
+  **Test:** Extend `BuildIntegrity.PerSlotUvTransformRowsAreSpelledInExactlyOnePlace`
+  as in step 5 and add `BuildIntegrity.ForwardShaderUvSetMaskHasOneOwnerPerSlot`
+  (the `material_flags.y` line-count assertion). Verify by temporarily writing
+  `apply_uv_transform(prim.mr_uv_row0, prim.normal_uv_row1, mrIn)` into
+  `fs_main` and confirming the extended gate fails, then reverting.
+
+  **Build:** `clangcl-debug` for the gate:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
+  For the Rust side run `cargo check -p kataglyphis_webgpu_renderer` and
+  `cargo clippy -p kataglyphis_webgpu_renderer` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate` — **not** `cargo test`/`cargo
+  build`: the host's MSVC linker is currently broken for this crate, so a link
+  failure there is the environment, not this change. The crate's own ~150 tests
+  run on the always-on Linux lane
+  (`Scripts/Linux/run-cargo-tests.sh`), which is the real signal for a WGSL
+  change; push and read that lane.
+
+  **Context:** Batch IV shipped the per-slot accessors and the gate for the C++
+  shaders after twelve hand-paired call sites were found in four files;
+  `forward.slang` was never touched because it targets WGSL and the gate's
+  regex was written against `ObjMaterial`'s member names. Batch V already
+  recorded this exact category ("the same defect, now with the renderers
+  swapped") for `KHR_texture_transform` in the Rust *loader*; this is its
+  shader half. Beware two known traps documented elsewhere: the WGSL staleness
+  gate can false-positive when `slangc` writes a byte-identical output (an
+  unchanged file's mtime does not move), and this is a
+  `Resources/ShadersSlang` edit, so no C++ rebuild is needed for the shader
+  itself — only for the gate. See
+  [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) and
+  [`docs/shader-sharing.md`](docs/shader-sharing.md).
+
+### Test and gate infrastructure
+
+- [ ] **(M) (refactor) Replace the 102 copies of the violation-joining lambda in `buildIntegritySuite.cpp` with one `joinViolations()` in `RepoFiles.hpp`** — 99 of the 102 are byte-identical apart from the captured variable's name, in a suite whose support header already says it is "the one place those helpers live now".
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/RepoFiles.hpp` — the whole file. Its header
+    comment ("Three suites each grew their own copy of both … This header is the
+    one place those helpers live now") is the precedent and should be extended,
+    not restated.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the 102 sites. Find
+    them with `grep -n "std::string joined;"`. The shape is always
+
+    ```
+        EXPECT_TRUE(xs.empty()) << "…message…"
+          << [&xs] {
+                 std::string joined;
+                 for (const auto &entry : xs) { joined += "\n  " + entry; }
+                 return joined;
+             }();
+    ```
+
+    with the capture named `violations` at 52 sites, `missing` at 8, `stale` at
+    4, and one-or-two-off names (`unread`, `offenders`, `mismatched`,
+    `doc_only`, `dead_exemptions`, `unmapped`, `unimported`, `truth_only`,
+    `missing_rows`, `not_found_in_any_spv`, …) at the rest.
+  - The three sites that are **not** the standard shape, which the helper's
+    signature must still cover:
+    `buildIntegritySuite.cpp:3420-3425` (`joined += violation + "\n";` — no
+    indent prefix, newline as a *suffix*), `:6728-6732`
+    (`joined += "\n  add \`" + entry + "\` to the srgb row's .mtl column";` —
+    both a prefix and a suffix), and the one site whose loop variable is
+    `name` rather than `entry` (standard shape otherwise).
+
+  **Steps:**
+  1. Add to `RepoFiles.hpp`, inside `namespace Kataglyphis::TestSupport`:
+
+     ```cpp
+     /// Formats a collected list of gate violations for a gtest failure message.
+     /// … (say why: 102 verbatim copies of this loop lived in
+     /// buildIntegritySuite.cpp, three of which had drifted into their own
+     /// spelling of the separator.)
+     inline std::string joinViolations(const std::vector<std::string> &entries,
+       std::string_view prefix = "\n  ",
+       std::string_view suffix = {})
+     {
+         std::string joined;
+         for (const auto &entry : entries) {
+             joined.append(prefix).append(entry).append(suffix);
+         }
+         return joined;
+     }
+     ```
+
+     Add `#include <string_view>` to the header's include list. Keep the
+     default arguments exactly as above so the 99 standard sites convert with no
+     extra argument.
+  2. Replace each standard site's five-line lambda-and-call with
+     `<< Kataglyphis::TestSupport::joinViolations(xs);` (the suite already has a
+     `using namespace`/alias for this header — match whatever the surrounding
+     code does for `readFileLines`/`repoRoot`, do not add a new spelling).
+  3. Convert the three odd sites with explicit arguments:
+     `joinViolations(violations, "", "\n")` for `:3420`, and
+     `joinViolations(missing, "\n  add \`", "\` to the srgb row's .mtl column")`
+     for `:6728`. The `name`-variable site is a standard site — convert it with
+     no extra argument.
+  4. Do **not** change any failure message's text. The point of the odd-site
+     arguments is that the rendered output is byte-identical to today's; if a
+     message must change, that is a separate task.
+  5. Grep for `std::string joined;` under `Test/` afterwards and confirm zero
+     hits outside `RepoFiles.hpp`.
+
+  **Test:** Add `BuildIntegrity.ViolationListsGoThroughTheSharedJoiner` next to
+  the other self-gates: walk `Test/commit/VulkanEngine/*.cpp`, count lines
+  matching `std::string joined;`, and assert the total is 0, with a failure
+  message pointing at `Kataglyphis::TestSupport::joinViolations`. Follow
+  `BuildIntegrity.ImageMemoryBarriersGoThroughTheSharedHelper`
+  (`buildIntegritySuite.cpp:10242`) for the budget-and-message shape — but use a
+  flat 0 rather than a per-file budget map, since there is no legitimate
+  hand-rolled case here. Also add a direct unit test for the helper itself
+  (empty vector → empty string; one entry; prefix-and-suffix form) — put it in
+  the existing `Test/commit/VulkanEngine/repoFilesSuite.cpp`.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then from the repo root
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*:RepoFiles.*`.
+  This is the whole acceptance criterion: every BuildIntegrity test must still
+  pass, and any that fails must fail with the *same message text* it produced
+  before — capture the pre-change output of a deliberately-broken gate and
+  compare, rather than trusting the diff.
+
+  **Context:** `buildIntegritySuite.cpp` is 11 920 lines; these 102 blocks are
+  roughly 510 of them, and their only variation is the captured name. This is
+  the same shape as `bacdcd3f` (which created `RepoFiles.hpp` and is why its
+  comment claims sole ownership of this suite's shared helpers) followed by
+  `2cf18361`, which converted 57 hand-rolled open-and-getline loops in this
+  same file to `readFileLines()`. Three of the 102 have already drifted into different separators,
+  which is the argument for doing it now rather than at 150 copies. It is a
+  large but strictly mechanical diff: no gate's *logic* changes, so a
+  BuildIntegrity failure after this change means a mistranscribed variable
+  name, not a real regression.
+

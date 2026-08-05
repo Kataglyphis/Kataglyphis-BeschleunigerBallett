@@ -20,6 +20,15 @@ static const int TLAS_BINDING = 0;
 static const int OUT_IMAGE_BINDING = 1;
 static const int ACCUMULATION_IMAGE_BINDING = 2;
 
+// ----- GBUFFER INPUT ATTACHMENT SET (deferred.slang's lighting subpass input
+// attachments, descriptor set 1). Must equal the position of the matching
+// entry in DeferredRasterizer.cpp's lightingInputRefs, and are NOT the render
+// pass's own attachment indices (which are these plus one).
+static const int GBUFFER_NORMAL_BINDING = 0;
+static const int GBUFFER_ALBEDO_BINDING = 1;
+static const int GBUFFER_MATERIAL_BINDING = 2;
+static const int GBUFFER_DEPTH_BINDING = 3;
+
 // Vertex layout (matches Src/shared/scene/Vertex.hpp).
 struct Vertex
 {

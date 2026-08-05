@@ -119,10 +119,10 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO_lighting;
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO_lighting;
 
-[[vk::binding(0, 1)]] [[vk::input_attachment_index(0)]] SubpassInput<float4> inNormal;
-[[vk::binding(1, 1)]] [[vk::input_attachment_index(1)]] SubpassInput<float4> inAlbedo;
-[[vk::binding(2, 1)]] [[vk::input_attachment_index(2)]] SubpassInput<float4> inMaterial;
-[[vk::binding(3, 1)]] [[vk::input_attachment_index(3)]] SubpassInput<float4> inDepth;
+[[vk::binding(GBUFFER_NORMAL_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_NORMAL_BINDING)]] SubpassInput<float4> inNormal;
+[[vk::binding(GBUFFER_ALBEDO_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_ALBEDO_BINDING)]] SubpassInput<float4> inAlbedo;
+[[vk::binding(GBUFFER_MATERIAL_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_MATERIAL_BINDING)]] SubpassInput<float4> inMaterial;
+[[vk::binding(GBUFFER_DEPTH_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_DEPTH_BINDING)]] SubpassInput<float4> inDepth;
 
 struct LightingVsOut
 {

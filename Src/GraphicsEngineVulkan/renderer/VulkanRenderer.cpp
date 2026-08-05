@@ -1646,8 +1646,12 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 {
     // 4 input attachments: normal, albedo, material, depth. World position
-    // is reconstructed from depth in the lighting pass.
-    for (uint32_t binding = 0; binding < 4; binding++) {
+    // is reconstructed from depth in the lighting pass. Order and values
+    // must match deferred.slang's GBUFFER_*_BINDING input attachments.
+    static constexpr std::array<uint32_t, 4> kGBufferBindings = {
+        GBUFFER_NORMAL_BINDING, GBUFFER_ALBEDO_BINDING, GBUFFER_MATERIAL_BINDING, GBUFFER_DEPTH_BINDING
+    };
+    for (const uint32_t binding : kGBufferBindings) {
         gbufferDescriptors.addBinding(binding, vk::DescriptorType::eInputAttachment, 1, vk::ShaderStageFlagBits::eFragment);
     }
 
@@ -1659,9 +1663,13 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 void Kataglyphis::VulkanRenderer::updateGBufferDescriptorSets()
 {
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        gbufferDescriptors.writeImage(i, 0, deferredRasterizer.getGBufferNormal(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 1, deferredRasterizer.getGBufferAlbedo(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 2, deferredRasterizer.getGBufferMaterial(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 3, deferredRasterizer.getDepthBufferImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, GBUFFER_NORMAL_BINDING, deferredRasterizer.getGBufferNormal(i),
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, GBUFFER_ALBEDO_BINDING, deferredRasterizer.getGBufferAlbedo(i),
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, GBUFFER_MATERIAL_BINDING, deferredRasterizer.getGBufferMaterial(i),
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, GBUFFER_DEPTH_BINDING, deferredRasterizer.getDepthBufferImageView(),
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
     }
 }
