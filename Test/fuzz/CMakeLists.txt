@@ -183,8 +183,32 @@ target_sources(
 # Real engine surface: texture decoding (stb_image). Every material texture and
 # every skybox face goes through it, and its reported byte count sizes a
 # staging buffer that is then memcpy'd into.
+#
+# Like every other target here it links no renderer. It used to link
+# VulkanEngineCore plus the ImGui test sources, because the decode lived in
+# Texture.cpp and Texture.ixx imports device/buffer/image; on 2026-08-05, the
+# first run that ever executed this target, it died at startup on the Linux
+# ASan lane with "SEGV on unknown address 0x000000000000" - a symbolized stack
+# put it in fuzztest's OWN static initializer (init_fuzztest.cc:54) registering
+# an abseil command-line flag, inside the flag registry's hash map, before a
+# single test ran. Adding the engine's translation units to the link reorders
+# the static initializers those abseil flags depend on.
+#
+# So the decode moved to kataglyphis.vulkan.texture_decode, which needs neither
+# a device nor a logger; Texture::loadTextureData forwards to it and keeps its
+# spdlog line. The fuzz target compiles that module and links only stb, the
+# same shape as gltf_parsing_fuzz_test with cgltf. STB_IMAGE_IMPLEMENTATION
+# lives in the fuzz source (the engine keeps its own in VulkanRenderer.cpp; the
+# two never meet in one link).
 kataglyphis_add_fuzz_test(texture_loading_fuzz_test texture_loading_fuzz_test.cpp)
-target_link_libraries(texture_loading_fuzz_test PRIVATE VulkanEngineCore)
-# Importing the texture module drags in the renderer's ImGui references, unlike
-# the lighter modules the other fuzz targets use.
-kataglyphis_add_imgui_test_sources(texture_loading_fuzz_test)
+target_sources(
+  texture_loading_fuzz_test
+  PUBLIC FILE_SET
+         texture_decode_module
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan
+         FILES
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/TextureDecode.ixx)
+target_link_libraries(texture_loading_fuzz_test PRIVATE stb)

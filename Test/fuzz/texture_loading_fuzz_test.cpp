@@ -1,7 +1,8 @@
 // Fuzzes texture decoding - the last untrusted input surface in the engine.
 //
 // Every material texture and every skybox face reaches stb_image through
-// Texture::loadTextureData, which returns a raw pointer plus dimensions and a
+// TextureDecode::decodeImageRGBA8 - the function Texture::loadTextureData
+// forwards to - which returns a raw pointer plus dimensions and a
 // byte count that callers then use to size a staging buffer and memcpy into
 // it. A decoder that reports dimensions inconsistent with the buffer it
 // returned is therefore a heap overflow one memcpy later, not a bad picture.
@@ -34,15 +35,17 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <vulkan/vulkan.hpp>
 
-// Declaration only - the implementation lives in the engine translation unit
-// that defines STB_IMAGE_IMPLEMENTATION.
+// stb_image is header-only and this target does not link the engine, so it
+// carries its own implementation - exactly as gltf_parsing_fuzz_test does with
+// CGLTF_IMPLEMENTATION. The engine keeps its own copy in VulkanRenderer.cpp;
+// the two never meet in one link.
+#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include "fuzztest/fuzztest.h"
 
-import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.texture_decode;
 
 namespace {
 
@@ -65,14 +68,14 @@ void DecodingArbitraryImageBytesRespectsTheSizeContract(const std::vector<uint8_
     }
 
     // Deliberately pre-set to sentinels rather than 0. stb_image itself does
-    // not write these on failure, but Texture::loadTextureData now zeros
+    // not write these on failure, but decodeImageRGBA8 zeros
     // width/height/image_size before returning null, overwriting whatever
     // sentinel was here; the assertions below only look at them on the
     // success path, which is the contract callers are entitled to rely on.
     int width = -1;
     int height = -1;
-    vk::DeviceSize image_size = 0;
-    unsigned char *pixels = Kataglyphis::Texture::loadTextureData(path.string(), &width, &height, &image_size);
+    std::uint64_t image_size = 0;
+    unsigned char *pixels = Kataglyphis::TextureDecode::decodeImageRGBA8(path.string(), &width, &height, &image_size);
 
     if (pixels != nullptr) {
         EXPECT_GT(width, 0) << "decode succeeded but reported a non-positive width";
@@ -80,7 +83,7 @@ void DecodingArbitraryImageBytesRespectsTheSizeContract(const std::vector<uint8_
         // The exact relationship callers depend on when sizing a staging
         // buffer: STBI_rgb_alpha forces 4 channels.
         EXPECT_EQ(image_size,
-          static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4U)
+          static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4U)
           << "reported byte count does not match the reported dimensions - a staging "
              "buffer sized from this would over- or under-run";
         stbi_image_free(pixels);

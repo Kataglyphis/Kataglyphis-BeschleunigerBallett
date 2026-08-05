@@ -117,15 +117,19 @@ fails the build on it (see "Known state" below).
   `Scripts/Linux/run_static_analysis_format.sh` on Linux (it adds
   `scan-build` static analysis on top).
 
-## Known state (2026-08-04)
+## Known state (2026-08-05)
 
-<!-- format-drift-denominator: 215 -->
+<!-- format-drift-denominator: 216 -->
 
-**140 of 215** own sources under `Src/` and `Test/` differ from
-`.clang-format` (up from 72 of 125 on 2026-07-19). `Invoke-ClangFormatCheck`
-(see the caveat above) reports this count on every container build and
-**never fails the build** on it — that is why it grew from 72 to 140 while
-every build stayed green. The "tidy drift accumulates even when every build
+**142 of 216** own sources under `Src/` and `Test/` differ from
+`.clang-format` (up from 72 of 125 on 2026-07-19, and 140 of 215 on
+2026-08-04 — the two new deviating files arrived between those dates;
+`TextureDecode.ixx`, the 216th source, was formatted before it landed).
+Re-measured 2026-08-05 with `Get-ProjectCppFiles` + `clang-format --dry-run
+-Werror`, the same pair `Invoke-ClangFormatCheck` uses.
+`Invoke-ClangFormatCheck` (see the caveat above) reports this count on every
+container build and **never fails the build** on it — that is why it grew
+from 72 to 142 while every build stayed green. The "tidy drift accumulates even when every build
 is green" sentence above applies to format drift too, not just clang-tidy.
 Reformatting them is a **decision, not a chore**: it touches most of the
 engine in one commit and will collide with in-flight work. Tracked in
