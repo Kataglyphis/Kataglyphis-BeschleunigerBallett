@@ -5809,6 +5809,7 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
     };
 
     scan_file(repo_root / "docs" / "model-loading.md");
+    scan_file(repo_root / "docs" / "clouds.md");
 
     static constexpr std::array<const char *, 3> kSrcExtensions{ ".cpp", ".hpp", ".ixx" };
     std::error_code error;
@@ -6820,6 +6821,31 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
     }
 }
 
+// The nine cloud.<field> <- scene.<field>.<component> pairs SceneUboMarshal.hpp's
+// fillSceneUboClouds (host) and clouds_main's unpack block (shader) must
+// agree on. Shared by CloudUboPackingMatchesTheShaderUnpack (checks it
+// against the shader) and CloudsDocTablesMatchTheirSources (checks
+// docs/clouds.md's cloud-ubo table against this same list), so the two tests
+// cannot silently diverge into two different "ground truths" for the same
+// nine-row table.
+struct CloudUboFieldPair
+{
+    const char *cloud_field;
+    const char *scene_field;
+    const char *component;
+};
+constexpr std::array<CloudUboFieldPair, 9> kCloudUboFieldPairs{ {
+  { "num_march_steps", "cloudParameters", "w" },
+  { "num_march_steps_to_light", "cloudLightMarch", "x" },
+  { "scale", "cloudMeshScale", "w" },
+  { "threshold", "cloudMeshOffset", "w" },
+  { "pillowness", "cloudParameters", "x" },
+  { "cirrus_effect", "cloudParameters", "y" },
+  { "powder_effect", "cloudParameters", "z" },
+  { "radius", "cloudMeshScale", "xyz" },
+  { "offset", "cloudMeshOffset", "xyz" },
+} };
+
 // SceneUboMarshal.hpp's fillSceneUboClouds (the host packer) and this shader
 // (the only unpack side) are two hand-written mirrors of the same seven-value
 // layout, tied together by nothing but a comment. sceneUboLayoutSuite pins
@@ -6838,25 +6864,7 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
     const auto contents = readFileText(clouds_path);
     ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
 
-    struct FieldPair
-    {
-        const char *cloud_field;
-        const char *scene_field;
-        const char *component;
-    };
-    static const std::array<FieldPair, 9> kPairs{ {
-      { "num_march_steps", "cloudParameters", "w" },
-      { "num_march_steps_to_light", "cloudLightMarch", "x" },
-      { "scale", "cloudMeshScale", "w" },
-      { "threshold", "cloudMeshOffset", "w" },
-      { "pillowness", "cloudParameters", "x" },
-      { "cirrus_effect", "cloudParameters", "y" },
-      { "powder_effect", "cloudParameters", "z" },
-      { "radius", "cloudMeshScale", "xyz" },
-      { "offset", "cloudMeshOffset", "xyz" },
-    } };
-
-    for (const auto &pair : kPairs) {
+    for (const auto &pair : kCloudUboFieldPairs) {
         const std::string pattern = std::string("cloud\\.") + pair.cloud_field + R"(\s*=[^;]*scene\.)"
           + pair.scene_field + "\\." + pair.component + "\\b";
         const std::regex field_regex(pattern);
@@ -6865,6 +6873,156 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
           << pair.scene_field << '.' << pair.component
           << " - the host packer (SceneUboMarshal.hpp's fillSceneUboClouds) and this shader's unpack "
              "must agree on which component every cloud slider lands in";
+    }
+}
+
+// std::string-owning counterpart to CloudUboFieldPair (whose const char*
+// fields point at literal storage from kCloudUboFieldPairs and must not be
+// reused for parsed, temporary text).
+struct ParsedCloudUboRow
+{
+    std::string cloud_field;
+    std::string scene_field;
+    std::string component;
+};
+
+// Parses docs/clouds.md's `<!-- cloud-ubo:begin -->` / `:end` marker table -
+// one `| <gui control> | \`cloud.<field>\` | \`<sceneField>.<component>\` |`
+// row per SceneUBO field/component pair. Returns std::nullopt if the marker
+// pair is missing, matching parse_shader_targets_marker's convention.
+std::optional<std::vector<ParsedCloudUboRow>> parse_cloud_ubo_doc_table(const fs::path &doc_path)
+{
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
+
+    static const std::regex kRowPattern(
+      R"(\|[^|]*\|\s*`cloud\.([A-Za-z_]+)`\s*\|\s*`([A-Za-z]+)\.([A-Za-z]+)`\s*\|)");
+
+    std::vector<ParsedCloudUboRow> rows;
+    bool in_block = false;
+    bool saw_block = false;
+    for (const auto &line : *lines) {
+        if (line.find("<!-- cloud-ubo:begin -->") != std::string::npos) {
+            in_block = true;
+            saw_block = true;
+            continue;
+        }
+        if (line.find("<!-- cloud-ubo:end -->") != std::string::npos) {
+            in_block = false;
+            continue;
+        }
+        if (!in_block) { continue; }
+
+        std::smatch match;
+        if (std::regex_search(line, match, kRowPattern)) {
+            rows.push_back({ match[1].str(), match[2].str(), match[3].str() });
+        }
+    }
+
+    if (!saw_block) { return std::nullopt; }
+    return rows;
+}
+
+// Parses docs/clouds.md's `<!-- cloud-constants:begin -->` / `:end` marker
+// table - one `| \`<name>\` | <value> | ... |` row per CloudDispatch.hpp
+// constant. Returns std::nullopt if the marker pair is missing.
+std::optional<std::map<std::string, long long>> parse_cloud_constants_doc_table(const fs::path &doc_path)
+{
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
+
+    static const std::regex kRowPattern(R"(\|\s*`(k[A-Za-z]+)`\s*\|\s*([0-9]+)\s*\|)");
+
+    std::map<std::string, long long> rows;
+    bool in_block = false;
+    bool saw_block = false;
+    for (const auto &line : *lines) {
+        if (line.find("<!-- cloud-constants:begin -->") != std::string::npos) {
+            in_block = true;
+            saw_block = true;
+            continue;
+        }
+        if (line.find("<!-- cloud-constants:end -->") != std::string::npos) {
+            in_block = false;
+            continue;
+        }
+        if (!in_block) { continue; }
+
+        std::smatch match;
+        if (std::regex_search(line, match, kRowPattern)) { rows[match[1].str()] = std::stoll(match[2].str()); }
+    }
+
+    if (!saw_block) { return std::nullopt; }
+    return rows;
+}
+
+// docs/clouds.md hand-maintains two tables that would otherwise silently rot:
+// the cloud-ubo table (GUI control -> shader field -> SceneUBO
+// field/component) and the cloud-constants table (every CloudDispatch.hpp
+// constant + the shader token it pins). This checks both against their
+// actual source of truth - kCloudUboFieldPairs (the same list
+// CloudUboPackingMatchesTheShaderUnpack already derives, reused rather than
+// hand-copied a second time) and the compiled CloudDispatch.hpp constants
+// themselves - so a doc edit that drifts from either fails here instead of
+// silently going stale, the same failure mode ShaderSharingDocMatchesTheManifestTargets
+// guards against for the shader-targets table.
+TEST(BuildIntegrity, CloudsDocTablesMatchTheirSources)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "clouds.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto ubo_rows = parse_cloud_ubo_doc_table(doc_path);
+    ASSERT_TRUE(ubo_rows.has_value())
+      << doc_path.string() << " is missing its '<!-- cloud-ubo:begin -->' / '<!-- cloud-ubo:end -->' marker block";
+
+    ASSERT_EQ(ubo_rows->size(), kCloudUboFieldPairs.size())
+      << doc_path.string() << "'s cloud-ubo table has " << ubo_rows->size() << " row(s), expected "
+      << kCloudUboFieldPairs.size() << " to match kCloudUboFieldPairs";
+    for (std::size_t i = 0; i < kCloudUboFieldPairs.size(); ++i) {
+        const auto &expected = kCloudUboFieldPairs[i];
+        const auto &actual = (*ubo_rows)[i];
+        EXPECT_EQ(actual.cloud_field, expected.cloud_field)
+          << doc_path.string() << "'s cloud-ubo table row " << i << " has shader field \"" << actual.cloud_field
+          << "\", expected \"" << expected.cloud_field << '"';
+        EXPECT_EQ(actual.scene_field, expected.scene_field)
+          << doc_path.string() << "'s cloud-ubo table row " << i << " (cloud." << expected.cloud_field
+          << ") has SceneUBO field \"" << actual.scene_field << "\", expected \"" << expected.scene_field << '"';
+        EXPECT_EQ(actual.component, expected.component)
+          << doc_path.string() << "'s cloud-ubo table row " << i << " (cloud." << expected.cloud_field
+          << ") has SceneUBO component \"" << actual.component << "\", expected \"" << expected.component << '"';
+    }
+
+    const auto constants_rows = parse_cloud_constants_doc_table(doc_path);
+    ASSERT_TRUE(constants_rows.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- cloud-constants:begin -->' / '<!-- cloud-constants:end -->' marker block";
+
+    const std::map<std::string, long long> truth{
+        { "kNoiseVolumeExtent", static_cast<long long>(Kataglyphis::kNoiseVolumeExtent) },
+        { "kNoiseWorkgroupSize", static_cast<long long>(Kataglyphis::kNoiseWorkgroupSize) },
+        { "kCloudWorkgroupSize", static_cast<long long>(Kataglyphis::kCloudWorkgroupSize) },
+        { "kMinCloudMarchSteps", static_cast<long long>(Kataglyphis::kMinCloudMarchSteps) },
+        { "kMaxCloudMarchSteps", static_cast<long long>(Kataglyphis::kMaxCloudMarchSteps) },
+        { "kMinCloudLightMarchSteps", static_cast<long long>(Kataglyphis::kMinCloudLightMarchSteps) },
+        { "kMaxCloudLightMarchSteps", static_cast<long long>(Kataglyphis::kMaxCloudLightMarchSteps) },
+    };
+
+    for (const auto &[name, value] : truth) {
+        const auto it = constants_rows->find(name);
+        ASSERT_TRUE(it != constants_rows->end())
+          << doc_path.string() << "'s cloud-constants table is missing a row for `" << name << '`';
+        EXPECT_EQ(it->second, value) << doc_path.string() << "'s cloud-constants table says " << name << " = "
+                                      << it->second << ", CloudDispatch.hpp says " << value;
+    }
+    for (const auto &[name, value] : *constants_rows) {
+        if (truth.contains(name)) { continue; }
+        ADD_FAILURE() << doc_path.string() << "'s cloud-constants table has an unexpected row `" << name << "` = "
+                       << value << " with no matching CloudDispatch.hpp constant";
     }
 }
 

@@ -21,6 +21,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ContainerHub](#rule-reusable-work-belongs-in-containerhub) |
 | Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer` — [`docs/webgpu-renderer-roadmap.md`](docs/webgpu-renderer-roadmap.md) |
+| Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
 
 ### Repo map
 
@@ -523,6 +524,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/container-build-caching.md` | This repo's container transport numbers, sccache volume, incremental-build wiring |
 | `docs/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, host verification loop, synchronization validation |
 | `docs/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
+| `docs/clouds.md` | Volumetric clouds: pipeline shape, estimator, UBO/constants tables, queue ownership, compositing contract |
 | `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
