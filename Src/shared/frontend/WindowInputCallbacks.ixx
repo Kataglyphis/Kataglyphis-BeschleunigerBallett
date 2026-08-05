@@ -16,13 +16,11 @@ inline void reset_window_keys(bool *keys)
     for (std::size_t index = 0; index < window_key_count; ++index) { keys[index] = false; }
 }
 
-// GLFW-touching half (uninstalling the cursor callback) stays at the call
-// site precisely so this half stays testable - see the frontendInputSuite.cpp
-// header comment for why a live GLFWwindow cannot be exercised here.
-inline void handle_focus_lost(bool *keys, bool &mouse_first_moved)
+inline void handle_focus_lost(bool *keys, bool &mouse_first_moved, bool &look_mode_active)
 {
     reset_window_keys(keys);
     mouse_first_moved = true;
+    look_mode_active = false;
 }
 
 // Producers (handle_mouse_callback) accumulate into axis_change so several
@@ -68,6 +66,7 @@ inline void handle_mouse_callback(GLFWwindow *window,
   float &x_change,
   float &y_change,
   bool &mouse_first_moved,
+  bool look_mode_active,
   double x_pos,
   double y_pos)
 {
@@ -78,6 +77,17 @@ inline void handle_mouse_callback(GLFWwindow *window,
         // at the pre-panel position and the first event after capture ends
         // differences against it, snapping the camera by the distance
         // crossed while hovering the panel.
+        last_x = static_cast<float>(x_pos);
+        last_y = static_cast<float>(y_pos);
+        return;
+    }
+
+    if (!look_mode_active) {
+        // The cursor-pos callback is installed unconditionally (ImGui backend
+        // requirement), so events keep arriving outside look mode too. Track
+        // position without emitting a delta, for the same reason as the
+        // ImGui-capture branch above: otherwise the first event after look
+        // mode resumes differences against a stale position and snaps.
         last_x = static_cast<float>(x_pos);
         last_y = static_cast<float>(y_pos);
         return;
@@ -121,23 +131,24 @@ inline bool should_release_cursor(int button, int action)
 
 inline void handle_mouse_button_callback(GLFWwindow *window,
   bool &mouse_first_moved,
+  bool &look_mode_active,
   int button,
-  int action,
-  GLFWcursorposfun mouse_callback)
+  int action)
 {
+    (void)window;
     if (should_capture_cursor(button, action)) {
         if (imgui_wants_mouse_capture()) { return; }
         // Entering look mode must always re-seed, not just leaving it -
         // otherwise the first drag of every run snaps the camera by the
         // cursor's absolute screen position.
         mouse_first_moved = true;
-        glfwSetCursorPosCallback(window, mouse_callback);
+        look_mode_active = true;
     } else if (should_release_cursor(button, action)) {
         // A release must always end look mode, even while ImGui holds
-        // capture - otherwise releasing the mouse over a panel leaves the
-        // cursor callback installed forever.
+        // capture - otherwise releasing the mouse over a panel keeps
+        // steering the camera forever.
         mouse_first_moved = true;
-        glfwSetCursorPosCallback(window, nullptr);
+        look_mode_active = false;
     }
 }
 

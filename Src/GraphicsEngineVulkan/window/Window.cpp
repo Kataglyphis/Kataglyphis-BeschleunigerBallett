@@ -97,6 +97,14 @@ void Window::init_callbacks()
     glfwSetFramebufferSizeCallback(main_window, &framebuffer_size_callback);
     glfwSetWindowFocusCallback(main_window, &window_focus_callback);
     glfwSetCursorEnterCallback(main_window, &cursor_enter_callback);
+    // ImGui's GLFW backend is initialised with install_callbacks = false, and
+    // its changelog is explicit that callers MUST install the cursor-pos
+    // callback themselves - without it, ImGui_ImplGlfw_UpdateMouseData falls
+    // back to glfwGetCursorPos polling and its io.MousePos never matches what
+    // the callback-driven backend expects. Do NOT make this conditional on
+    // look mode again: look_mode_active (WindowInputState) is what gates
+    // camera motion now, not whether the callback is installed.
+    glfwSetCursorPosCallback(main_window, &mouse_callback);
 }
 
 void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height)
@@ -116,9 +124,9 @@ void Window::window_focus_callback(GLFWwindow *window, int focused)
 
     if (focused == GLFW_FALSE) {
         auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-        Kataglyphis::Frontend::handle_focus_lost(
-          the_window->input_state.keys.data(), the_window->input_state.mouse_first_moved);
-        glfwSetCursorPosCallback(window, nullptr);
+        Kataglyphis::Frontend::handle_focus_lost(the_window->input_state.keys.data(),
+          the_window->input_state.mouse_first_moved,
+          the_window->input_state.look_mode_active);
     }
 }
 
@@ -148,6 +156,7 @@ void Window::mouse_callback(GLFWwindow *window, double x_pos, double y_pos)
       the_window->input_state.x_change,
       the_window->input_state.y_change,
       the_window->input_state.mouse_first_moved,
+      the_window->input_state.look_mode_active,
       x_pos,
       y_pos);
 }
@@ -158,7 +167,7 @@ void Window::mouse_button_callback(GLFWwindow *window, int button, int action, i
 
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
     Kataglyphis::Frontend::handle_mouse_button_callback(
-      window, the_window->input_state.mouse_first_moved, button, action, mouse_callback);
+      window, the_window->input_state.mouse_first_moved, the_window->input_state.look_mode_active, button, action);
 }
 
 void Window::scroll_callback(GLFWwindow *window, double x_offset, double y_offset)
