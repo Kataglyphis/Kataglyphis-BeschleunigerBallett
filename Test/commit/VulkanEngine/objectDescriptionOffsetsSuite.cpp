@@ -15,6 +15,7 @@ import kataglyphis.vulkan.object_description;
 
 using Kataglyphis::assignTextureOffsets;
 using Kataglyphis::FlattenedTextureSlot;
+using Kataglyphis::meshBaseOffsets;
 using Kataglyphis::planFlattenedTextureSlots;
 
 TEST(ObjectDescriptionOffsets, EveryMeshOfAModelSharesThatModelsOffset)
@@ -43,6 +44,54 @@ TEST(ObjectDescriptionOffsets, ASingleModelLeavesEveryOffsetAtZero)
 
     EXPECT_EQ(descriptions[0].texture_offset, 0U);
     EXPECT_EQ(descriptions[1].texture_offset, 0U);
+}
+
+TEST(ObjectDescriptionOffsets, MeshBaseOffsetsAccumulateInModelOrder)
+{
+    const std::vector<uint32_t> meshCountPerModel{ 2, 3, 1 };
+
+    const auto offsets = meshBaseOffsets(meshCountPerModel);
+
+    const std::vector<uint32_t> expected{ 0, 2, 5 };
+    EXPECT_EQ(offsets, expected);
+}
+
+TEST(ObjectDescriptionOffsets, MeshBaseOffsetsHandleEmptyAndSingleMeshModels)
+{
+    EXPECT_TRUE(meshBaseOffsets(std::vector<uint32_t>{}).empty());
+
+    const std::vector<uint32_t> meshCountPerModel{ 1, 1, 1 };
+    const std::vector<uint32_t> expected{ 0, 1, 2 };
+    EXPECT_EQ(meshBaseOffsets(meshCountPerModel), expected);
+
+    // A model with 0 meshes must not shift its successors' offsets.
+    const std::vector<uint32_t> withEmptyModel{ 1, 0, 1 };
+    const std::vector<uint32_t> expectedWithEmptyModel{ 0, 1, 1 };
+    EXPECT_EQ(meshBaseOffsets(withEmptyModel), expectedWithEmptyModel);
+}
+
+TEST(ObjectDescriptionOffsets, MeshBaseOffsetsAgreeWithAssignTextureOffsets)
+{
+    // For the same meshCountPerModel, the offset of model m equals the index
+    // of its first description in the flattened vector assignTextureOffsets
+    // stamps - the contract, asserted directly.
+    const std::vector<uint32_t> meshCountPerModel{ 2, 1, 3 };
+    const std::vector<uint32_t> textureCountPerModel{ 5, 2, 3 };
+
+    const auto offsets = meshBaseOffsets(meshCountPerModel);
+
+    uint32_t totalMeshes = 0;
+    for (const uint32_t count : meshCountPerModel) {
+        totalMeshes += count;
+    }
+    std::vector<ObjectDescription> descriptions(totalMeshes);
+    assignTextureOffsets(descriptions, meshCountPerModel, textureCountPerModel);
+
+    uint64_t textureOffset = 0;
+    for (std::size_t m = 0; m < meshCountPerModel.size(); ++m) {
+        EXPECT_EQ(descriptions[offsets[m]].texture_offset, textureOffset);
+        textureOffset += textureCountPerModel[m];
+    }
 }
 
 TEST(ObjectDescriptionOffsets, PlanVisitsEveryModelsTexturesInModelOrder)

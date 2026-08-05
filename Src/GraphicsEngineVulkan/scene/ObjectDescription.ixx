@@ -36,6 +36,25 @@ inline void assignTextureOffsets(std::span<ObjectDescription> descriptions,
     }
 }
 
+/// One entry per model: the running sum of preceding models' mesh counts.
+/// This is the value written to
+/// `VkAccelerationStructureInstanceKHR::instanceCustomIndex` for each model's
+/// TLAS instance, and read back by the traced shaders (via `InstanceID()`)
+/// as the object-index base they add `GeometryIndex()` to. It walks the same
+/// `meshCountPerModel` counts as assignTextureOffsets, just summing mesh
+/// counts instead of texture counts - the two must agree on model order.
+inline std::vector<uint32_t> meshBaseOffsets(std::span<const uint32_t> meshCountPerModel)
+{
+    std::vector<uint32_t> offsets;
+    offsets.reserve(meshCountPerModel.size());
+    uint32_t offset = 0;
+    for (const uint32_t meshCount : meshCountPerModel) {
+        offsets.push_back(offset);
+        offset += meshCount;
+    }
+    return offsets;
+}
+
 /// One slot in the flattened global texture array: which model the texture
 /// came from, and its index within that model's local texture list.
 struct FlattenedTextureSlot

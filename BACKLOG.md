@@ -11045,61 +11045,6 @@ reason too. Only task 5 changes a C++23 module interface
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Extract the TLAS instance base-offset accumulator next to `assignTextureOffsets`, and unit-test it** — the number tasks 1 and 2 make the shaders read is produced by an untested inline loop in `createTLAS`, while its mirror-image contract half was extracted and tested long ago.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/ObjectDescription.ixx` —
-    `assignTextureOffsets` and `planFlattenedTextureSlots`: the module that
-    already owns the "one entry per MESH, flattened across models" contract,
-    including the doc-comment style and the "stops cleanly on a count mismatch"
-    guard.
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` —
-    `createTLAS`'s `uint32_t mesh_base_offset = 0;` accumulator and the
-    `scene->getMeshCount(model_index)` advance inside the instance loop.
-  - `Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp` — the suite to
-    extend; `ObjectDescriptionOffsets.MoreMeshesThanDescriptionsDoesNotOverrun`
-    is the guard-case pattern to mirror.
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/BlasCompaction.hpp`
-    — the "device-free helper beside its caller, tested headlessly" precedent.
-
-  **Steps:**
-  1. Add `meshBaseOffsets(std::span<const uint32_t> meshCountPerModel) ->
-     std::vector<uint32_t>` to `scene/ObjectDescription.ixx`, exported from
-     `kataglyphis.vulkan.object_description`, returning one entry per model:
-     the running sum of preceding models' mesh counts. Document it as the
-     value written to `VkAccelerationStructureInstanceKHR::instanceCustomIndex`
-     and read by the traced shaders as the object-index base, and cross-link it
-     to `assignTextureOffsets` (which walks the same counts for
-     `texture_offset`) the way that function's comment already cross-links back.
-  2. Route `createTLAS` through it: compute the offsets once before the
-     instance loop, index by `model_index`, and drop the inline accumulator.
-     Keep the loop's existing early-return guards untouched.
-  3. Fix `createTLAS`'s stale comment if task 2 has not already (the
-     "== model_index while a Model holds one mesh" claim) — do not leave two
-     edits fighting over it.
-
-  **Test:** Add to `Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp`:
-  - `ObjectDescriptionOffsets.MeshBaseOffsetsAccumulateInModelOrder` —
-    `{2, 3, 1}` → `{0, 2, 5}`.
-  - `ObjectDescriptionOffsets.MeshBaseOffsetsHandleEmptyAndSingleMeshModels` —
-    `{}` → empty; `{1, 1, 1}` → `{0, 1, 2}` (the case that made the bug in
-    tasks 1–2 invisible); a model with 0 meshes does not shift its successors.
-  - `ObjectDescriptionOffsets.MeshBaseOffsetsAgreeWithAssignTextureOffsets` —
-    for the same `meshCountPerModel`, the offset of model *m* equals the index
-    of its first description in the flattened vector `assignTextureOffsets`
-    stamps. This is the contract, asserted directly.
-
-  **Build:** `clangcl-debug` **with `-FreshContainer`** — `ObjectDescription.ixx`
-  is a C++23 module interface (AGENTS.md § Containerized Windows Builds):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='ObjectDescriptionOffsets.*:BuildIntegrity.*'`.
-
-  **Context:** Pure host-side, device-free, fully verifiable in the container —
-  the one task in this batch whose correctness does not depend on reading
-  disassembly. It exists because tasks 1 and 2 make a host-computed number
-  load-bearing for the first time; leaving it in an untested inline loop with a
-  comment that says it does not matter is how the divergence survived.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 ### Docs

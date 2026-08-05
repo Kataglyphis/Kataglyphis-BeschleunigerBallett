@@ -25,6 +25,7 @@ import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.buffer_manager;
+import kataglyphis.vulkan.object_description;
 
 Kataglyphis::VulkanRendererInternals::ASManager::ASManager() = default;
 
@@ -300,8 +301,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     // GeometryIndex() (the mesh within the model's BLAS) to reach the
     // per-mesh object description. == model_index only while every Model
     // holds exactly one mesh - not true today: Models/Dinosaurs/dinosaurs.obj
-    // has three `o` shapes and ObjLoader makes one Mesh per shape.
-    uint32_t mesh_base_offset = 0;
+    // has three `o` shapes and ObjLoader makes one Mesh per shape. Computed by
+    // meshBaseOffsets, the mirror image of assignTextureOffsets.
+    const std::vector<uint32_t> mesh_base_offsets = Kataglyphis::meshBaseOffsets(scene->getMeshCountPerModel());
     for (size_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
         glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<uint32_t>(model_index)));
         vk::TransformMatrixKHR out_matrix;
@@ -315,8 +317,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
 
         vk::AccelerationStructureInstanceKHR geometry_instance{};
         geometry_instance.transform = out_matrix;
-        geometry_instance.instanceCustomIndex = mesh_base_offset;
-        mesh_base_offset += scene->getMeshCount(static_cast<uint32_t>(model_index));
+        geometry_instance.instanceCustomIndex = mesh_base_offsets[model_index];
         geometry_instance.mask = 0xFF;
         geometry_instance.instanceShaderBindingTableRecordOffset = 0;
         geometry_instance.flags =
