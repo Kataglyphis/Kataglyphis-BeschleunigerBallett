@@ -26,8 +26,9 @@ namespace Kataglyphis {
 // exactly that: their aspect/mip/layer values come from a general
 // transition helper's own parameters, not boilerplate, so they are exempt
 // and stay unconverted. The two cloud-output barriers in
-// VulkanRenderer.cpp (:922, :954) are also deliberately left alone - they
-// are the subject of a separate, blocked backlog entry.
+// VulkanRenderer.cpp - cloud_output_war_barrier and cloud_output_barrier -
+// are also deliberately left alone; they are the subject of a separate,
+// blocked backlog entry.
 //
 // pNext is deliberately left at its default; nothing in this engine chains
 // anything through an image barrier.

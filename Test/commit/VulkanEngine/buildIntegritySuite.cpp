@@ -5718,12 +5718,22 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
 // chronological log where a citation pinned to a historical commit is
 // legitimate, and BACKLOG.md is not scanned at all. Every other doc, and now
 // every source/shader comment, cites symbol names instead.
+//
+// kFileLinePattern alone missed the same-file shorthand - `(:922, :954)`,
+// `createTextures's :87-90` - because it requires a `filename.ext` before the
+// colon. That shorthand rots exactly the same way (a function moves, the
+// number now points at unrelated code) and had already rotted at multiple
+// sites by the time it was found, so kBareLinePattern catches a bare `:NNN`
+// or `:NNN-NNN` wherever it is not itself preceded by a digit (which would
+// make it part of an unrelated `1:1`-style token or a second colon in
+// `std::` / `http://`).
 TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::regex kFileLinePattern(R"([A-Za-z_/.-]+\.(cpp|ixx|hpp|slang|wgsl|rs):[0-9]+)");
+    static const std::regex kBareLinePattern(R"((^|[\s(`\[]):[0-9]+(-[0-9]+)?([^0-9]|$))");
 
     std::vector<std::string> violations;
     auto scan_file = [&](const fs::path &path) {
@@ -5732,6 +5742,10 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
         const std::string relative = fs::relative(path, repo_root).generic_string();
         auto begin = std::sregex_iterator(content->begin(), content->end(), kFileLinePattern);
         for (auto it = begin; it != std::sregex_iterator(); ++it) {
+            violations.push_back(relative + ": " + it->str());
+        }
+        auto bare_begin = std::sregex_iterator(content->begin(), content->end(), kBareLinePattern);
+        for (auto it = bare_begin; it != std::sregex_iterator(); ++it) {
             violations.push_back(relative + ": " + it->str());
         }
     };
@@ -5757,8 +5771,9 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " file:line location(s) across Src/, Resources/ShadersSlang/ and docs/model-loading.md, which rot "
-         "within days - cite the function or member name instead:"
+      << " file:line location(s), including the same-file `:NNN` shorthand, across Src/, "
+         "Resources/ShadersSlang/ and docs/model-loading.md, which rot within days - cite the function or "
+         "member name instead:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

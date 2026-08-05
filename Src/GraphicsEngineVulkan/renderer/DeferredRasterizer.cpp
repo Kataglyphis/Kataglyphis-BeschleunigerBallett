@@ -167,7 +167,8 @@ void DeferredRasterizer::createRenderPass()
     // 2: Albedo
     // 3: Material
     // 4: Depth
-    // No position attachment - see the comment at createTextures's :87-90.
+    // No position attachment - see createTextures()'s "No position attachment" comment above its
+    // gBufferNormals createAttachment call, earlier in this file.
 
     // FINAL_FORMAT matches the forward offscreen (see Rasterizer.ixx's
     // OFFSCREEN_FORMAT and the static_assert next to these constants).

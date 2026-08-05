@@ -278,8 +278,8 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
     // uploadLightMatrices() rewrites lightMatricesBuffers[image_index] every
     // frame, independently of whichever other image's shadow pass is still
     // in flight. Host-visible and written directly through getMappedData(),
-    // the same way uploadLightMatrices() (:149-154) rewrites it every frame -
-    // so seeding it via a staging buffer + transfer would only duplicate data
+    // the same way uploadLightMatrices() rewrites it every frame - so
+    // seeding it via a staging buffer + transfer would only duplicate data
     // that path immediately overwrites.
     lightMatricesBuffers.resize(swapChainImageCount);
     for (uint32_t i = 0; i < swapChainImageCount; i++) {
@@ -453,10 +453,12 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light
     // matrices. descriptorSets is the same span the forward rasterizer receives.
-    // The pipeline layout (:351 above) always describes set 0 = shared, set 1 =
-    // light matrices, so the light matrices set must land at index 1 whether or
-    // not the shared set is bound - shadowSetBinding is what keeps firstSet in
-    // agreement with that layout.
+    // The pipeline layout's setLayouts array, built above from
+    // sharedRenderDescriptorSetLayout and lightMatricesDescriptors.getLayout(),
+    // always describes set 0 = shared, set 1 = light matrices, so the light
+    // matrices set must land at index 1 whether or not the shared set is
+    // bound - shadowSetBinding is what keeps firstSet in agreement with that
+    // layout.
     const vk::DescriptorSet lightMatricesSet = lightMatricesDescriptors.sets()[image_index];
     if (descriptorSets.empty()) {
         spdlog::warn("CascadedShadowMap::recordCommands: no shared render set bound; the fragment alpha test will "

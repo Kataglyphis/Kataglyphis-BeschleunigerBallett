@@ -10,7 +10,7 @@
 // 61966-2-1 transfer function (NOT pow(x, 1/2.2)) — see
 // docs/webgpu-srgb-audit.md: the approximation is visibly wrong in the
 // darks. Both post/post.slang and tonemap/tonemap.slang import this module;
-// post.slang calls aces_tonemap at :56.
+// post.slang's fs_main calls aces_tonemap.
 
 // ACES filmic tonemap (Narkowicz 2015).
 float3 aces_tonemap(float3 x)

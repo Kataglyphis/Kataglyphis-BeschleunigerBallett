@@ -1156,9 +1156,11 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
 
         // A camera, light or quality change invalidates the accumulated
         // history; restart the running mean from this frame. The light is
-        // part of the key because path_tracing.slang's NEE terms (:227,
-        // :253-255) read sceneUBO.dirLight, so a light change makes the
-        // running mean blend samples lit by two different lights.
+        // part of the key because path_tracing.slang's NEE block - the
+        // lightDir/lightColor/lightIntensity reads under its "Next-event
+        // estimation toward the directional light" comment - reads
+        // sceneUBO.dirLight, so a light change makes the running mean blend
+        // samples lit by two different lights.
         const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history{
             .view = camera->calculate_viewmatrix(),
             .lightDirection = sceneUBO.dirLight.direction,

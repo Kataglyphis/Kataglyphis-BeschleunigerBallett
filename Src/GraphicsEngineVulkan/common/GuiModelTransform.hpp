@@ -9,9 +9,9 @@ namespace Kataglyphis {
 
 // Builds the model matrix the GUI's Position/Rotation drag widgets apply to
 // scene model 0. There is deliberately NO scale factor: SceneConfig.cpp's
-// getModelMatrix() (:116-124) documents that the old hard-coded 60x scale
-// put the camera inside the tiny viking_room mesh (all backfaces, culled ->
-// black viewport) and stretched the scene far beyond a cascade's useful
+// getModelMatrix() documents that the old hard-coded 60x scale put the
+// camera inside the tiny viking_room mesh (all backfaces, culled -> black
+// viewport) and stretched the scene far beyond a cascade's useful
 // resolution. Dinosaurs (debug) and crytek-sponza (release) both need no
 // scaling, so this helper must not reintroduce one.
 //

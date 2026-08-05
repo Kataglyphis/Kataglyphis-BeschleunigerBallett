@@ -69,7 +69,7 @@ class DeferredRasterizer
     // and the attachment description backing it is a validation error at
     // framebuffer creation, not a compile error, so both call sites must use
     // these instead of re-spelling the literals. Indices match the attachment
-    // order documented at createRenderPass()'s :190-195.
+    // order documented in createRenderPass()'s "0: Final Color ... 4: Depth" comment.
     static constexpr vk::Format FINAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
     static constexpr vk::Format GBUFFER_NORMAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
     static constexpr vk::Format GBUFFER_ALBEDO_FORMAT = vk::Format::eR8G8B8A8Srgb;
