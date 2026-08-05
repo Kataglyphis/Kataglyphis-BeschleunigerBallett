@@ -275,6 +275,23 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             material.emissiveTextureID = -1;
         }
 
+        // map_d is a per-texel opacity mask, not authored colour, so it goes
+        // through the linear decode like the normal slot (srgb=false). OBJ
+        // has no alphaMode, and this engine has no sorted transparent pass
+        // (see GltfLoader.cpp's alphaCutoff comment), so a map_d material is
+        // treated as glTF MASK at the conventional 0.5 cutoff rather than as
+        // blended.
+        if (!mp->alpha_texname.empty()) {
+            material.alphaTextureID = resolveSlot(mp->alpha_texname, false);
+            material.alphaCutoff = 0.5F;
+        } else {
+            // Same "no directive, no push" rule as the normal/emissive slots:
+            // keeps textures/textureSrgb exactly as long as materials for
+            // every model that ships no map_d - every model in
+            // Resources/Models/ today.
+            material.alphaTextureID = -1;
+        }
+
         materials.push_back(material);
     }
 

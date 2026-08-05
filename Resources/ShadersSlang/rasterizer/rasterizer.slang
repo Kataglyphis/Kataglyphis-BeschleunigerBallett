@@ -74,17 +74,28 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : S
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
+    // map_d's alpha is independent of which base-colour branch is taken
+    // below, so it is sampled once up front and folded into both sides of
+    // the textureID branch's alpha_masked_out() call (the glTF alpha product
+    // rule: baseColorFactor.a * baseColorTexture.a * COLOR_0.a * map_d).
+    float alphaTexSample = 1.0;
+    if (material.alphaTextureID >= 0)
+    {
+        int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
+        alphaTexSample = textures[alphaTexId].Sample(textureSamplers[alphaTexId], transform_uv(In.texCoords, material)).r;
+    }
+
     float3 albedo;
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
         float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
-        if (alpha_masked_out(material, baseSample.a * In.fragmentColor.a)) discard;
+        if (alpha_masked_out(material, baseSample.a * In.fragmentColor.a * alphaTexSample)) discard;
         albedo = base_color(material, baseSample.xyz);
     }
     else
     {
-        if (alpha_masked_out(material, In.fragmentColor.a)) discard;
+        if (alpha_masked_out(material, In.fragmentColor.a * alphaTexSample)) discard;
         albedo = material.diffuse;
     }
 

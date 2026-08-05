@@ -51,15 +51,25 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
     // The outer guard skips the branch entirely for the common non-MASK case.
     if (material.alphaCutoff >= 0.0)
     {
+        // map_d's alpha is independent of which base-colour branch is taken
+        // below, so it is sampled once up front and folded into both sides
+        // of the textureID branch's alpha_masked_out() call.
+        float alphaTexSample = 1.0;
+        if (material.alphaTextureID >= 0)
+        {
+            int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
+            alphaTexSample = textures[alphaTexId].Sample(textureSamplers[alphaTexId], transform_uv(In.fragUV, material)).r;
+        }
+
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);
             float alpha = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.fragUV, material)).a;
-            if (alpha_masked_out(material, alpha * In.fragAlpha)) discard;
+            if (alpha_masked_out(material, alpha * In.fragAlpha * alphaTexSample)) discard;
         }
         else
         {
-            if (alpha_masked_out(material, In.fragAlpha)) discard;
+            if (alpha_masked_out(material, In.fragAlpha * alphaTexSample)) discard;
         }
     }
 }

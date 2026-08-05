@@ -920,6 +920,50 @@ TEST(ObjParseUnit, AMaterialWithoutMapKeKeepsTheSentinel)
          "one (possibly empty) diffuse slot and nothing more";
 }
 
+TEST(ObjParseUnit, MapDBecomesAnAlphaTextureAndAMaskCutoff)
+{
+    // map_d names a per-texel opacity map: it must resolve into a distinct,
+    // non-negative alphaTextureID, and (this engine having no sorted
+    // transparent pass) the material must be treated as a glTF MASK cut-out
+    // at the conventional 0.5 cutoff. A second material with no map_d
+    // directive must keep both sentinels untouched.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_map_d";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "cutout.mtl", std::ios::binary);
+        mtl << "newmtl leafy\nKd 1 1 1\nmap_Kd base.png\nmap_d mask.png\n"
+               "newmtl solid\nKd 1 1 1\nmap_Kd base.png\n";
+    }
+    { std::ofstream texture(dir / "base.png", std::ios::binary); }
+    { std::ofstream texture(dir / "mask.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "cutout.obj", std::ios::binary);
+        obj << "mtllib cutout.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl leafy\nf 1/1 2/2 3/3\n"
+               "usemtl solid\nf 1/1 2/2 4/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "cutout.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 2U);
+    const auto &leafy = loader.getMaterials()[0];
+    EXPECT_GE(leafy.alphaTextureID, 0);
+    EXPECT_NE(leafy.textureID, leafy.alphaTextureID)
+      << "the diffuse and alpha maps must not share a slot";
+    EXPECT_FLOAT_EQ(leafy.alphaCutoff, 0.5F);
+
+    const auto &solid = loader.getMaterials()[1];
+    EXPECT_EQ(solid.alphaTextureID, -1) << "a material without map_d must keep the sentinel";
+    EXPECT_FLOAT_EQ(solid.alphaCutoff, -1.0F) << "a material without map_d must not become a MASK material";
+
+    std::filesystem::remove_all(dir);
+}
+
 TEST(ObjParseUnit, UploadParsedOnADeviceFreeLoaderReturnsNull)
 {
     // AsyncModelParse always hands parsed state to a device-owning loader, so

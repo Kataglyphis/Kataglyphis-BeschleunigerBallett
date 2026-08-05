@@ -42,17 +42,24 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
                        + vertices->v[ind.z].color.a * barycentrics.z;
 
     float sampledAlpha = vertexAlpha;
-    if (material.textureID >= 0)
+    if (material.textureID >= 0 || material.alphaTextureID >= 0)
     {
         float2 texCoords = vertices->v[ind.x].texture_coords * barycentrics.x
                           + vertices->v[ind.y].texture_coords * barycentrics.y
                           + vertices->v[ind.z].texture_coords * barycentrics.z;
-        int textureId = resolve_texture_slot(obj, material);
         // Explicit LOD: ray queries have no fragment derivatives, so an
         // implicit-LOD .Sample() fails SPIR-V validation (same rule as
         // raytrace.rchit.slang's closesthit sample).
-        float alpha = textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).a;
-        sampledAlpha = alpha * vertexAlpha;
+        if (material.textureID >= 0)
+        {
+            int textureId = resolve_texture_slot(obj, material);
+            sampledAlpha *= textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).a;
+        }
+        if (material.alphaTextureID >= 0)
+        {
+            int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
+            sampledAlpha *= textures[alphaTexId].SampleLevel(textureSamplers[alphaTexId], transform_uv(texCoords, material), 0.0).r;
+        }
     }
 
     return alpha_masked_out(material, sampledAlpha);

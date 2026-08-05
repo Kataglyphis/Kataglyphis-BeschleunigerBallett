@@ -55,6 +55,7 @@ struct ObjMaterial
     float3 emissive_uv_transform_row0;
     float3 emissive_uv_transform_row1;
     int unlit;
+    int alphaTextureID;
 };
 
 // Per-mesh object description (matches ObjectDescription.hpp). The uint64_t

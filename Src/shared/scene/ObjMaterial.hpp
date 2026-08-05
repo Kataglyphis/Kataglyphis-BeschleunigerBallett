@@ -108,6 +108,15 @@ struct ObjMaterial
     // same scalar-layout rationale as alphaCutoff.
     int unlit{ 0 };
 
+    // OBJ `map_d`: a per-texel opacity map, dedup'd into the same
+    // textureImages/imageSlot budget as textureID (see ObjLoader.cpp's
+    // resolveSlot). -1 = "no alpha texture" (same sentinel convention as
+    // textureID); glTF carries opacity in baseColorTexture.a instead, so this
+    // is always -1 for glTF materials. Every OBJ material without `map_d`
+    // defaults to -1, so pre-existing scenes are bit-unchanged. Trailing
+    // scalar, same scalar-layout rationale as alphaCutoff.
+    int alphaTextureID{ -1 };
+
     int get_textureID() const { return textureID; }
 };
 

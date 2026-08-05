@@ -1105,7 +1105,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "metallic_roughness_uv_transform_row1", offsetof(ObjMaterial, metallic_roughness_uv_transform_row1) },
             { "emissive_uv_transform_row0", offsetof(ObjMaterial, emissive_uv_transform_row0) },
             { "emissive_uv_transform_row1", offsetof(ObjMaterial, emissive_uv_transform_row1) },
-            { "unlit", offsetof(ObjMaterial, unlit) } } },
+            { "unlit", offsetof(ObjMaterial, unlit) },
+            { "alphaTextureID", offsetof(ObjMaterial, alphaTextureID) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -3011,6 +3012,39 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
     }
 }
 
+// ObjMaterial::alphaTextureID (OBJ map_d, follow-up to the map_d-becomes-a-MASK-cutoff task) is dedup'd into the
+// same texture-slot budget as textureID/emissiveTextureID/normalTextureID, but only actually alpha-tests a map_d
+// cut-out if every one of the four alpha-testing sites - the two raster paths, the shadow pass and the shared ray
+// query alpha test - samples it and folds it into the alpha handed to alpha_masked_out(). This scans the shader
+// sources as text (the source-text gate pattern used throughout this file) and fails if any of the four sites stops
+// branching on ObjMaterial::alphaTextureID.
+TEST(BuildIntegrity, AlphaTextureIsSampledByEveryAlphaTestingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "material_rules.slang's alpha_masked_out() is the sole place the MASK cutoff test happens; a site that stops "
+      "sampling ObjMaterial::alphaTextureID silently drops map_d cut-outs (the chain and hanging-plant geometry in "
+      "the bundled crytek-sponza render as solid rectangles) instead of alpha-testing them";
+
+    const std::vector<fs::path> alpha_testing_paths = {
+        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
+        repo_root / "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
+        repo_root / "Resources/ShadersSlang/common/alpha_test.slang",
+    };
+    for (const fs::path &path : alpha_testing_paths) {
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+        EXPECT_NE(text.find("alphaTextureID"), std::string::npos)
+          << path.string() << " no longer branches on ObjMaterial::alphaTextureID. " << kFailureMessage;
+        EXPECT_NE(text.find("alpha_masked_out("), std::string::npos)
+          << path.string() << " no longer calls alpha_masked_out(). " << kFailureMessage;
+    }
+}
+
 // KHR_texture_transform is declared per texture slot (glTF 2.0 spec), so the normal, metallic-roughness and
 // emissive samples in every shading path must transform their UV through their OWN named accessor
 // (normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang), not the bare
@@ -3029,13 +3063,17 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
       "overload (the base-colour pair) instead of its own slot's named accessor stamps the base-colour transform "
       "onto a slot that may have a different transform, or none at all";
 
-    const std::vector<fs::path> shading_paths = {
-        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
-        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
-        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    // rasterizer.slang/deferred.slang additionally sample ObjMaterial::alphaTextureID (OBJ map_d) at the
+    // base-colour UV - a second, legitimate bare transform_uv( call, not a non-base slot falling back to it -
+    // so they expect two occurrences where raytrace.rchit.slang/path_tracing.slang (no alphaTextureID sample of
+    // their own; the any-hit/ray-query alpha test lives in common/alpha_test.slang instead) expect one.
+    const std::vector<std::pair<fs::path, std::size_t>> shading_paths = {
+        { repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang", 2U },
+        { repo_root / "Resources/ShadersSlang/deferred/deferred.slang", 2U },
+        { repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang", 1U },
+        { repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang", 1U },
     };
-    for (const fs::path &path : shading_paths) {
+    for (const auto &[path, expected_bare_transform_uv_calls] : shading_paths) {
         const auto text_opt = readFileText(path);
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
@@ -3051,18 +3089,20 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
         // The normal/metallic-roughness/emissive samples must not fall back to
         // the bare transform_uv(uv, material) overload, which resolves to the
         // base-colour rows - count that transform_uv(...) is called exactly
-        // once (the base-colour sample every shading path has); every other
-        // slot must go through its own named accessor instead.
+        // the expected number of times (the base-colour sample(s) every
+        // shading path has); every other slot must go through its own named
+        // accessor instead.
         std::size_t bareTransformUvCalls = 0;
         std::size_t pos = 0;
         while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
             ++bareTransformUvCalls;
             pos += std::strlen("transform_uv(");
         }
-        EXPECT_EQ(bareTransformUvCalls, 1U)
-          << path.string()
-          << " must call the bare transform_uv(uv, material) overload exactly once (the base-colour sample); "
-             "every non-base sample must go through its own slot's named accessor. "
+        EXPECT_EQ(bareTransformUvCalls, expected_bare_transform_uv_calls)
+          << path.string() << " must call the bare transform_uv(uv, material) overload exactly "
+          << expected_bare_transform_uv_calls
+          << " time(s) (the base-colour sample(s)); every non-base sample must go through its own slot's named "
+             "accessor. "
           << kFailureMessage;
     }
 }
@@ -5814,12 +5854,12 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
     const auto doc_content = readFileText(doc_path);
     ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
 
-    static constexpr std::array<const char *, 21> kObjMaterialMembers{ "diffuse", "emission", "shininess",
+    static constexpr std::array<const char *, 22> kObjMaterialMembers{ "diffuse", "emission", "shininess",
         "dissolve", "textureID", "alphaCutoff", "uv_transform_row0", "uv_transform_row1", "metallic", "roughness",
         "emissiveTextureID", "normalTextureID", "normalScale", "metallicRoughnessTextureID",
         "normal_uv_transform_row0", "normal_uv_transform_row1", "metallic_roughness_uv_transform_row0",
         "metallic_roughness_uv_transform_row1", "emissive_uv_transform_row0", "emissive_uv_transform_row1",
-        "unlit" };
+        "unlit", "alphaTextureID" };
 
     const auto table_start = doc_content->find("Material fields and where they come from");
     ASSERT_NE(table_start, std::string::npos)

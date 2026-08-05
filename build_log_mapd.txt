@@ -1,0 +1,72 @@
+Using docker: C:\Program Files\Stevedore\bin\docker.exe
+Image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
+Configurations: clangcl-debug
+Using tar-pipe transport with a reusable container (faster here; -UseBindMount to override).
+Reusing build container 'bb-build-persistent' (build tree preserved).
+A subdirectory or file C:\ws already exists.
+Streaming sources into the container...
+Pruning stale sources from the reusable container...
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(99): warning 39001: explicit binding for parameter 'shadowCascadeIndex' overlaps with parameter 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
+                                          ^~~~~~~~~~~~~~~~~~
+C:\ws\Resources\ShadersSlang\forward\forward.slang(84): note: see declaration of 'iblParams'
+[vk::binding(0, 1)] ConstantBuffer<IblParams> iblParams;
+                                              ^~~~~~~~~
+Streaming build trees and logs back to the working tree...
+Verified 11 executable(s) delivered from build-clangcl-debug.
+Keeping build container 'bb-build-persistent' for the next build (reset: -FreshContainer).
+Container build finished successfully.
