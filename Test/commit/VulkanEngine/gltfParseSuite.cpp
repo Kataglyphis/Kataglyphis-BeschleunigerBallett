@@ -2366,3 +2366,24 @@ TEST(GltfParseUnit, MissingTangentsAreGeneratedWithUnitLengthAndOrthogonalToTheN
         EXPECT_TRUE(v.tangent.w == 1.0F || v.tangent.w == -1.0F) << "handedness must be exactly +-1";
     }
 }
+
+TEST(GltfParseUnit, UploadParsedOnADeviceFreeLoaderReturnsNull)
+{
+    // AsyncModelParse always hands parsed state to a device-owning loader, so
+    // this guard only fires when that wiring breaks - device-first, then
+    // empty-parse (ModelAssembly.ixx's uploadPreconditionsMet), since a
+    // device-free loader that also never parsed should report the device.
+    if (!std::filesystem::exists(test_gltf())) { GTEST_SKIP() << "test glb not present"; }
+
+    Kataglyphis::GltfLoader loader;// device-free constructor
+    ASSERT_TRUE(loader.parseCpu(test_gltf()));
+
+    EXPECT_EQ(loader.uploadParsed(), nullptr) << "uploadParsed must refuse to run without a device";
+}
+
+TEST(GltfParseUnit, UploadParsedBeforeAnyParseReturnsNull)
+{
+    Kataglyphis::GltfLoader loader;// device-free, and parseCpu never called
+
+    EXPECT_EQ(loader.uploadParsed(), nullptr) << "uploadParsed must refuse to run before a successful parseCpu";
+}

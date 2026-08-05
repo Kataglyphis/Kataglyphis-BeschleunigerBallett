@@ -102,14 +102,7 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
 {
     // GPU half. Must run on the thread that owns the device; parseCpu can run
     // anywhere.
-    if (!device) {
-        spdlog::error("uploadParsed called on a device-free ObjLoader");
-        return nullptr;
-    }
-    if (vertices.empty()) {
-        spdlog::error("uploadParsed called before a successful parseCpu");
-        return nullptr;
-    }
+    if (!uploadPreconditionsMet(device, vertices.size(), "ObjLoader")) { return nullptr; }
 
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 

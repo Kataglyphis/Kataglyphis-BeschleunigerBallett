@@ -8577,9 +8577,10 @@ TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountC
 // (GltfLoader forwarding MeshRange::doubleSided, ObjLoader relying on
 // add_new_mesh's default argument) went unnoticed for it. ModelAssembly.ixx
 // (kataglyphis.vulkan.model_assembly) is now the one place that fills a
-// texture slot and builds meshes from MeshRanges - this pins that down so a
-// future loader (or uploadParsed itself) cannot silently reintroduce a
-// hand-rolled copy that drifts from the shared one again.
+// texture slot, builds meshes from MeshRanges, and checks the device-free /
+// empty-parse preconditions - this pins that down so a future loader (or
+// uploadParsed itself) cannot silently reintroduce a hand-rolled copy that
+// drifts from the shared one again.
 TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
 {
     const fs::path repo_root = repoRoot();
@@ -8591,14 +8592,22 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
     // sliceMeshRange's own definition (MeshRange.ixx) and createDefaultTexture's
     // own definition (Texture.ixx/.cpp) are exempt - everyone else, including
     // ModelAssembly.ixx's own callers, must reach them through the shared
-    // functions ModelAssembly.ixx wraps them in.
-    static const std::array<const char *, 4> kExemptFiles = {
+    // functions ModelAssembly.ixx wraps them in. ObjLoader.cpp/GltfLoader.cpp
+    // are exempt too, but only from uploadPreconditionsMet: they are its two
+    // intended callers (uploadParsed's guard), not a hand-rolled duplicate of
+    // it - a *third* loader reimplementing the device/vertices checks inline
+    // rather than calling the shared guard is what this test still catches.
+    static const std::array<const char *, 6> kExemptFiles = {
         "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
         "Src/GraphicsEngineVulkan/scene/MeshRange.ixx",
         "Src/GraphicsEngineVulkan/scene/Texture.ixx",
-        "Src/GraphicsEngineVulkan/scene/Texture.cpp"
+        "Src/GraphicsEngineVulkan/scene/Texture.cpp",
+        "Src/GraphicsEngineVulkan/scene/ObjLoader.cpp",
+        "Src/GraphicsEngineVulkan/scene/GltfLoader.cpp"
     };
-    static const std::array<const char *, 2> kBannedCalls = { "sliceMeshRange(", "createDefaultTexture(" };
+    static const std::array<const char *, 3> kBannedCalls = {
+        "sliceMeshRange(", "createDefaultTexture(", "uploadPreconditionsMet("
+    };
 
     std::vector<std::string> violations;
     std::error_code error;
@@ -8625,9 +8634,10 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " call(s) to sliceMeshRange/createDefaultTexture found outside ModelAssembly.ixx under Src/ - build "
-         "meshes and texture slots through addMeshesForRanges/addTextureOrDefault/ensureAtLeastOneTexture "
-         "(kataglyphis.vulkan.model_assembly) instead:"
+      << " call(s) to sliceMeshRange/createDefaultTexture/uploadPreconditionsMet found outside their sanctioned "
+         "callers under Src/ - build meshes and texture slots through "
+         "addMeshesForRanges/addTextureOrDefault/ensureAtLeastOneTexture and check upload preconditions through "
+         "uploadPreconditionsMet (kataglyphis.vulkan.model_assembly) instead:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

@@ -920,5 +920,26 @@ TEST(ObjParseUnit, AMaterialWithoutMapKeKeepsTheSentinel)
          "one (possibly empty) diffuse slot and nothing more";
 }
 
+TEST(ObjParseUnit, UploadParsedOnADeviceFreeLoaderReturnsNull)
+{
+    // AsyncModelParse always hands parsed state to a device-owning loader, so
+    // this guard only fires when that wiring breaks - device-first, then
+    // empty-parse (ModelAssembly.ixx's uploadPreconditionsMet), since a
+    // device-free loader that also never parsed should report the device.
+    if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
+
+    Kataglyphis::ObjLoader loader;// device-free constructor
+    ASSERT_TRUE(loader.parseCpu(test_model()));
+
+    EXPECT_EQ(loader.uploadParsed(), nullptr) << "uploadParsed must refuse to run without a device";
+}
+
+TEST(ObjParseUnit, UploadParsedBeforeAnyParseReturnsNull)
+{
+    Kataglyphis::ObjLoader loader;// device-free, and parseCpu never called
+
+    EXPECT_EQ(loader.uploadParsed(), nullptr) << "uploadParsed must refuse to run before a successful parseCpu";
+}
+
 // The async wrapper (AsyncModelParse) has its own dedicated coverage in
 // asyncModelParseSuite.cpp, suite AsyncModelParseUnit.

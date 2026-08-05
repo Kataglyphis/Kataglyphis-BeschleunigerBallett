@@ -1,5 +1,6 @@
 module;
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -22,6 +23,27 @@ export namespace Kataglyphis {
 /// loaders differ only in how a texture's bytes reach them (file vs. memory)
 /// and in shape-specific parse-time skips, not in what happens to the result.
 /// This is that shared shape.
+
+/// The two guards both uploadParsed overrides check before touching the
+/// device: device-first, then empty-parse, so a device-free loader that also
+/// never parsed reports the more actionable error (the device). Programming
+/// errors, not runtime conditions - AsyncModelParse only ever hands parsed
+/// state to a device-owning loader, so these only fire when that wiring
+/// breaks - hence log-and-return-false rather than silence.
+bool uploadPreconditionsMet(const std::shared_ptr<VulkanDevice> &device,
+  std::size_t vertexCount,
+  const char *loaderName)
+{
+    if (!device) {
+        spdlog::error("{}::uploadParsed called on a device-free loader", loaderName);
+        return false;
+    }
+    if (vertexCount == 0) {
+        spdlog::error("{}::uploadParsed called before a successful parseCpu", loaderName);
+        return false;
+    }
+    return true;
+}
 
 /// Appends `texture` when `created`, otherwise occupies the slot with the
 /// default texture instead. Both loaders need this: textureID is a dense

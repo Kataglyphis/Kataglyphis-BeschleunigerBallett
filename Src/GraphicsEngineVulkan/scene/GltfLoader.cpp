@@ -65,14 +65,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
 
 std::shared_ptr<Model> GltfLoader::uploadParsed()
 {
-    if (!device) {
-        spdlog::error("GltfLoader::uploadParsed called on a device-free loader");
-        return nullptr;
-    }
-    if (vertices.empty()) {
-        spdlog::error("GltfLoader::uploadParsed called before a successful parseCpu");
-        return nullptr;
-    }
+    if (!uploadPreconditionsMet(device, vertices.size(), "GltfLoader")) { return nullptr; }
 
     std::shared_ptr<Model> model = std::make_shared<Model>(device);
 
