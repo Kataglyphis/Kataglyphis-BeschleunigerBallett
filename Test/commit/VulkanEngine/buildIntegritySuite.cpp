@@ -3380,12 +3380,18 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
          }();
 }
 
-// normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang are the sole named accessors for
-// their slot's KHR_texture_transform row pair; the row members themselves
-// (normal|metallic_roughness|emissive)_uv_transform_row[01] must therefore appear in exactly two places: the
-// accessor bodies in base_color.slang, and the ObjMaterial mirror declaration in scene_types.slang. A shading path
-// naming a row member directly (rather than calling the accessor) can pair a slot's row0 with another slot's row1 -
-// both are float3 on the same struct, so the mismatch is well-typed and silently samples the wrong UV.
+// normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang (C++ Vulkan renderer, ObjMaterial) and
+// base_color_uv()/metallic_roughness_uv()/normal_uv()/emissive_uv()/occlusion_uv() in forward/forward.slang (Rust
+// WebGPU renderer, PrimUniforms) are the sole named accessors for their slot's KHR_texture_transform row pair; the
+// row members themselves - (normal|metallic_roughness|emissive)_uv_transform_row[01] on the C++ side,
+// (base|mr|normal|emissive|occlusion)_uv_row[01] on the Rust side - must therefore appear only inside those
+// accessor bodies and the two structs' declarations. A shading path naming a row member directly (rather than
+// calling the accessor) can pair a slot's row0 with another slot's row1 - both are the same vector type on the same
+// struct, so the mismatch is well-typed and silently samples the wrong UV. Unlike base_color.slang/scene_types.slang
+// (which contain nothing but accessor/struct declarations, so a whole-file allowance is safe), forward.slang also
+// holds the shading entry points (fs_main, vs_shadow_masked, fs_shadow_masked) that must call the accessors rather
+// than name a row member themselves, so its allowance is scoped to just the accessor bodies and the PrimUniforms
+// declaration, tracked by brace depth, rather than exempting the whole file.
 TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
 {
     const fs::path repo_root = repoRoot();
@@ -3394,11 +3400,15 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
     const fs::path slang_root = repo_root / "Resources/ShadersSlang";
     ASSERT_TRUE(fs::exists(slang_root)) << "could not find " << slang_root.string();
 
-    static const std::regex kRowPattern(R"((normal|metallic_roughness|emissive)_uv_transform_row[01])");
+    static const std::regex kRowPattern(
+      R"((normal|metallic_roughness|emissive)_uv_transform_row[01]|(base|mr|normal|emissive|occlusion)_uv_row[01])");
     static const std::set<fs::path> kAllowedFiles = {
         repo_root / "Resources/ShadersSlang/common/base_color.slang",
         repo_root / "Resources/ShadersSlang/common/scene_types.slang",
     };
+    const fs::path forward_slang_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
+    static const std::regex kForwardAllowedBlockStart(
+      R"(^(struct PrimUniforms|float2 (base_color_uv_select|base_color_uv_rows|base_color_uv|metallic_roughness_uv|normal_uv|emissive_uv|occlusion_uv)\())");
 
     std::vector<std::string> violations;
     for (const auto &entry : fs::recursive_directory_iterator(slang_root)) {
@@ -3408,12 +3418,33 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
         const auto text_opt = readFileText(entry.path());
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << entry.path().string();
         const std::string &text = *text_opt;
+        const bool isForwardSlang = entry.path() == forward_slang_path;
 
         std::istringstream stream(text);
         std::string line;
         int lineNumber = 0;
+        bool inAllowedBlock = false;
+        int allowedBlockBraceDepth = 0;
         while (std::getline(stream, line)) {
             ++lineNumber;
+
+            if (isForwardSlang) {
+                if (!inAllowedBlock && std::regex_search(line, kForwardAllowedBlockStart)) {
+                    inAllowedBlock = true;
+                    allowedBlockBraceDepth = 0;
+                }
+                if (inAllowedBlock) {
+                    for (char c : line) {
+                        if (c == '{') { ++allowedBlockBraceDepth; }
+                        else if (c == '}') {
+                            --allowedBlockBraceDepth;
+                            if (allowedBlockBraceDepth <= 0) { inAllowedBlock = false; }
+                        }
+                    }
+                    continue; // inside an accessor body or the PrimUniforms declaration - allowed
+                }
+            }
+
             if (std::regex_search(line, kRowPattern)) {
                 violations.push_back(fs::relative(entry.path(), repo_root).string() + ":" + std::to_string(lineNumber)
                                       + ": " + line);
@@ -3422,13 +3453,45 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
     }
 
     EXPECT_TRUE(violations.empty())
-      << "found a per-slot UV-transform row member named outside base_color.slang's accessors and "
-         "scene_types.slang's ObjMaterial mirror - call normal_uv()/metallic_roughness_uv()/emissive_uv() instead:\n"
+      << "found a per-slot UV-transform row member named outside base_color.slang's/forward.slang's accessors and "
+         "scene_types.slang's/forward.slang's struct declarations - call normal_uv()/metallic_roughness_uv()/"
+         "emissive_uv() (or forward.slang's base_color_uv()/metallic_roughness_uv()/normal_uv()/emissive_uv()/"
+         "occlusion_uv()) instead:\n"
       << [&violations]() {
              std::string joined;
              for (const std::string &violation : violations) { joined += violation + "\n"; }
              return joined;
          }();
+}
+
+// forward.slang's uv-set mask bit (prim.material_flags.y) must be read by exactly one accessor per texture slot -
+// base_color_uv_select() (folded into base_color_uv()), metallic_roughness_uv(), normal_uv(), emissive_uv() and
+// occlusion_uv() - never inlined a second time at a call site, or a future hand-rolled mask selection could
+// silently diverge from the accessors' bit assignment. This is a narrower companion to
+// PerSlotUvTransformRowsAreSpelledInExactlyOnePlace above (which catches a hand-paired row0/row1), covering the
+// case where the mask bit alone is re-derived instead of the row pair: it counts every `prim.material_flags.y`
+// read and fails if there are more than one per slot.
+TEST(BuildIntegrity, ForwardShaderUvSetMaskHasOneOwnerPerSlot)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path forward_slang = repo_root / "Resources/ShadersSlang/forward/forward.slang";
+    ASSERT_TRUE(fs::exists(forward_slang)) << "could not find " << forward_slang.string();
+
+    const auto text_opt = readFileText(forward_slang);
+    ASSERT_TRUE(text_opt.has_value()) << "could not open " << forward_slang.string();
+
+    static const std::regex kMaskReadPattern(R"(prim\.material_flags\.y)");
+    static constexpr int kSlotCount = 5; // base_color, metallic_roughness, normal, emissive, occlusion
+
+    const auto matchCount =
+      std::distance(std::sregex_iterator(text_opt->begin(), text_opt->end(), kMaskReadPattern), std::sregex_iterator());
+
+    EXPECT_LE(matchCount, kSlotCount) << "forward.slang reads prim.material_flags.y in " << matchCount
+                                       << " place(s), more than the " << kSlotCount
+                                       << " per-slot UV accessors - a call site may be hand-rolling the uv-set mask "
+                                          "instead of calling the accessor";
 }
 
 // ObjMaterial::metallicRoughnessTextureID (glTF pbrMetallicRoughness.metallicRoughnessTexture) is dedup'd into the

@@ -61,6 +61,64 @@ float2 apply_uv_transform(float4 row0, float4 row1, float2 uv)
         row1.x * uv.x + row1.y * uv.y + row1.z);
 }
 
+// Per-slot UV accessors: each owns exactly one slot's uv-set mask bit
+// (material_flags.y) and its own KHR_texture_transform row pair, so no call
+// site ever hand-pairs one slot's row0 with another slot's row1. Mirrors
+// common/base_color.slang's normal_uv()/metallic_roughness_uv()/emissive_uv()
+// shape on the C++ side. The base-colour slot is split into
+// base_color_uv_select() (mask bit) and base_color_uv_rows() (row pair)
+// because vs_shadow_masked applies the mask in the vertex stage while
+// fs_shadow_masked applies the rows in the fragment stage; the other four
+// slots are only ever consumed in one stage, so they stay unsplit.
+
+// Base-colour slot's uv-set selection (mask bit 1).
+float2 base_color_uv_select(float2 uv0, float2 uv1)
+{
+    return (uint(prim.material_flags.y) & 1u) != 0u ? uv1 : uv0;
+}
+
+// Base-colour slot's KHR_texture_transform.
+float2 base_color_uv_rows(float2 uv)
+{
+    return apply_uv_transform(prim.base_uv_row0, prim.base_uv_row1, uv);
+}
+
+// Base-colour slot's full UV: selection composed with the row pair.
+float2 base_color_uv(float2 uv0, float2 uv1)
+{
+    return base_color_uv_rows(base_color_uv_select(uv0, uv1));
+}
+
+// Metallic-roughness slot's uv-set selection (mask bit 2) and KHR_texture_transform.
+float2 metallic_roughness_uv(float2 uv0, float2 uv1)
+{
+    float2 uv = (uint(prim.material_flags.y) & 2u) != 0u ? uv1 : uv0;
+    return apply_uv_transform(prim.mr_uv_row0, prim.mr_uv_row1, uv);
+}
+
+// Normal slot's uv-set selection (mask bit 4) and KHR_texture_transform.
+float2 normal_uv(float2 uv0, float2 uv1)
+{
+    float2 uv = (uint(prim.material_flags.y) & 4u) != 0u ? uv1 : uv0;
+    return apply_uv_transform(prim.normal_uv_row0, prim.normal_uv_row1, uv);
+}
+
+// Emissive slot's uv-set selection (mask bit 8) and KHR_texture_transform.
+float2 emissive_uv(float2 uv0, float2 uv1)
+{
+    float2 uv = (uint(prim.material_flags.y) & 8u) != 0u ? uv1 : uv0;
+    return apply_uv_transform(prim.emissive_uv_row0, prim.emissive_uv_row1, uv);
+}
+
+// Occlusion slot's uv-set selection (mask bit 16) and KHR_texture_transform.
+// Has no C++ twin in common/base_color.slang — the C++ engine has no
+// occlusion slot.
+float2 occlusion_uv(float2 uv0, float2 uv1)
+{
+    float2 uv = (uint(prim.material_flags.y) & 16u) != 0u ? uv1 : uv0;
+    return apply_uv_transform(prim.occlusion_uv_row0, prim.occlusion_uv_row1, uv);
+}
+
 struct IblParams
 {
     float4 enabled_maxmip_intensity;
@@ -206,8 +264,7 @@ VsShadowMaskedOut vs_shadow_masked(VsIn In)
     if (cascade == 1u) o.pos = mul(frame.light_space_1, world);
     else if (cascade == 2u) o.pos = mul(frame.light_space_2, world);
     else o.pos = mul(frame.light_space, world);
-    float2 baseIn = (uint(prim.material_flags.y) & 1u) != 0u ? In.uv1 : In.uv;
-    o.uv = baseIn;
+    o.uv = base_color_uv_select(In.uv, In.uv1);
     o.alpha = In.color.a;
     return o;
 }
@@ -215,7 +272,7 @@ VsShadowMaskedOut vs_shadow_masked(VsIn In)
 [shader("fragment")]
 void fs_shadow_masked(VsShadowMaskedOut In)
 {
-    float2 uv = apply_uv_transform(prim.base_uv_row0, prim.base_uv_row1, In.uv);
+    float2 uv = base_color_uv_rows(In.uv);
     float alpha = prim.base_color.a * baseColorTex.Sample(baseColorSampler, uv, 0).a * In.alpha;
     if (alpha < prim.emissive_factor.w) discard;
 }
@@ -376,18 +433,11 @@ float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo,
 [shader("fragment")]
 float4 fs_main(VsOut In, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
-    uint uvMask = uint(prim.material_flags.y);
-    float2 baseIn = (uvMask & 1u) != 0u ? In.uv1 : In.uv;
-    float2 mrIn = (uvMask & 2u) != 0u ? In.uv1 : In.uv;
-    float2 normalIn = (uvMask & 4u) != 0u ? In.uv1 : In.uv;
-    float2 emissiveIn = (uvMask & 8u) != 0u ? In.uv1 : In.uv;
-    float2 occlusionIn = (uvMask & 16u) != 0u ? In.uv1 : In.uv;
-
-    float2 baseUv = apply_uv_transform(prim.base_uv_row0, prim.base_uv_row1, baseIn);
-    float2 mrUv = apply_uv_transform(prim.mr_uv_row0, prim.mr_uv_row1, mrIn);
-    float2 normalUv = apply_uv_transform(prim.normal_uv_row0, prim.normal_uv_row1, normalIn);
-    float2 emissiveUv = apply_uv_transform(prim.emissive_uv_row0, prim.emissive_uv_row1, emissiveIn);
-    float2 occlusionUv = apply_uv_transform(prim.occlusion_uv_row0, prim.occlusion_uv_row1, occlusionIn);
+    float2 baseUv = base_color_uv(In.uv, In.uv1);
+    float2 mrUv = metallic_roughness_uv(In.uv, In.uv1);
+    float2 normalUv = normal_uv(In.uv, In.uv1);
+    float2 emissiveUv = emissive_uv(In.uv, In.uv1);
+    float2 occlusionUv = occlusion_uv(In.uv, In.uv1);
 
     float4 baseSample = baseColorTex.Sample(baseColorSampler, baseUv);
     float4 mrSample = metalRoughTex.Sample(metalRoughSampler, mrUv);
