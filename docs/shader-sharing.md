@@ -224,6 +224,7 @@ mark a module under `common/` that nothing currently imports at all).
 | `common/noise.slang` | both |
 | `common/normal_map.slang` | spirv |
 | `common/push_constants.slang` | spirv |
+| `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |
 | `common/sky_model.slang` | wgsl |
 <!-- shared-module-targets:end -->

@@ -7,6 +7,7 @@ import emission;
 import normal_map;
 import cascaded_shadow;
 import push_constants;
+import raster_geometry;
 
 // Forward rasterizer shaders. Sole source for this shader. Emits SPIR-V only.
 //
@@ -22,39 +23,19 @@ import push_constants;
 [vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
 [vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
-struct VsOut
-{
-    float4 svPosition : SV_Position;
-    float2 texCoords : TEXCOORD0;
-    float3 shadingNormal : TEXCOORD1;
-    float4 fragmentColor : TEXCOORD2;
-    float3 worldPosition : TEXCOORD3;
-    float4 worldTangent : TEXCOORD4;
-};
-
 [shader("vertex")]
-VsOut vs_main(
+RasterVsOut vs_main(
     float3 positions : POSITION,
     float3 normal : NORMAL,
     float4 color : COLOR,
     float2 tex_coords : TEXCOORD0,
     float4 tangent : TANGENT)
 {
-    VsOut o;
-    o.svPosition = mul(mul(mul(globalUBO.projection, globalUBO.view), pc_raster.model), float4(positions, 1.0));
-    o.worldPosition = mul(pc_raster.model, float4(positions, 1.0)).xyz;
-    o.shadingNormal = transform_normal(pc_raster, normal);
-    // Tangent is a surface direction, not a normal, so it transforms with the
-    // model matrix directly rather than the inverse-transpose transform_normal()
-    // uses (see push_constants.slang's transform_normal doc).
-    o.worldTangent = float4(normalize(mul(pc_raster.model, float4(tangent.xyz, 0.0)).xyz), tangent.w);
-    o.texCoords = tex_coords;
-    o.fragmentColor = color;
-    return o;
+    return raster_geometry_vs(globalUBO, pc_raster, positions, normal, color, tex_coords, tangent);
 }
 
 [shader("fragment")]
-float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : SV_IsFrontFace) : SV_Target
+float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
     ObjectDescription obj = fetch_object_description(pc_raster.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);

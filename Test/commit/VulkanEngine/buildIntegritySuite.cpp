@@ -10524,3 +10524,42 @@ TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
                                     "kCallMarker) or every call site started discarding its result, and this gate "
                                     "would be silently checking nothing";
 }
+
+// rasterizer.slang's vs_main and deferred.slang's geometry_vs_main share one
+// vertex stage, common/raster_geometry.slang's raster_geometry_vs(), because
+// goldenRenderSuite.cpp's forward/deferred parity oracle requires the two
+// passes to produce identical world position, normal and tangent - a bug in
+// that oracle has already shipped once from the two bodies drifting apart.
+// This scans both shader sources as text and fails if either stops importing
+// raster_geometry or stops calling raster_geometry_vs(), or if either
+// contains its own "o.worldTangent =" assignment - the marker for a
+// re-hand-rolled vertex body that would reintroduce the drift.
+TEST(BuildIntegrity, TheTwoRasterGeometryPassesShareOneVertexStage)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "the forward and deferred geometry passes must share common/raster_geometry.slang's raster_geometry_vs() - "
+      "the forward/deferred parity golden compares their outputs";
+
+    const std::pair<const char *, const char *> kShaders[] = {
+        { "Resources/ShadersSlang/rasterizer/rasterizer.slang", "rasterizer.slang" },
+        { "Resources/ShadersSlang/deferred/deferred.slang", "deferred.slang" },
+    };
+
+    for (const auto &[relative_path, display_name] : kShaders) {
+        const fs::path path = repo_root / relative_path;
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+
+        EXPECT_NE(text.find("import raster_geometry;"), std::string::npos)
+          << display_name << " no longer imports raster_geometry. " << kFailureMessage;
+        EXPECT_NE(text.find("raster_geometry_vs("), std::string::npos)
+          << display_name << " no longer calls raster_geometry_vs(). " << kFailureMessage;
+        EXPECT_EQ(text.find("o.worldTangent ="), std::string::npos)
+          << display_name << " re-declares its own worldTangent assignment instead of sharing raster_geometry_vs(). "
+          << kFailureMessage;
+    }
+}
