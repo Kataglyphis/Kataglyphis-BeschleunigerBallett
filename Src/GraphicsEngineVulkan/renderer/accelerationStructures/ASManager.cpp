@@ -296,9 +296,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     tlas_instances.reserve(scene->getModelCount());
 
     // instanceCustomIndex is the FLAT index of this model's first mesh; the
-    // closest-hit / ray-query kernels add gl_GeometryIndexEXT (the mesh within the
-    // model's BLAS) to reach the per-mesh object description. == model_index while a
-    // Model holds one mesh, so this is a no-op today.
+    // closest-hit / ray-query kernels read it via InstanceID() and add
+    // GeometryIndex() (the mesh within the model's BLAS) to reach the
+    // per-mesh object description. == model_index only while every Model
+    // holds exactly one mesh - not true today: Models/Dinosaurs/dinosaurs.obj
+    // has three `o` shapes and ObjLoader makes one Mesh per shape.
     uint32_t mesh_base_offset = 0;
     for (size_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
         glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<uint32_t>(model_index)));

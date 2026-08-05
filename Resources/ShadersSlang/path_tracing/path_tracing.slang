@@ -127,7 +127,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             {
                 if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
                 {
-                    uint candidateObjIndex = rayQuery.CandidateInstanceIndex() + rayQuery.CandidateGeometryIndex();
+                    uint candidateObjIndex = rayQuery.CandidateInstanceID() + rayQuery.CandidateGeometryIndex();
                     ObjectDescription candidateObj = fetch_object_description(candidateObjIndex);
                     if (!ray_hit_masked_out(candidateObj, rayQuery.CandidatePrimitiveIndex(), rayQuery.CandidateTriangleBarycentrics()))
                     {
@@ -172,8 +172,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // consumed v0/v1/v2, so the material-fetched .color path (which
             // never reads Vertices*) never faulted. See
             // raytracing/raytrace.rchit.slang's identical
-            // InstanceIndex() + GeometryIndex() shape.
-            uint objIndex = rayQuery.CommittedInstanceIndex() + rayQuery.CommittedGeometryIndex();
+            // InstanceID() + GeometryIndex() shape.
+            uint objIndex = rayQuery.CommittedInstanceID() + rayQuery.CommittedGeometryIndex();
             float3x4 objToWorld = rayQuery.CommittedObjectToWorld3x4();
             float3x4 worldToObject = rayQuery.CommittedWorldToObject3x4();
 
@@ -348,7 +348,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 {
                     if (shadowQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
                     {
-                        uint candidateObjIndex = shadowQuery.CandidateInstanceIndex() + shadowQuery.CandidateGeometryIndex();
+                        uint candidateObjIndex = shadowQuery.CandidateInstanceID() + shadowQuery.CandidateGeometryIndex();
                         ObjectDescription candidateObj = fetch_object_description(candidateObjIndex);
                         if (!ray_hit_masked_out(candidateObj, shadowQuery.CandidatePrimitiveIndex(), shadowQuery.CandidateTriangleBarycentrics()))
                         {

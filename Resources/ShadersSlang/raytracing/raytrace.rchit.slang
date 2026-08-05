@@ -29,9 +29,10 @@ void rchit_main(
     inout HitPayload payload,
     in BuiltInTriangleIntersectionAttributes attribs)
 {
-    // Per-mesh object description: instanceCustomIndex is the model's
-    // first-mesh flat index; GeometryIndex is the mesh within the BLAS.
-    uint objIndex = InstanceIndex() + GeometryIndex();
+    // Per-mesh object description: instanceCustomIndex (read via InstanceID(),
+    // stamped by ASManager::createTLAS) is the model's first-mesh flat index;
+    // GeometryIndex is the mesh within the BLAS.
+    uint objIndex = InstanceID() + GeometryIndex();
     ObjectDescription obj = fetch_object_description(objIndex);
 
     // Fetch geometry via buffer device addresses (T* = PhysicalStorageBuffer).

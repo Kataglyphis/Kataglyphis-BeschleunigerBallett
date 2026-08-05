@@ -19,7 +19,7 @@ void rahit_main(
     in BuiltInTriangleIntersectionAttributes attribs)
 {
     // Per-mesh object description: same lookup as rchit_main.
-    uint objIndex = InstanceIndex() + GeometryIndex();
+    uint objIndex = InstanceID() + GeometryIndex();
     ObjectDescription obj = fetch_object_description(objIndex);
 
     if (ray_hit_masked_out(obj, PrimitiveIndex(), attribs.barycentrics))

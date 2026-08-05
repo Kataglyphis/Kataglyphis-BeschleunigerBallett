@@ -1063,6 +1063,45 @@ std::optional<std::map<uint32_t, std::size_t>> parse_spirv_opcode_counts(const f
     return counts;
 }
 
+constexpr uint32_t kOpDecorate = 71;
+constexpr uint32_t kDecorationBuiltIn = 11;
+
+// Sibling of parse_spirv_opcode_counts for OpDecorate ... BuiltIn <value>:
+// counting bare opcodes cannot distinguish "BuiltIn InstanceId" from
+// "BuiltIn InstanceCustomIndexKHR" since both are OpDecorate - the BuiltIn
+// enum value is an operand, not the opcode. Backs
+// TracedObjectIndexReadsTheInstanceCustomIndex. Same "not a SPIR-V module"
+// contract as its siblings.
+std::optional<std::set<uint32_t>> parse_spirv_builtin_decorations(const fs::path &spv_path)
+{
+    const auto text = readFileText(spv_path);
+    if (!text) { return std::nullopt; }
+    const std::vector<char> raw(text->begin(), text->end());
+    if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
+        return std::nullopt;
+    }
+
+    std::vector<uint32_t> words(raw.size() / sizeof(uint32_t));
+    std::memcpy(words.data(), raw.data(), raw.size());
+    if (words[0] != kSpirvMagicNumber) { return std::nullopt; }
+
+    std::set<uint32_t> builtins;
+    std::size_t pos = kSpirvHeaderWordCount;
+    while (pos < words.size()) {
+        const uint32_t instruction_word = words[pos];
+        const uint32_t word_count = instruction_word >> 16U;
+        const uint32_t opcode = instruction_word & 0xFFFFU;
+        if (word_count == 0 || pos + word_count > words.size()) { break; }// malformed stream - stop, do not read OOB
+
+        if (opcode == kOpDecorate && word_count >= 4 && words[pos + 2] == kDecorationBuiltIn) {
+            builtins.insert(words[pos + 3]);
+        }
+
+        pos += word_count;
+    }
+    return builtins;
+}
+
 // One shared-layout struct's contract: the struct name Slang emits it as in
 // compiled SPIR-V, paired with { emitted member name -> offsetof(HostType,
 // member) }. ArrayStride/MatrixStride are deliberately not checked here -
@@ -3628,23 +3667,24 @@ const std::vector<TracedObjectIndexFile> kTracedObjectIndexFiles = {
 };
 
 // Regression gate for the multi-mesh device-lost fix (BACKLOG.md):
-// ASManager stamps instanceCustomIndex/InstanceIndex with the model's
+// ASManager stamps instanceCustomIndex/InstanceID with the model's
 // *first-mesh* flat index (ASManager.cpp's createTLAS), so every traced
 // object-index expression must add the matching geometry accessor
 // (Committed*/Candidate*/bare GeometryIndex()) to reach the mesh that was
 // actually hit - an instance accessor alone always resolves to the model's
 // first mesh. path_tracing_main's committed-hit block used to read only
-// CommittedInstanceIndex(), which faulted on any multi-mesh model past its
-// first mesh (out-of-bounds buffer-device-address read on the mismatched
-// vertex/index buffers). Source half below asserts every instance accessor
-// pairs with its geometry counterpart; SPIR-V half confirms the compiled
-// path_tracing module actually emits the extra opcode this implies.
+// CommittedInstanceIndex() (now CommittedInstanceID()), which faulted on any
+// multi-mesh model past its first mesh (out-of-bounds buffer-device-address
+// read on the mismatched vertex/index buffers). Source half below asserts
+// every instance accessor pairs with its geometry counterpart; SPIR-V half
+// confirms the compiled path_tracing module actually emits the extra opcode
+// this implies.
 TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
 {
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
-    static const std::regex kInstanceIndexRegex(R"(((?:Committed|Candidate)?)InstanceIndex\(\))");
+    static const std::regex kInstanceIndexRegex(R"(((?:Committed|Candidate)?)InstanceID\(\))");
 
     std::vector<std::string> violations;
     for (const auto &file : kTracedObjectIndexFiles) {
@@ -3682,7 +3722,7 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
       << " traced object-index site(s) use an instance accessor with no matching geometry accessor - "
          "a multi-mesh model resolves every mesh past its first to mesh 0's vertex/index/material "
          "buffers unless the geometry term is added (see raytrace.rchit.slang's "
-         "InstanceIndex() + GeometryIndex() shape):"
+         "InstanceID() + GeometryIndex() shape):"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }
@@ -3708,6 +3748,69 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
       << " times (one per RayQuery candidate/committed-hit site), found " << actual_count
       << " - path_tracing.slang may have regressed to a bare instance index, or the compiled .spv is "
          "stale (recompile with compile-slang-shaders.ps1)";
+}
+
+// Regression gate for the second half of the multi-mesh device-lost fix
+// (BACKLOG.md): Slang's HLSL-shaped InstanceIndex() reads the TLAS *instance*
+// index (SPIR-V BuiltIn InstanceId, 6 / OpRayQueryGetIntersectionInstanceIdKHR,
+// 6020), not the host-supplied instanceCustomIndex ASManager::createTLAS
+// actually stamps with the model's first-mesh flat index - that value is
+// only reachable via InstanceID() / Candidate*InstanceID() /
+// Committed*InstanceID() (BuiltIn InstanceCustomIndexKHR, 5327 /
+// OpRayQueryGetIntersectionInstanceCustomIndexKHR, 6019). The two spellings
+// coincide only while every model holds exactly one mesh, so this was latent
+// rather than firing on the single-model reproducer scene - see
+// TracedObjectIndexAddsTheGeometryIndex above for the sibling geometry-index
+// half of the same contract. Presence/absence only, not exact counts: counts
+// move with inlining.
+TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
+{
+    constexpr uint32_t kBuiltInInstanceId = 6;
+    constexpr uint32_t kBuiltInInstanceCustomIndexKHR = 5327;
+    constexpr uint32_t kOpRayQueryGetIntersectionInstanceCustomIndexKHR = 6019;
+    constexpr uint32_t kOpRayQueryGetIntersectionInstanceIdKHR = 6020;
+
+    for (const char *relative_spv :
+      { "raytracing/raytrace.rchit.rchit_main.spv", "raytracing/raytrace.rahit.rahit_main.spv" }) {
+        const fs::path spv_path = spirvRoot() / relative_spv;
+        if (!fs::exists(spv_path)) {
+            GTEST_SKIP() << "missing " << spv_path.string() << " - shaders have not been compiled";
+        }
+
+        const auto builtins = parse_spirv_builtin_decorations(spv_path);
+        ASSERT_TRUE(builtins.has_value()) << "could not parse " << spv_path.string() << " as SPIR-V";
+
+        EXPECT_TRUE(builtins->count(kBuiltInInstanceCustomIndexKHR) > 0)
+          << spv_path.string()
+          << ": expected BuiltIn InstanceCustomIndexKHR (5327) - InstanceID() may have regressed to "
+             "InstanceIndex(), or the compiled .spv is stale (recompile with compile-slang-shaders.ps1)";
+        EXPECT_EQ(builtins->count(kBuiltInInstanceId), 0U)
+          << spv_path.string()
+          << ": expected no BuiltIn InstanceId (6) - it reads the TLAS instance index, not the "
+             "host-written instanceCustomIndex";
+    }
+
+    const fs::path path_tracing_spv = spirvRoot() / "path_tracing" / "path_tracing.path_tracing_main.spv";
+    if (!fs::exists(path_tracing_spv)) {
+        GTEST_SKIP() << "missing " << path_tracing_spv.string() << " - shaders have not been compiled";
+    }
+
+    const auto counts = parse_spirv_opcode_counts(path_tracing_spv);
+    ASSERT_TRUE(counts.has_value()) << "could not parse " << path_tracing_spv.string() << " as SPIR-V";
+
+    const auto custom_index_it = counts->find(kOpRayQueryGetIntersectionInstanceCustomIndexKHR);
+    EXPECT_TRUE(custom_index_it != counts->end() && custom_index_it->second > 0)
+      << path_tracing_spv.string()
+      << ": expected OpRayQueryGetIntersectionInstanceCustomIndexKHR to be present - Candidate/Committed "
+         "InstanceID() may have regressed to InstanceIndex(), or the compiled .spv is stale (recompile "
+         "with compile-slang-shaders.ps1)";
+
+    const auto instance_id_it = counts->find(kOpRayQueryGetIntersectionInstanceIdKHR);
+    const std::size_t instance_id_count = (instance_id_it == counts->end()) ? 0 : instance_id_it->second;
+    EXPECT_EQ(instance_id_count, 0U)
+      << path_tracing_spv.string()
+      << ": expected no OpRayQueryGetIntersectionInstanceIdKHR - it reads the TLAS instance index, not "
+         "the host-written instanceCustomIndex, found " << instance_id_count << " occurrence(s)";
 }
 
 // Regression gate for the RT/PT objectDescription centralization:
