@@ -8,9 +8,9 @@ struct ObjMaterial
 {
     glm::vec3 diffuse{ 0.7F, 0.7F, 0.7F };
     // No authored Ke/emissive_factor means no emitted radiance: the shading
-    // paths add material.emission unattenuated after shadowing
-    // (rasterizer.slang:84-86), so any non-zero default is a scene-wide glow
-    // nothing authored.
+    // paths add material.emission unattenuated after shadowing (rasterizer.slang's
+    // fs_main calls material_emission), so any non-zero default is a
+    // scene-wide glow nothing authored.
     glm::vec3 emission{ 0.0F };
     float shininess{ 0.0F };
     float dissolve{ 1.0F };

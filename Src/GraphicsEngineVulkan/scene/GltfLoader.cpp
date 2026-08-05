@@ -150,7 +150,8 @@ UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_vi
     const glm::vec2 offset(transform.offset[0], transform.offset[1]);
     const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
 
-    // T * R * S, same convention as the Rust loader's gltf_loader.rs:618-625,
+    // T * R * S, same convention as the Rust loader's load_primitive
+    // (crates/webgpu_renderer/src/asset/gltf_loader.rs, base_uv_transform),
     // including the negated rotation sign (glTF's `rotation` is clockwise in
     // UV space).
     const glm::mat3 uvMatrix =

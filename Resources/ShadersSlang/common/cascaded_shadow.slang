@@ -53,9 +53,10 @@ float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<S
     // that wanders past the map's border re-samples the border texel's depth
     // instead of falling off the map - it does NOT read as unshadowed.
     // ClampToBorder + an opaque-white border would do that instead, but is
-    // blocked here: Texture.cpp:249 hard-codes an int opaque-black border
-    // colour, which reads as depth 0 (fully shadowed) on this float-format
-    // image. This in-shader bounds check is the portable equivalent: an
+    // blocked here: Texture::createTextureSampler hard-codes an int
+    // opaque-black border colour, which reads as depth 0 (fully shadowed) on
+    // this float-format image. This in-shader bounds check is the portable
+    // equivalent: an
     // out-of-map tap counts as lit, matching the whole-fragment rejection
     // above.
     for (int x = -radius; x <= radius; x++)

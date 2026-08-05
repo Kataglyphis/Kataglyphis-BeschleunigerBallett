@@ -102,7 +102,8 @@ void Window::init_callbacks()
 void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
     // size itself is queried on demand via glfwGetFramebufferSize
-    // (VulkanRenderer.cpp:690, VulkanSwapChain.cpp:52); this callback only flags the change.
+    // (VulkanRenderer::recreateSwapChain, VulkanSwapChain::initVulkanContext);
+    // this callback only flags the change.
     (void)width;
     (void)height;
     auto *app = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));

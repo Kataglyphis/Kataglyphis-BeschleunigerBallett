@@ -36,8 +36,8 @@ float sample_density(float3 position, Clouds cloud)
 {
     float3 uvw128 = abs(fmod(position + cloud.offset, 256.0)) / 256.0;
     // Explicit LOD: this compute kernel has no fragment derivatives, so an
-    // implicit-LOD .Sample() fails SPIR-V validation. See
-    // raytracing/raytrace.rchit.slang:78-81.
+    // implicit-LOD .Sample() fails SPIR-V validation. See rchit_main's
+    // base-colour sample comment in raytracing/raytrace.rchit.slang.
     float4 noise128 = noiseTexture.SampleLevel(uvw128, 0.0);
 
     float baseDensity = ((cloud.pillowness * 0.25)) * max(0.0, noise128.r - cloud.threshold) * cloud.scale

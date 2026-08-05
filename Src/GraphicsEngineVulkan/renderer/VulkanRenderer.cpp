@@ -359,9 +359,10 @@ void Kataglyphis::VulkanRenderer::handleModelTransformChange(
           std::span<const float, 3>(guiSceneSharedVars.model_rotation));
 
         // selected_model_index is a *file-list* index into
-        // sceneConfig::getAvailableModelPaths() (GUI.cpp:88-94), not a scene
-        // model index - the transform always targets scene model 0, which is
-        // what reloadModel leaves behind.
+        // sceneConfig::getAvailableModelPaths() (assigned in GUI::render's
+        // Model Selection combo), not a scene model index - the transform
+        // always targets scene model 0, which is what reloadModel leaves
+        // behind.
         if (guiSceneSharedVars.selected_model_index >= 0) {
             scene->update_model_matrix(modelMatrix, 0);
 

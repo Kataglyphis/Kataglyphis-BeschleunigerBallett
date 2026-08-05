@@ -5492,31 +5492,58 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
       << " defines MAX_TEXTURE_COUNT = " << *header_value;
 }
 
-// docs/model-loading.md is the one doc in the tree written to cite
-// `file:line` locations, and those citations rot within days - a function
-// moves ten lines and the citation now points at unrelated code, silently.
-// Every other doc (docs/cpp-renderer-improvements.md included, which is a
+// docs/model-loading.md used to be the one doc in the tree written to cite
+// `file:line` locations, and this gate was scoped to it alone - but the same
+// rotting shape had already spread into Src/ and the shaders unobserved:
+// eighteen sites, at least eight already pointing at unrelated code by the
+// time they were found (a function moves ten lines and the citation now
+// points at unrelated code, silently). Widened to scan every comment under
+// Src/ and Resources/ShadersSlang/ too. docs/ as a whole is still NOT
+// scanned: docs/cpp-renderer-improvements.md is the sole exemption, a
 // chronological log where a citation pinned to a historical commit is
-// legitimate) cites symbol names instead, so this gate is scoped to this one
-// file rather than widened to all of docs/.
-TEST(BuildIntegrity, ModelLoadingDocCitesSymbolsNotLineNumbers)
+// legitimate, and BACKLOG.md is not scanned at all. Every other doc, and now
+// every source/shader comment, cites symbol names instead.
+TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path doc_path = repo_root / "docs" / "model-loading.md";
-    const auto doc_content = readFileText(doc_path);
-    ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
-
-    static const std::regex kFileLinePattern(R"([A-Za-z_/.-]+\.(cpp|ixx|hpp|rs):[0-9]+)");
+    static const std::regex kFileLinePattern(R"([A-Za-z_/.-]+\.(cpp|ixx|hpp|slang|wgsl|rs):[0-9]+)");
 
     std::vector<std::string> violations;
-    auto begin = std::sregex_iterator(doc_content->begin(), doc_content->end(), kFileLinePattern);
-    for (auto it = begin; it != std::sregex_iterator(); ++it) { violations.push_back(it->str()); }
+    auto scan_file = [&](const fs::path &path) {
+        const auto content = readFileText(path);
+        if (!content.has_value()) { return; }
+        const std::string relative = fs::relative(path, repo_root).generic_string();
+        auto begin = std::sregex_iterator(content->begin(), content->end(), kFileLinePattern);
+        for (auto it = begin; it != std::sregex_iterator(); ++it) {
+            violations.push_back(relative + ": " + it->str());
+        }
+    };
+
+    scan_file(repo_root / "docs" / "model-loading.md");
+
+    static constexpr std::array<const char *, 3> kSrcExtensions{ ".cpp", ".hpp", ".ixx" };
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(repo_root / "Src", error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error)) { continue; }
+        const std::string extension = it->path().extension().string();
+        if (std::find(kSrcExtensions.begin(), kSrcExtensions.end(), extension) == kSrcExtensions.end()) { continue; }
+        scan_file(it->path());
+    }
+
+    for (fs::recursive_directory_iterator it(repo_root / "Resources" / "ShadersSlang", error), end; it != end;
+         it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
+        scan_file(it->path());
+    }
 
     EXPECT_TRUE(violations.empty())
-      << doc_path.string() << " cites " << violations.size()
-      << " file:line location(s), which rot within days - cite the function or member name instead:"
+      << violations.size()
+      << " file:line location(s) across Src/, Resources/ShadersSlang/ and docs/model-loading.md, which rot "
+         "within days - cite the function or member name instead:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

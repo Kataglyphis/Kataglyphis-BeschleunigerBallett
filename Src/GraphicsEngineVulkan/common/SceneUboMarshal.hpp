@@ -27,12 +27,13 @@ constexpr auto aspectRatioOf(uint32_t width, uint32_t height) -> float
 // perspective() targets OpenGL's clip space, whose Y axis points the
 // opposite way from Vulkan's, so [1][1] is flipped here.
 //
-// CascadedShadowMap.cpp:342-352 depends on the cascade light-space matrices
-// NOT having this flip: they are built from glm::ortho with no flip applied,
-// and the shadow pass disables culling specifically because flipping only
-// the camera projection (and not the cascade matrices) reverses the two
-// passes' triangle winding relative to each other. Do not add the flip to
-// the cascade matrices to "match" this function.
+// CascadedShadowMap::buildGraphicsPipeline's cull-mode comment depends on the
+// cascade light-space matrices NOT having this flip: they are built from
+// glm::ortho with no flip applied, and the shadow pass disables culling
+// specifically because flipping only the camera projection (and not the
+// cascade matrices) reverses the two passes' triangle winding relative to
+// each other. Do not add the flip to the cascade matrices to "match" this
+// function.
 inline auto makeVulkanProjection(float fovDegrees, float aspect, float nearPlane, float farPlane) -> glm::mat4
 {
     glm::mat4 projection = glm::perspective(glm::radians(fovDegrees), aspect, nearPlane, farPlane);
@@ -68,8 +69,9 @@ constexpr auto clampCloudMeshScale(glm::vec3 meshScale, float densityMultiplier)
 }
 
 // Packs every GUI cloud slider into SceneUBO's four cloud vec4s. The unpack
-// side is clouds.slang:129-143 (BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack
-// pins the two against each other):
+// side is clouds_main's cloud-parameter unpack block in clouds.slang
+// (BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack pins the two against
+// each other):
 //   cloudLightMarch   x = numMarchStepsToLight,       y/z/w reserved (0)
 //   cloudMeshScale    xyz = meshScale,                w = densityMultiplier (cloud.scale)
 //   cloudMeshOffset   xyz = meshOffset,                w = coverageThreshold (cloud.threshold)
@@ -97,9 +99,11 @@ inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
 
 // Packs the camera position/direction into their two SceneUBO vec4s. Both
 // .w components are filler (1.0F): every shader that reads either field
-// samples only .xyz (cascaded_shadow.slang:22, clouds.slang:126,
-// deferred.slang:121, rasterizer.slang:55, raytrace.rchit.slang:87). fov is
-// not packed here - makeVulkanProjection already carries it into the
+// samples only .xyz (calc_cascaded_shadow's fragDistance line in
+// cascaded_shadow.slang, clouds_main's eyePosition read in clouds.slang,
+// lighting_fs_main's V computation in deferred.slang, fs_main's V computation
+// in rasterizer.slang, rchit_main's V computation in raytrace.rchit.slang).
+// fov is not packed here - makeVulkanProjection already carries it into the
 // projection matrix, and no shader has ever read it back out of cam_pos.w.
 inline void fillSceneUboCamera(VulkanRendererInternals::SceneUBO &ubo, glm::vec3 position, glm::vec3 direction)
 {
@@ -109,9 +113,9 @@ inline void fillSceneUboCamera(VulkanRendererInternals::SceneUBO &ubo, glm::vec3
 
 // Packs the directional light. Normalizes rawDirection itself so
 // normalizedLightDirection has exactly one caller. direction.w is filler
-// (1.0F, unread); color.w carries radiance and IS read - rasterizer.slang:75
-// unpacks it as lightIntensity - so unlike every other .w slot in SceneUBO,
-// this one must stay wired to a shader (see
+// (1.0F, unread); color.w carries radiance and IS read - rasterizer.slang's
+// fs_main unpacks it as lightIntensity - so unlike every other .w slot in
+// SceneUBO, this one must stay wired to a shader (see
 // BuildIntegrity.SceneUboWComponentsCarryingDataAreReadByAShader).
 inline void fillSceneUboDirectionalLight(
   VulkanRendererInternals::SceneUBO &ubo, glm::vec3 rawDirection, glm::vec3 color, float radiance)

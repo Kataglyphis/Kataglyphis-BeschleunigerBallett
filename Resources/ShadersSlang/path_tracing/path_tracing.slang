@@ -257,7 +257,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                     int textureId = resolve_texture_slot(obj, material);
                     // Explicit LOD: this compute kernel has no fragment
                     // derivatives, so an implicit-LOD .Sample() fails SPIR-V
-                    // validation. See raytracing/raytrace.rchit.slang:78-81.
+                    // validation. See rchit_main's base-colour sample comment
+                    // in raytracing/raytrace.rchit.slang.
                     hitColor = base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
                 }
                 else
