@@ -16,6 +16,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <array>
 #include <cmath>
 
 import kataglyphis.vulkan.frustum;
@@ -45,6 +46,33 @@ glm::mat4 default_view_projection()
 AABB box_at(const glm::vec3 &centre, float halfExtent)
 {
     return AABB{ centre - glm::vec3(halfExtent), centre + glm::vec3(halfExtent) };
+}
+
+// Reference oracle: the eight-corner walk `transformAABB` used before it
+// switched to the center/extent form. Kept file-local (not the production
+// code path) so the new form can be checked against the old one instead of
+// against itself.
+AABB transform_aabb_via_eight_corners(const glm::mat4 &model, const AABB &box)
+{
+    AABB out{};
+    bool first = true;
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 point{
+            (corner & 1) != 0 ? box.max.x : box.min.x,
+            (corner & 2) != 0 ? box.max.y : box.min.y,
+            (corner & 4) != 0 ? box.max.z : box.min.z,
+        };
+        const glm::vec3 world{ model * glm::vec4(point, 1.0F) };
+        if (first) {
+            out.min = world;
+            out.max = world;
+            first = false;
+        } else {
+            out.min = glm::min(out.min, world);
+            out.max = glm::max(out.max, world);
+        }
+    }
+    return out;
 }
 
 }// namespace
@@ -192,6 +220,44 @@ TEST(FrustumUnit, TransformAABBHandlesTranslationAndScale)
     EXPECT_NEAR(moved.max.x, 12.0F, 1e-4F);
     EXPECT_NEAR(moved.min.z, -7.0F, 1e-4F);
     EXPECT_NEAR(moved.max.z, -3.0F, 1e-4F);
+}
+
+// Pins the center/extent form against the eight-corner reference it replaced
+// on a set of affine matrices covering the cases the two forms could
+// plausibly disagree on: identity, pure translation, uniform and
+// non-uniform scale (including a mirror, i.e. a negative scale), a rotation
+// about a non-axis vector, and a translate*rotate*scale composition matching
+// BM_TransformAABB's.
+TEST(FrustumUnit, TransformAabbMatchesTheEightCornerReference)
+{
+    const AABB box{ glm::vec3(-1.0F, -2.0F, -0.5F), glm::vec3(3.0F, 1.5F, 2.0F) };
+
+    const std::array<glm::mat4, 6> matrices{
+        glm::mat4(1.0F),
+        glm::translate(glm::mat4(1.0F), glm::vec3(10.0F, -3.0F, 5.0F)),
+        glm::scale(glm::mat4(1.0F), glm::vec3(2.0F)),
+        glm::scale(glm::mat4(1.0F), glm::vec3(1.5F, -1.0F, 3.0F)),// non-uniform, mirrored on Y
+        glm::rotate(glm::mat4(1.0F), glm::radians(37.0F), glm::normalize(glm::vec3(0.3F, 1.0F, 0.2F))),
+        [] {
+            glm::mat4 model(1.0F);
+            model = glm::translate(model, glm::vec3(12.0F, -4.0F, 7.0F));
+            model = glm::rotate(model, glm::radians(37.0F), glm::normalize(glm::vec3(0.3F, 1.0F, 0.2F)));
+            model = glm::scale(model, glm::vec3(1.5F, 0.5F, 2.25F));
+            return model;
+        }(),
+    };
+
+    for (size_t i = 0; i < matrices.size(); ++i) {
+        const AABB expected = transform_aabb_via_eight_corners(matrices[i], box);
+        const AABB actual = transformAABB(matrices[i], box);
+
+        EXPECT_NEAR(actual.min.x, expected.min.x, 1e-4F) << "matrix " << i << " min.x";
+        EXPECT_NEAR(actual.min.y, expected.min.y, 1e-4F) << "matrix " << i << " min.y";
+        EXPECT_NEAR(actual.min.z, expected.min.z, 1e-4F) << "matrix " << i << " min.z";
+        EXPECT_NEAR(actual.max.x, expected.max.x, 1e-4F) << "matrix " << i << " max.x";
+        EXPECT_NEAR(actual.max.y, expected.max.y, 1e-4F) << "matrix " << i << " max.y";
+        EXPECT_NEAR(actual.max.z, expected.max.z, 1e-4F) << "matrix " << i << " max.z";
+    }
 }
 
 // The whole point, end to end: an object moved out of view is culled, and the

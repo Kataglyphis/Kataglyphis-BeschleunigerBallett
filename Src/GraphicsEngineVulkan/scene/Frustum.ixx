@@ -61,9 +61,10 @@ bool isVisibleAsShadowCaster(const FrustumPlanes &planes, const AABB &boxWorldSp
 ///
 /// The transformed box is NOT the transform of the corners' min/max: under
 /// rotation, an axis-aligned box maps to an oriented box whose axis-aligned
-/// bound is larger. This walks all eight corners, which is exact for affine
-/// transforms and never under-estimates - important, because an
-/// under-estimated bound culls visible geometry.
+/// bound is larger. Uses the Arvo center/extent form, which is exact for
+/// AFFINE transforms (bottom row [0 0 0 1] - every caller supplies a model
+/// matrix, never a projection) and never under-estimates - important,
+/// because an under-estimated bound culls visible geometry.
 AABB transformAABB(const glm::mat4 &model, const AABB &boxObjectSpace);
 
 }// namespace Kataglyphis

@@ -96,25 +96,22 @@ AABB transformAABB(const glm::mat4 &model, const AABB &box)
 {
     if (!box.isValid()) { return box; }
 
-    AABB out{};
-    bool first = true;
-    for (int corner = 0; corner < 8; ++corner) {
-        const glm::vec3 point{
-            (corner & 1) != 0 ? box.max.x : box.min.x,
-            (corner & 2) != 0 ? box.max.y : box.min.y,
-            (corner & 4) != 0 ? box.max.z : box.min.z,
-        };
-        const glm::vec3 world{ model * glm::vec4(point, 1.0F) };
-        if (first) {
-            out.min = world;
-            out.max = world;
-            first = false;
-        } else {
-            out.min = glm::min(out.min, world);
-            out.max = glm::max(out.max, world);
-        }
+    // Arvo's center/extent form: a third of the eight-corner walk's
+    // arithmetic for a provably identical result. Requires `model` to be
+    // AFFINE (bottom row [0 0 0 1]) - every caller supplies a model matrix
+    // (Model/Mesh), never a projection, which would need the per-corner
+    // homogeneous divide the eight-corner walk performed implicitly.
+    const glm::vec3 center = 0.5F * (box.min + box.max);
+    const glm::vec3 extents = 0.5F * (box.max - box.min);
+
+    const glm::vec3 newCenter{ model * glm::vec4(center, 1.0F) };
+    glm::vec3 newExtents{ 0.0F };
+    for (int row = 0; row < 3; ++row) {
+        newExtents[row] = std::abs(model[0][row]) * extents.x + std::abs(model[1][row]) * extents.y
+                         + std::abs(model[2][row]) * extents.z;
     }
-    return out;
+
+    return AABB{ newCenter - newExtents, newCenter + newExtents };
 }
 
 }// namespace Kataglyphis
