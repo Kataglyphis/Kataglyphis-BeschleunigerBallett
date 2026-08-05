@@ -1715,9 +1715,9 @@ TEST(GltfParseUnit, KhrTextureTransformRotationReachesTheMaterial)
     // uv_transform_rotation_card.gltf carries a +pi/2 rotation (no scale/offset)
     // on its base-colour texture. Assert the resulting rows transform a known UV
     // to the same point the spec's T*R*S formula gives, AND pin the sign against
-    // the Rust loader's convention (gltf_loader.rs:618-625: rotate(-rotation)) -
-    // a silently flipped sign produces a plausible-looking but mirrored image
-    // that no other test would catch.
+    // the Rust loader's convention (gltf_loader.rs's uv_transform_rows, which
+    // rotates by -rotation) - a silently flipped sign produces a
+    // plausible-looking but mirrored image that no other test would catch.
     const auto path = sceneConfig::resolveModelPath("Models/GltfTest/uv_transform_rotation_card.gltf");
     if (!std::filesystem::exists(path)) { GTEST_SKIP() << "uv_transform_rotation fixture not present"; }
 

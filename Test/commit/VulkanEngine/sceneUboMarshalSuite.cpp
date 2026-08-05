@@ -176,8 +176,9 @@ TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)
     EXPECT_GE(degenerate.z, kMinCloudMeshExtent);
     EXPECT_GE(degenerate.w, kMinCloudDensityMultiplier);
 
-    // This is the quantity clouds.slang:150-155 divides by; it must be
-    // strictly positive for every component even from an all-zero input.
+    // This is the quantity clouds_main's inv_model_to_world diagonal (built
+    // from cloud.radius, in clouds.slang) divides by; it must be strictly
+    // positive for every component even from an all-zero input.
     EXPECT_GT(degenerate.x * degenerate.w * 10.0F, 0.0F);
     EXPECT_GT(degenerate.y * degenerate.w * 10.0F, 0.0F);
     EXPECT_GT(degenerate.z * degenerate.w * 10.0F, 0.0F);
@@ -331,7 +332,7 @@ TEST(SceneUboMarshal, DirectionalLightPacksRadianceInColorW)
     EXPECT_FLOAT_EQ(ubo.dirLight.color.x, 0.9F);
     EXPECT_FLOAT_EQ(ubo.dirLight.color.y, 0.8F);
     EXPECT_FLOAT_EQ(ubo.dirLight.color.z, 0.7F);
-    EXPECT_FLOAT_EQ(ubo.dirLight.color.w, 2.5F) << "color.w carries radiance - rasterizer.slang:75 reads it";
+    EXPECT_FLOAT_EQ(ubo.dirLight.color.w, 2.5F) << "color.w carries radiance - rasterizer.slang's fs_main reads it";
 
     SceneUBO zeroInput{};
     fillSceneUboDirectionalLight(zeroInput, glm::vec3(0.0F), glm::vec3(1.0F), 1.0F);

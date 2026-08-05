@@ -1,7 +1,7 @@
 // Coverage for AsyncModelParse - the engine's only threaded class, sitting in
 // the GUI-driven model-load path on the one platform (Windows) with no
 // ThreadSanitizer. No Vulkan device anywhere: both loaders' parseCpu are
-// documented device-free (GltfLoader.ixx:41-43), which is exactly why
+// documented device-free (GltfLoader::parseCpu), which is exactly why
 // gltfParseSuite and objParseSuite already work headless - this suite mirrors
 // that pattern for the threaded wrapper around them.
 
@@ -130,7 +130,7 @@ TEST(AsyncModelParseUnit, TakingAResultLeavesIsFinishedTrue)
 {
     // Pin the current behaviour, do not change it: neither take method resets
     // finished/succeeded, so isFinished() keeps answering true after the
-    // result was handed over. Scene::pollModelLoad (Scene.cpp:101) survives
+    // result was handed over. Scene::pollModelLoad survives
     // that only because it also gates on its own modelLoadPending flag - a
     // future change to reset these atomics has to look at pollModelLoad
     // deliberately.

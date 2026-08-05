@@ -113,7 +113,7 @@ TEST(FrustumUnit, NearPlaneSitsAtTheProjectionNearDistance)
     const AABB inSliver{ { -0.01F, -0.01F, -0.09F }, { 0.01F, 0.01F, -0.06F } };
     EXPECT_FALSE(isVisible(planes, inSliver))
       << "a box between the accurate and OpenGL-style near planes must be culled; "
-         "if this fails, Frustum.cpp:51 regressed to normalizePlane(row3 + row2)";
+         "if this fails, extractFrustumPlanes's near plane regressed to normalizePlane(row3 + row2)";
 
     // Well past the near plane: must still be visible, so the assertion above
     // cannot pass by culling everything.

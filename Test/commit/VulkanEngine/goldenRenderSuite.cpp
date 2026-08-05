@@ -832,9 +832,9 @@ TEST(GoldenRender, DisablingFrustumCullingAlsoDisablesShadowCasterCulling)
     EXPECT_LE(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total);
 }
 
-// The GPU counterpart of CascadedShadowMapUnit.CascadesRespondToLightDirection
-// (cascadedShadowMapSuite.cpp:288): that test proves the light direction
-// reaches the cascade matrices, this one proves it reaches the pixels.
+// The GPU counterpart of CascadedShadowMapUnit.CascadesRespondToLightDirection:
+// that test proves the light direction reaches the cascade matrices, this one
+// proves it reaches the pixels.
 //
 // Reuses ShadowsDarkenSomePixels's oracle - intensity 0 vs 1 at a fixed
 // direction, filtered by a same-state noise reference - under two different
@@ -947,9 +947,9 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
     const double area_a = static_cast<double>(darkened_a) / static_cast<double>(pixel_count);
     const double area_b = static_cast<double>(darkened_b) / static_cast<double>(pixel_count);
 
-    // Same area floor ShadowsDarkenSomePixels uses (:680) - a direction that
-    // casts nothing must not be able to pass by trivially agreeing with
-    // another empty mask.
+    // Same area floor ShadowsDarkenSomePixels uses - a direction that casts
+    // nothing must not be able to pass by trivially agreeing with another
+    // empty mask.
     constexpr double AREA_FLOOR = 0.04;
     EXPECT_GT(area_a, AREA_FLOOR) << "Direction A cast a shadow over only " << (area_a * 100.0)
                                   << "% of pixels; expected a visible shadowed region.";
@@ -2932,7 +2932,7 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
 // secondary sanity check that the reload did not otherwise leave the scene
 // empty. Drives the reload through the same GUISceneSharedVars flags the GUI
 // combo box sets (selected_model_index + model_reload_requested, the same
-// shape :1682-1684 uses for the transform flag).
+// shape RaytracedWorldFollowsTheModelTransform uses for the transform flag).
 TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
 {
     SKIP_WITHOUT_GPU();

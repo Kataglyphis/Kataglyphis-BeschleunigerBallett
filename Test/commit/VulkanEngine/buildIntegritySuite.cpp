@@ -1114,8 +1114,10 @@ struct SpirvStructContract
     std::map<std::string, std::size_t> member_offsets;
 };
 
-// PushConstantSkyBox_std430 deliberately has no entry below: SkyBox.cpp:334,
-// 411 pushes a bare sizeof(uint32_t) with no host struct to compare against.
+// PushConstantSkyBox_std430 deliberately has no entry below: SkyBox's
+// push-constant range setup (createGraphicsPipeline) and its push call
+// (recordCommands) both push a bare sizeof(uint32_t) with no host struct to
+// compare against.
 std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
 {
     return {
@@ -1201,7 +1203,7 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
         { "ShadowPushConstants_std430",
           // shadow_map.slang names its second field objectIndex, while the
           // host Kataglyphis::ShadowPushConstants (CascadedShadowMap.ixx)
-          // calls the same field cascadeIndex - CascadedShadowMap.cpp:504
+          // calls the same field cascadeIndex - CascadedShadowMap::recordCommands
           // actually passes the flat object index through it
           // (makeShadowPush(modelMatrix, object_index)), so the field is
           // genuinely the shader's objectIndex under an older host name.
@@ -1464,8 +1466,8 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
       << violations.size()
       << " compiled .spv use an implicit-LOD image instruction outside a Fragment shader - implicit LOD needs an "
          "automatic derivative, which is only defined for Fragment shader invocations. Use the explicit-LOD form "
-         "instead (see raytrace.rchit.slang:75-77's SampleLevel(..., 0.0) for the fix pattern). Offending "
-         "module(s):"
+         "instead (see raytrace.rchit.slang's rchit_main base-colour sample, SampleLevel(..., 0.0), for the fix "
+         "pattern). Offending module(s):"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }
@@ -3636,7 +3638,7 @@ TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
       << "path_tracing.slang no longer row-multiplies worldToObject for the normal. " << kFailureMessage;
 }
 
-// scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
+// scene_types.slang's MAX_CASCADES is the gated source of truth for the
 // cascade count - HostAndShaderSharedConstantsAgree above pins it against
 // host_device_shared_vars.hpp. That gate is blind to a second, independent
 // "static const int" redeclaring the same value under a cascade-ish name
@@ -5410,8 +5412,9 @@ TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
     for (const std::string &relative_path : collect_all_slang_relative_paths(slang_root)) {
         // common/ is a module directory with no entry points of its own;
         // has_entry_point matches "[shader(" inside comments too, and
-        // common/fullscreen.slang:8 has one in its usage example - an
-        // exclusion by convention, not a workaround for a real entry point.
+        // common/fullscreen.slang's fullscreen_vs usage-example comment has
+        // one - an exclusion by convention, not a workaround for a real
+        // entry point.
         if (relative_path.starts_with("common/")) { continue; }
         if (!has_entry_point(slang_root / relative_path)) { continue; }
 
@@ -6481,20 +6484,22 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
 // eighteen sites, at least eight already pointing at unrelated code by the
 // time they were found (a function moves ten lines and the citation now
 // points at unrelated code, silently). Widened to scan every comment under
-// Src/ and Resources/ShadersSlang/ too. docs/ as a whole is still NOT
-// scanned: docs/cpp-renderer-improvements.md is the sole exemption, a
-// chronological log where a citation pinned to a historical commit is
-// legitimate, and BACKLOG.md is not scanned at all. Every other doc, and now
-// every source/shader comment, cites symbol names instead.
+// Src/ and Resources/ShadersSlang/ too, then widened again to Test/, the
+// most heavily hand-commented tree in the repo and the last one left
+// unscanned. docs/ as a whole is still NOT scanned: docs/cpp-renderer-
+// improvements.md is the sole exemption, a chronological log where a
+// citation pinned to a historical commit is legitimate, and BACKLOG.md is
+// not scanned at all. Every other doc, and now every source/shader/test
+// comment, cites symbol names instead.
 //
-// kFileLinePattern alone missed the same-file shorthand - `(:922, :954)`,
-// `createTextures's :87-90` - because it requires a `filename.ext` before the
-// colon. That shorthand rots exactly the same way (a function moves, the
-// number now points at unrelated code) and had already rotted at multiple
-// sites by the time it was found, so kBareLinePattern catches a bare `:NNN`
-// or `:NNN-NNN` wherever it is not itself preceded by a digit (which would
-// make it part of an unrelated `1:1`-style token or a second colon in
-// `std::` / `http://`).
+// kFileLinePattern alone missed the same-file shorthand, because it
+// requires a `filename.ext` before the colon. That shorthand rots exactly
+// the same way (a function moves, the number now points at unrelated code)
+// and had already rotted at multiple sites by the time it was found, so
+// kBareLinePattern catches a bare colon followed by digits (optionally a
+// dash and more digits) wherever it is not itself preceded by a digit
+// (which would make it part of an unrelated ratio-style token or a second
+// colon in a namespace or URL scheme).
 TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
 {
     const fs::path repo_root = repoRoot();
@@ -6538,10 +6543,18 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
         scan_file(it->path());
     }
 
+    for (fs::recursive_directory_iterator it(repo_root / "Test", error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error)) { continue; }
+        const std::string extension = it->path().extension().string();
+        if (std::find(kSrcExtensions.begin(), kSrcExtensions.end(), extension) == kSrcExtensions.end()) { continue; }
+        scan_file(it->path());
+    }
+
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " file:line location(s), including the same-file `:NNN` shorthand, across Src/, "
-         "Resources/ShadersSlang/ and docs/model-loading.md, which rot within days - cite the function or "
+         "Resources/ShadersSlang/, Test/ and docs/model-loading.md, which rot within days - cite the function or "
          "member name instead:"
       << [&violations] {
              std::string joined;

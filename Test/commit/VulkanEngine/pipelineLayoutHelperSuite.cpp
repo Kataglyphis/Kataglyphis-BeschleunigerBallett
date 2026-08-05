@@ -22,7 +22,8 @@ namespace {
 // vk::DescriptorSetLayout/vk::PushConstantRange's default constructors are
 // not constexpr in this vulkan-hpp version - the nullptr_t constructor is,
 // so it stands in for "no real handle" wherever a constant expression is
-// required below (the same stand-in framebufferHelperSuite.cpp:24-25 uses).
+// required below (the same stand-in framebufferHelperSuite.cpp's anonymous
+// namespace fixtures use).
 constexpr std::array<vk::DescriptorSetLayout, 2> kTwoLayouts{ vk::DescriptorSetLayout(nullptr),
     vk::DescriptorSetLayout(nullptr) };
 constexpr std::array<vk::DescriptorSetLayout, 3> kThreeLayouts{ vk::DescriptorSetLayout(nullptr),

@@ -4,7 +4,7 @@
 //
 // ZeroInputIsIdentity is the regression test for the bug this extraction
 // fixed: the old inline code hard-coded a glm::scale(..., 60,60,60) that
-// SceneConfig.cpp:116-124 documents as removed (it put the camera inside
+// SceneConfig::getModelMatrix documents as removed (it put the camera inside
 // the geometry and blew out cascade resolution), but the GUI transform
 // handler kept applying it on every Position/Rotation drag.
 

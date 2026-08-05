@@ -109,7 +109,7 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
 }
 
 // The shared render set's TEXTURES_BINDING/SAMPLER_BINDING declare
-// MAX_TEXTURE_COUNT (128) descriptors (VulkanRenderer.cpp:1459-1462); a
+// MAX_TEXTURE_COUNT (128) descriptors (VulkanRenderer::createSharedRenderDescriptorResources); a
 // single-descriptor writer that silently wrote element 0 would under-write
 // the other 127. This predicate is what beginWrite/writeImageArray now check
 // before issuing the vkUpdateDescriptorSets call.

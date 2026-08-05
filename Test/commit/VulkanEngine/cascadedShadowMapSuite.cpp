@@ -351,10 +351,11 @@ TEST(CascadedShadowMapUnit, ShadowPushCarriesTheSceneModelMatrix)
 }
 
 // Regression guard: the no-shared-set fallback used to bind the light matrices
-// set at set 0, against a pipeline layout (CascadedShadowMap.cpp's setLayouts,
-// :351) that says set 0 is the shared render set and set 1 is light matrices -
-// so the vertex shader's set 1 read was never bound. The light matrices set
-// must land at set index 1 in both cases; only firstSet/setCount change.
+// set at set 0, against a pipeline layout (CascadedShadowMap::buildGraphicsPipeline's
+// setLayouts) that says set 0 is the shared render set and set 1 is light
+// matrices - so the vertex shader's set 1 read was never bound. The light
+// matrices set must land at set index 1 in both cases; only firstSet/setCount
+// change.
 TEST(CascadedShadowMapUnit, ShadowSetBindingKeepsLightMatricesAtSetOne)
 {
     EXPECT_EQ(shadowSetBinding(true), (ShadowSetBinding{ 0, 2 }));
