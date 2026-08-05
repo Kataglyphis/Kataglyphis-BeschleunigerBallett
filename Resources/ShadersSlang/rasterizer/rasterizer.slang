@@ -89,6 +89,11 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : S
 
     albedo *= In.fragmentColor.rgb;
 
+    // KHR_materials_unlit: skip lighting, shadowing and emissive alike and
+    // return the base colour as-is (spec: "MUST NOT be lit"), before N/V are
+    // used for anything.
+    if (material.unlit != 0) return float4(albedo, 1.0);
+
     float metallic = material.metallic;
     float roughness = material_roughness(material);
     if (material.metallicRoughnessTextureID >= 0)

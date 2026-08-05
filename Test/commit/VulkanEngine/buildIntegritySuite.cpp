@@ -1059,7 +1059,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "metallic_roughness_uv_transform_row0", offsetof(ObjMaterial, metallic_roughness_uv_transform_row0) },
             { "metallic_roughness_uv_transform_row1", offsetof(ObjMaterial, metallic_roughness_uv_transform_row1) },
             { "emissive_uv_transform_row0", offsetof(ObjMaterial, emissive_uv_transform_row0) },
-            { "emissive_uv_transform_row1", offsetof(ObjMaterial, emissive_uv_transform_row1) } } },
+            { "emissive_uv_transform_row1", offsetof(ObjMaterial, emissive_uv_transform_row1) },
+            { "unlit", offsetof(ObjMaterial, unlit) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -3028,6 +3029,42 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
     EXPECT_EQ(path_tracing_text.find("mrSample"), std::string::npos)
       << path_tracing_path.string() << " must not duplicate material_fetch.slang's mrSample-named G/B swizzle "
                                         "(it cannot import material_fetch - see its own doc comment); "
+      << kFailureMessage;
+}
+
+// KHR_materials_unlit must return the base colour unlit in all four shading
+// paths (spec: unlit materials "MUST NOT be lit"). This scans the shader
+// sources as text and fails if any of the four stops branching on
+// ObjMaterial::unlit, reporting which file is missing it.
+TEST(BuildIntegrity, UnlitIsHonouredByEveryShadingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "KHR_materials_unlit (ObjMaterial::unlit) must skip lighting, shadowing and emissive alike in every shading "
+      "path, per the extension's \"MUST NOT be lit\" requirement";
+
+    const std::vector<fs::path> shading_paths = {
+        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
+        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    };
+    for (const fs::path &path : shading_paths) {
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+        EXPECT_NE(text.find("material.unlit"), std::string::npos)
+          << path.string() << " no longer branches on ObjMaterial::unlit. " << kFailureMessage;
+    }
+
+    const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
+    const auto deferred_text_opt = readFileText(deferred_path);
+    ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
+    EXPECT_NE(deferred_text_opt->find("outAlbedo"), std::string::npos)
+      << "deferred.slang's geometry pass no longer writes outAlbedo - the lighting pass has no other channel to "
+         "read the unlit flag from. "
       << kFailureMessage;
 }
 
@@ -5566,11 +5603,12 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
     const auto doc_content = readFileText(doc_path);
     ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
 
-    static constexpr std::array<const char *, 20> kObjMaterialMembers{ "diffuse", "emission", "shininess",
+    static constexpr std::array<const char *, 21> kObjMaterialMembers{ "diffuse", "emission", "shininess",
         "dissolve", "textureID", "alphaCutoff", "uv_transform_row0", "uv_transform_row1", "metallic", "roughness",
         "emissiveTextureID", "normalTextureID", "normalScale", "metallicRoughnessTextureID",
         "normal_uv_transform_row0", "normal_uv_transform_row1", "metallic_roughness_uv_transform_row0",
-        "metallic_roughness_uv_transform_row1", "emissive_uv_transform_row0", "emissive_uv_transform_row1" };
+        "metallic_roughness_uv_transform_row1", "emissive_uv_transform_row0", "emissive_uv_transform_row1",
+        "unlit" };
 
     const auto table_start = doc_content->find("Material fields and where they come from");
     ASSERT_NE(table_start, std::string::npos)

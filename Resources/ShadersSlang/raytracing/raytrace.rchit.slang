@@ -97,6 +97,16 @@ void rchit_main(
     }
     albedo *= vertexColor.rgb;
 
+    // KHR_materials_unlit: skip lighting, shadowing and emissive alike and
+    // return the base colour as-is (spec: "MUST NOT be lit"), before the
+    // shadow ray is traced.
+    if (material.unlit != 0)
+    {
+        payload.hit_value = albedo;
+        payload.is_hit = 1.0;
+        return;
+    }
+
     // Light direction (towards the light) and view direction (towards camera).
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
     float3 N = worldNormal;

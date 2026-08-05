@@ -271,6 +271,7 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         .metallic_roughness_uv_transform_row1 = metallicRoughnessUvTransform.row1,
         .emissive_uv_transform_row0 = emissiveUvTransform.row0,
         .emissive_uv_transform_row1 = emissiveUvTransform.row1,
+        .unlit = (material.unlit != 0) ? 1 : 0,// KHR_materials_unlit
     };
 }
 

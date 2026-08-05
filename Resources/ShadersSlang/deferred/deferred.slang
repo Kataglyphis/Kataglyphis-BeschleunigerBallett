@@ -111,7 +111,18 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     // write and decodes on SubpassLoad below - the stored value is
     // unchanged in linear terms, only its 256 steps are redistributed
     // toward the range the eye is most sensitive to.
-    g.outAlbedo = texColor;
+    //
+    // .a carries KHR_materials_unlit instead of alpha (texColor.a is always
+    // 1.0 by the time it reaches here - BLEND is not implemented and MASK
+    // fragments below the cutoff already discarded above), because the
+    // lighting pass runs in a separate subpass and cannot see ObjMaterial at
+    // all - the G-buffer is its only channel for the flag. Vulkan applies the
+    // sRGB transfer function to RGB only, so alpha round-trips linearly
+    // through the store and SubpassLoad below, making 0.0/1.0 exact. Grepped
+    // Src/ for other readers of the albedo attachment: FrameCapture and the
+    // golden suites both only read colour attachments by index for pixel
+    // comparison and do not interpret alpha, so repurposing it here is safe.
+    g.outAlbedo = float4(texColor.rgb, material.unlit != 0 ? 1.0 : 0.0);
     // Emissive is surface-emitted radiance: the base-colour*emissiveTexture
     // multiply happens here, in the geometry pass, since the lighting pass
     // only has the already-packed G-buffer value to work with (no material
@@ -171,6 +182,11 @@ float4 lighting_fs_main(LightingVsOut In) : SV_Target
     float4 normal = inNormal.SubpassLoad();
     float4 albedo = inAlbedo.SubpassLoad();
     float4 material = inMaterial.SubpassLoad();
+
+    // KHR_materials_unlit, carried through geometry_fs_main's outAlbedo.a
+    // (see its write site for why alpha is the free channel): skip lighting,
+    // shadowing and emissive alike and return the base colour as-is.
+    if (albedo.a > 0.5) return float4(albedo.rgb, 1.0);
 
     float3 N = normalize(normal.xyz);
     float3 L = normalize(-sceneUBO_lighting.dirLight.direction.xyz);

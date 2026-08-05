@@ -292,6 +292,20 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 }
             }
 
+            // KHR_materials_unlit: the raster reading is "return base colour
+            // before any lighting" - the path-tracing equivalent is to skip
+            // NEE and hemisphere scattering entirely and terminate the path
+            // here, contributing only the (throughput-attenuated) base
+            // colour. Furnace mode stays gated out, same reason as emissive
+            // below: hitColor is already forced to 1.0 there and an early
+            // terminator would change how many bounces contribute, breaking
+            // the "converges to exactly the environment radiance" invariant.
+            if (!furnace && material.unlit != 0)
+            {
+                radiance += throughput * hitColor;
+                break;
+            }
+
             // Emissive is surface-emitted radiance, added at the hit before
             // throughput absorbs this bounce's albedo - furnace mode stays
             // gated out, or a furnace emitter would break the "converges to

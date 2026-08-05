@@ -101,6 +101,13 @@ struct ObjMaterial
     glm::vec3 emissive_uv_transform_row0{ 1.0F, 0.0F, 0.0F };
     glm::vec3 emissive_uv_transform_row1{ 0.0F, 1.0F, 0.0F };
 
+    // glTF KHR_materials_unlit: skips lighting, shadowing and emissive alike,
+    // returning the base colour as-is (spec: "MUST NOT be lit"). 0 = lit (the
+    // default, every OBJ material and every glTF material without the
+    // extension); every pre-existing scene is bit-unchanged. Trailing scalar,
+    // same scalar-layout rationale as alphaCutoff.
+    int unlit{ 0 };
+
     int get_textureID() const { return textureID; }
 };
 

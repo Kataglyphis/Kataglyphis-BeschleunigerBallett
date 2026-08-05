@@ -167,7 +167,8 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, metallic_roughness_uv_transform_row1), 124U);
     EXPECT_EQ(offsetof(ObjMaterial, emissive_uv_transform_row0), 136U);
     EXPECT_EQ(offsetof(ObjMaterial, emissive_uv_transform_row1), 148U);
-    EXPECT_EQ(sizeof(ObjMaterial), 160U);
+    EXPECT_EQ(offsetof(ObjMaterial, unlit), 160U);
+    EXPECT_EQ(sizeof(ObjMaterial), 164U);
 }
 
 // ObjMaterial's default member initializers must carry exactly the sentinels
@@ -199,4 +200,5 @@ TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinel
     EXPECT_EQ(m.metallic_roughness_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
     EXPECT_EQ(m.emissive_uv_transform_row0, glm::vec3(1.0F, 0.0F, 0.0F));
     EXPECT_EQ(m.emissive_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
+    EXPECT_EQ(m.unlit, 0);
 }

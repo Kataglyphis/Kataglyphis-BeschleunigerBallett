@@ -1551,6 +1551,46 @@ TEST(GltfParseUnit, MaterialWithoutEmissiveStrengthIsUnscaled)
     EXPECT_NEAR(emission.z, 0.6F, 1e-6F) << "a material without emissive_strength must keep the plain factor";
 }
 
+TEST(GltfParseUnit, KhrMaterialsUnlitReachesTheMaterial)
+{
+    // KHR_materials_unlit is declared per-material (no extensionsUsed
+    // requirement in cgltf's parser); a material without it must default to
+    // lit. Two materials on two separate meshes so both sides of the flag are
+    // exercised in one parse - a change that mixed the two would show up as
+    // both materials reading the same value.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "extensions": { "KHR_materials_unlit": {} } },
+        {}
+      ],
+      "meshes": [
+        { "primitives": [ { "attributes": { "POSITION": 0 }, "material": 0 } ] },
+        { "primitives": [ { "attributes": { "POSITION": 0 }, "material": 1 } ] }
+      ],
+      "nodes": [ { "mesh": 0 }, { "mesh": 1 } ],
+      "scenes": [ { "nodes": [ 0, 1 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_unlit_material.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GE(loader.getMaterials().size(), 2U);
+    EXPECT_EQ(loader.getMaterials()[0].unlit, 1) << "KHR_materials_unlit must reach ObjMaterial::unlit";
+    EXPECT_EQ(loader.getMaterials()[1].unlit, 0) << "a material without the extension must default to lit";
+}
+
 TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
 {
     // mask_card.gltf (a quad + a checkerboard-alpha cut-out PNG, alphaMode MASK /
