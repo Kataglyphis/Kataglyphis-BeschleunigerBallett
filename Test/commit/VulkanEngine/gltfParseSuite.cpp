@@ -1681,6 +1681,69 @@ TEST(GltfParseUnit, MaterialWithoutTextureTransformIsIdentity)
     EXPECT_NEAR(material.uv_transform_row1.z, 0.0F, 1e-6F);
 }
 
+TEST(GltfParseUnit, KhrTextureTransformIsReadPerTextureSlot)
+{
+    // glTF KHR_texture_transform is declared per textureInfo, so a transform on
+    // one slot must not leak onto the others. uv_transform_slots_card.gltf
+    // carries scale [4,4] on baseColorTexture, scale [2,2] on normalTexture,
+    // and no transform on emissiveTexture (or the metallic-roughness slot,
+    // which has no texture at all). Red on the loader before this change: the
+    // base-colour rows were the only ones read, so normal_uv_transform_row0.x
+    // reads 1 (identity) instead of 2, or the member does not exist yet.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/uv_transform_slots_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "uv_transform_slots fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+
+    const ObjMaterial &material = loader.getMaterials()[0];
+    EXPECT_NEAR(material.uv_transform_row0.x, 4.0F, 1e-6F) << "base-colour scale must reach the base-colour rows";
+    EXPECT_NEAR(material.normal_uv_transform_row0.x, 2.0F, 1e-6F)
+      << "normal scale must reach the normal slot's own rows, not the base-colour rows";
+    EXPECT_NEAR(material.normal_uv_transform_row1.y, 2.0F, 1e-6F)
+      << "normal scale must reach the normal slot's own rows, not the base-colour rows";
+
+    EXPECT_NEAR(material.emissive_uv_transform_row0.x, 1.0F, 1e-6F) << "no transform on emissive -> identity";
+    EXPECT_NEAR(material.emissive_uv_transform_row0.y, 0.0F, 1e-6F) << "no transform on emissive -> identity";
+    EXPECT_NEAR(material.emissive_uv_transform_row1.x, 0.0F, 1e-6F) << "no transform on emissive -> identity";
+    EXPECT_NEAR(material.emissive_uv_transform_row1.y, 1.0F, 1e-6F) << "no transform on emissive -> identity";
+
+    EXPECT_NEAR(material.metallic_roughness_uv_transform_row0.x, 1.0F, 1e-6F)
+      << "no metallic-roughness texture -> identity";
+    EXPECT_NEAR(material.metallic_roughness_uv_transform_row0.y, 0.0F, 1e-6F)
+      << "no metallic-roughness texture -> identity";
+    EXPECT_NEAR(material.metallic_roughness_uv_transform_row1.x, 0.0F, 1e-6F)
+      << "no metallic-roughness texture -> identity";
+    EXPECT_NEAR(material.metallic_roughness_uv_transform_row1.y, 1.0F, 1e-6F)
+      << "no metallic-roughness texture -> identity";
+}
+
+TEST(GltfParseUnit, ATransformOnANonBaseSlotAloneStillReachesTheMaterial)
+{
+    // uv_transform_normal_only_card.gltf carries KHR_texture_transform ONLY on
+    // its normalTexture (no baseColorTexture at all). Before this change every
+    // slot but base-colour was ignored, so this yielded identity everywhere;
+    // the fix must reach the normal slot's rows even though it is not the
+    // base-colour slot the old code exclusively read.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/uv_transform_normal_only_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "uv_transform_normal_only fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+
+    const ObjMaterial &material = loader.getMaterials()[0];
+    EXPECT_NEAR(material.normal_uv_transform_row0.x, 3.0F, 1e-6F)
+      << "a transform declared only on the normal slot must still reach normal_uv_transform_row0";
+    EXPECT_NEAR(material.normal_uv_transform_row1.y, 3.0F, 1e-6F)
+      << "a transform declared only on the normal slot must still reach normal_uv_transform_row1";
+
+    // Every other slot has no texture at all, so it must stay identity.
+    EXPECT_NEAR(material.uv_transform_row0.x, 1.0F, 1e-6F) << "no base-colour texture -> identity";
+    EXPECT_NEAR(material.uv_transform_row1.y, 1.0F, 1e-6F) << "no base-colour texture -> identity";
+}
+
 TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)
 {
     // two_primitives.gltf is ONE mesh with TWO primitives (two materials). The

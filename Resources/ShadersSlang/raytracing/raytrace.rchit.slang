@@ -110,7 +110,7 @@ void rchit_main(
         float3 worldTangent = normalize((float3)mul(ObjectToWorld(), float4(tangentHit.xyz, 0.0)));
         int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
         // Explicit LOD: see the base-colour sample above for why.
-        float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material), 0.0).xyz;
+        float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material.normal_uv_transform_row0, material.normal_uv_transform_row1), 0.0).xyz;
         N = apply_normal_map(N, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
@@ -139,7 +139,7 @@ void rchit_main(
     {
         int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
         // Explicit LOD: see the base-colour sample above for why.
-        float4 mrSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], transform_uv(texCoords, material), 0.0);
+        float4 mrSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], transform_uv(texCoords, material.metallic_roughness_uv_transform_row0, material.metallic_roughness_uv_transform_row1), 0.0);
         float2 metallicRoughness = material_metallic_roughness(material, mrSample);
         metallic = metallicRoughness.x;
         roughness = metallicRoughness.y;
@@ -169,7 +169,7 @@ void rchit_main(
     {
         int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
         // Explicit LOD: see the base-colour sample above for why.
-        emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], transform_uv(texCoords, material), 0.0).xyz;
+        emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], transform_uv(texCoords, material.emissive_uv_transform_row0, material.emissive_uv_transform_row1), 0.0).xyz;
     }
     payload.hit_value += material_emission(material, emissiveSample);
 }

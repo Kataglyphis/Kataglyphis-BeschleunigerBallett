@@ -129,6 +129,49 @@ void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_vi
     }
 }
 
+/// The top two rows of a KHR_texture_transform T*R*S 3x3 matrix (the third
+/// row is always [0,0,1] and is omitted), for one texture slot.
+struct UvTransformRows
+{
+    glm::vec3 row0{ 1.0F, 0.0F, 0.0F };
+    glm::vec3 row1{ 0.0F, 1.0F, 0.0F };
+};
+
+/// Reads `view`'s KHR_texture_transform, if any, into its two UV-matrix rows.
+/// Returns the identity rows (no-op transform) when the slot has no texture
+/// or no transform - so slots without the extension are bit-unchanged.
+/// `slotLabel` names the slot ("base-colour", "normal", "metallic-roughness",
+/// "emissive") for the "UV set override ignored" warning.
+UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
+{
+    if (view.texture == nullptr || view.has_transform == 0) { return {}; }
+
+    const cgltf_texture_transform &transform = view.transform;
+    const glm::vec2 offset(transform.offset[0], transform.offset[1]);
+    const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
+
+    // T * R * S, same convention as the Rust loader's gltf_loader.rs:618-625,
+    // including the negated rotation sign (glTF's `rotation` is clockwise in
+    // UV space).
+    const glm::mat3 uvMatrix =
+      glm::scale(glm::rotate(glm::translate(glm::mat3(1.0F), offset), -transform.rotation), scaleVec);
+
+    UvTransformRows rows;
+    rows.row0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
+    rows.row1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
+
+    // KHR_texture_transform can itself override which UV set the transform
+    // applies to. That is not applied - so say so rather than silently
+    // dropping it.
+    if (transform.has_texcoord != 0 && transform.texcoord != 0) {
+        spdlog::warn("GltfLoader: material '{}' KHR_texture_transform overrides the {} UV set to "
+                     "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
+          materialName, slotLabel, static_cast<unsigned int>(transform.texcoord));
+    }
+
+    return rows;
+}
+
 /// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
 /// diffuse (the dominant term this forward renderer reads) and its alpha becomes
 /// dissolve. metallic_factor and roughness_factor both carry through losslessly
@@ -182,33 +225,22 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     // have yet, so BLEND currently renders opaque - MASK is the common cut-out case.
     const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
 
-    // glTF KHR_texture_transform on the base-colour texture: the full T*R*S UV
-    // transform. Absent -> identity rows (1,0,0)/(0,1,0), so untransformed
-    // materials are bit-unchanged.
-    glm::vec3 uvTransformRow0(1.0F, 0.0F, 0.0F);
-    glm::vec3 uvTransformRow1(0.0F, 1.0F, 0.0F);
-    if (material.has_pbr_metallic_roughness != 0 && material.pbr_metallic_roughness.base_color_texture.has_transform != 0) {
-        const cgltf_texture_transform &transform = material.pbr_metallic_roughness.base_color_texture.transform;
-        const glm::vec2 offset(transform.offset[0], transform.offset[1]);
-        const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
-
-        // T * R * S, same convention as the Rust loader's gltf_loader.rs:618-625,
-        // including the negated rotation sign (glTF's `rotation` is clockwise in
-        // UV space).
-        const glm::mat3 uvMatrix =
-          glm::scale(glm::rotate(glm::translate(glm::mat3(1.0F), offset), -transform.rotation), scaleVec);
-        uvTransformRow0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
-        uvTransformRow1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
-
-        // KHR_texture_transform can itself override which UV set the transform
-        // applies to. That is not applied - so say so rather than silently
-        // dropping it.
-        if (transform.has_texcoord != 0 && transform.texcoord != 0) {
-            spdlog::warn("GltfLoader: material '{}' KHR_texture_transform overrides the base-colour UV set to "
-                         "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
-              materialName, static_cast<unsigned int>(transform.texcoord));
-        }
+    // glTF KHR_texture_transform, per texture slot: the extension is declared
+    // per `textureInfo`, so base-colour, metallic-roughness, normal and
+    // emissive each get their own T*R*S UV transform. Absent on a slot ->
+    // identity rows (1,0,0)/(0,1,0) for that slot, so untransformed materials
+    // (and untransformed slots of a partially-transformed material) are
+    // bit-unchanged.
+    UvTransformRows baseColorUvTransform;
+    UvTransformRows metallicRoughnessUvTransform;
+    if (material.has_pbr_metallic_roughness != 0) {
+        baseColorUvTransform =
+          readUvTransform(materialName, material.pbr_metallic_roughness.base_color_texture, "base-colour");
+        metallicRoughnessUvTransform = readUvTransform(
+          materialName, material.pbr_metallic_roughness.metallic_roughness_texture, "metallic-roughness");
     }
+    const UvTransformRows normalUvTransform = readUvTransform(materialName, material.normal_texture, "normal");
+    const UvTransformRows emissiveUvTransform = readUvTransform(materialName, material.emissive_texture, "emissive");
 
     // A non-zero emissiveTexture.texcoord has the same "only TEXCOORD_0 is
     // supported" limitation as the base-colour texture above.
@@ -224,14 +256,20 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         .dissolve = baseAlpha,// glTF baseColorFactor.a
         // textureID, emissiveTextureID, normalTextureID: assigned in parseCpu.
         .alphaCutoff = alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
-        .uv_transform_row0 = uvTransformRow0,// KHR_texture_transform T*R*S row 0
-        .uv_transform_row1 = uvTransformRow1,// KHR_texture_transform T*R*S row 1
+        .uv_transform_row0 = baseColorUvTransform.row0,// KHR_texture_transform T*R*S row 0, base colour
+        .uv_transform_row1 = baseColorUvTransform.row1,// KHR_texture_transform T*R*S row 1, base colour
         .metallic = metallic,// glTF pbrMetallicRoughness.metallicFactor
         .roughness = authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
         // cgltf_texture_view::scale is left at its zero-initialized default when
         // there is no normalTexture, so guard on the texture pointer rather than
         // trusting the field.
         .normalScale = material.normal_texture.texture != nullptr ? material.normal_texture.scale : 1.0F,
+        .normal_uv_transform_row0 = normalUvTransform.row0,
+        .normal_uv_transform_row1 = normalUvTransform.row1,
+        .metallic_roughness_uv_transform_row0 = metallicRoughnessUvTransform.row0,
+        .metallic_roughness_uv_transform_row1 = metallicRoughnessUvTransform.row1,
+        .emissive_uv_transform_row0 = emissiveUvTransform.row0,
+        .emissive_uv_transform_row1 = emissiveUvTransform.row1,
     };
 }
 

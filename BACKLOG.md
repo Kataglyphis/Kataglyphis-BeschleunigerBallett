@@ -9933,3 +9933,368 @@ is in the Rust submodule and is independent of all four.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-05 batch III — planner (one `KHR_texture_transform`, read from the base-colour slot and applied to all four, so an atlased base colour silently tiles the normal, metallic-roughness and emissive maps that never asked for it; a `-bm` factor read out of `bump_texopt` even when the map came from `norm`, which is the one directive whose own texopt holds it; `map_Ke`, which tinyobjloader parses into `emissive_texname` and both OBJ paths drop while all four C++ shading paths and the Rust twin sample an emissive texture; and a material table in `docs/model-loading.md` that is two rows short of the struct it documents, behind a gate that checks the doc's citations but never its coverage)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch II's five tasks all shipped (`47371a1a`,
+`e0e25ee6`, `4bf4bba0`, `54a39af2`, `4afd4669`). Everything below was read out
+of the tree at `4afd4669`.
+
+**First, there is one UV transform for four texture slots.**
+`fromGltfMaterial` reads `KHR_texture_transform` from exactly one place —
+`material.pbr_metallic_roughness.base_color_texture.has_transform` — and packs
+it into `ObjMaterial::uv_transform_row0`/`uv_transform_row1`. `ObjMaterial.hpp`
+says so on the member itself ("for the base-colour texture"), and so does
+`docs/model-loading.md`'s table row. But the shaders apply
+`transform_uv(uv, material)` to **every** texture sample: nine of the twelve
+call sites are not the base-colour slot —
+`rasterizer.slang` (normal, metallic-roughness, emissive),
+`deferred.slang` (same three), `raytrace.rchit.slang` (same three) and
+`path_tracing.slang` (normal, metallic-roughness, emissive). Only
+`rasterizer.slang`'s `baseSample`, `deferred.slang`'s `texColor`,
+`raytrace.rchit.slang`'s `albedo`, `path_tracing.slang`'s `hitColor`,
+`alpha_test.slang` and `shadow_map.slang` are reading the slot the rows
+actually came from.
+
+glTF 2.0 defines `KHR_texture_transform` per `textureInfo`, not per material,
+and the failure is not hypothetical: the extension's dominant use is atlasing
+or tiling a base colour. A material with `scale: [4, 4]` on `baseColorTexture`
+and a plain, untransformed `normalTexture` gets its normal map tiled four
+times over in all four shading paths — and the inverse case (a transform on
+`normalTexture` only) is dropped silently, because nothing outside the
+`has_pbr_metallic_roughness` branch ever looks at `has_transform`. The Rust
+twin is per-slot and is the reference: `forward.wgsl` builds the transformed
+UV inline for `baseColorTex` alone, while `mrIn_0`, `normalIn_0`,
+`emissiveIn_0` and `occlusionIn_0` are the raw per-slot UV. `scene/mod.rs`
+names its field `base_uv_transform` for exactly this reason.
+
+The struct is the right place to fix it, and appending is the pattern this
+struct has used four times in the last week. `ObjMaterial` is 88 bytes with
+`metallicRoughnessTextureID` last at offset 84; `glm::vec3` has alignment 4,
+so three more row pairs append tightly at 88/100/112/124/136/148 for
+`sizeof == 160`, and every existing offset is unchanged — which is what makes
+`ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout` and the
+`ObjMaterial_natural` entry able to prove the change mechanically without a
+GPU.
+
+**Second, the OBJ `-bm` factor is read from the wrong texopt.**
+`ObjLoader.cpp`'s `loadTexturesAndMaterials` ends its per-material block with
+an unconditional `material.normalScale = mp->bump_texopt.bump_multiplier;`,
+three lines after a branch that deliberately prefers `mp->normal_texname`
+(`norm`) over `mp->bump_texname` (`map_Bump`/`map_bump`/`bump`).
+tinyobjloader keeps a separate `texture_option_t` per directive —
+`tiny_obj_loader.h` declares `bump_texopt` and `normal_texopt` as distinct
+members, and its `.mtl` reader routes `norm` through
+`ParseTextureNameAndOption(&material.normal_texname, &material.normal_texopt, ...)`
+and `map_Bump` through the `bump_texopt` pair. So two things go wrong at once:
+`norm rock_n.png -bm 0.5` has its factor dropped (`bump_texopt` is still at
+`InitTexOpt`'s 1.0 default), and a `.mtl` naming both directives, e.g.
+`map_Bump height.png -bm 3.0` plus `norm rock_n.png`, applies the bump map's
+3.0 to the normal map the loader deliberately chose instead.
+
+The Rust converter already does this right, per directive: `parse_mtl`'s
+`"norm" | "map_Bump" | "map_bump" | "bump"` arm calls `bump_scale_option` on
+the tokens of the line it is currently reading, so the factor can only ever
+come from the directive that won. This is the C++ half of a rule the two
+loaders are supposed to share.
+
+**Third, `map_Ke` is dropped by both OBJ paths.** `ObjMaterial` has carried
+`emissiveTextureID` since `d0a25d21`, all four C++ shading paths sample it
+through `common/emission.slang`'s `material_emission()`, and the Rust forward
+pass samples `emissiveTex_0`. tinyobjloader parses `map_Ke` into
+`emissive_texname` (`tiny_obj_loader.h`, beside `normal_texname`), and both
+OBJ paths ignore it: the C++ `loadTexturesAndMaterials` assigns `textureID`
+and `normalTextureID` and nothing else, and `parse_mtl`'s match arms cover
+`Kd`, `Ke`, `d`, `Tr`, `map_Kd` and the four normal-map spellings. This is the
+same shape as the `map_Bump`/`norm` pair that shipped yesterday (`54a39af2`
+plus `4afd4669`), one slot over: an OBJ with a glowing-window texture loads its
+`Ke` factor and then multiplies it by an implicit 1.0.
+
+**Fourth, the material table documents twelve of fourteen members.**
+`docs/model-loading.md`'s "Material fields and where they come from" table is
+introduced as covering `ObjMaterial`, "the single struct both loaders fill and
+every shader reads", and ends at `normalTextureID` — `normalScale` and
+`metallicRoughnessTextureID`, both shipped in the last two days, have no row.
+Three surviving rows are also stale: `emission`'s glTF source omits the
+`KHR_materials_emissive_strength` fold-in that `fromGltfMaterial` performs and
+its "Read by" column names only two of the four shading paths that now read it;
+the `srgb` row says linear is chosen "for the normal-map view" when
+`parseCpu` also passes `false` for metallic-roughness. `docs/shader-sharing.md`
+has two of its own: it attributes `transform_uv` to
+`common/material_fetch.slang` (the function lives in `common/base_color.slang`,
+which explains in its own header comment why it had to move), and its
+divergence list still says the rotation "is also unapplied" when
+`fromGltfMaterial` builds a full `T*R*S` matrix including the negated rotation.
+
+What makes this worth a task rather than a note is that the file already has
+two gates — `BuildIntegrity.ModelLoadingDocCitesSymbolsNotLineNumbers` and the
+`<!-- max-texture-count: N -->` marker check — and neither can see a missing
+row. A gate that walks `ObjMaterial`'s member names and requires each to appear
+in the table is mechanical, needs no GPU, and is the only thing that will stop
+the next appended member from repeating this.
+
+**Verification context.** Host GPU goldens are still blocked over RDP (the
+`- [b]` near the end of this file) and `path_tracing` mode device-losts on the
+host RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). All five
+tasks are accepted CPU-only: tasks 1–3 are parse-time state the loaders already
+expose to device-free suites (task 1's shader half is additionally pinned by a
+source-text gate, the same instrument `NormalMappingIsAppliedByEveryShadingPath`
+uses), task 4 is in the Rust submodule, and task 5 touches only docs and a gate.
+**Do not claim a rendered result you cannot obtain** — state which suites you
+ran.
+
+**Ordering.** Tasks 2 and 3 both edit `ObjLoader::loadTexturesAndMaterials`'s
+per-material loop and should not run concurrently; either order works. Task 1
+is independent of both but edits `ObjMaterial.hpp` (a header in
+`ObjMaterial.ixx`'s global module fragment) and therefore needs
+`-FreshContainer`; task 3 does not append a member and does not. Task 5 should
+run **last** — tasks 1 and 3 each add a row the table will need, and the gate
+task 5 adds would otherwise be RED the moment task 1 lands. Task 4 is in the
+Rust submodule and is independent of all four.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Read the OBJ normal map's `-bm` factor from the texopt that belongs to the directive it came from** — `norm tex.png -bm 0.5` silently loses its scale, and a `map_Bump … -bm 3.0` line leaks its factor onto the `norm` map the loader deliberately preferred instead.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` —
+    `loadTexturesAndMaterials`, specifically the `normal_texname` /
+    `bump_texname` preference branch and the unconditional
+    `material.normalScale = mp->bump_texopt.bump_multiplier;` three lines below it
+  - `ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h` — the `material_t`
+    declarations of `bump_texopt` and `normal_texopt`, `InitTexOpt`'s
+    `bump_multiplier = 1.0` default, and the `.mtl` reader's `map_Ke`/`norm`
+    arms showing each directive parsed into its own `texture_option_t`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs`
+    — `parse_mtl`'s normal-map arm and `bump_scale_option`: the per-directive
+    behaviour this task brings the C++ side up to
+  - `Test/commit/VulkanEngine/objParseSuite.cpp` — the temp-`.mtl`/`.obj`
+    fixture idiom (`std::filesystem::temp_directory_path()`, `std::ofstream`,
+    `mtllib` line) used by the texture-resolution tests
+
+  **Steps:**
+  1. Move the `normalScale` assignment inside the existing preference branch:
+     the `norm` arm sets it from `mp->normal_texopt.bump_multiplier`, the
+     `map_Bump` fallback arm from `mp->bump_texopt.bump_multiplier`.
+  2. In the "neither directive present" arm, leave `normalScale` at
+     `ObjMaterial`'s 1.0 default rather than assigning anything — with no
+     normal texture the value is unread, and assigning a stray texopt default
+     is what made this wrong in the first place.
+  3. Add a one-line comment naming the rule (`-bm` belongs to the directive it
+     was written on; tinyobjloader keeps one `texture_option_t` per directive)
+     and pointing at `obj_to_gltf.rs`'s `bump_scale_option` as the twin.
+
+  **Test:** Add two `ObjParseUnit` cases writing temp `.mtl` fixtures.
+  `NormDirectiveBumpMultiplierReachesNormalScale`: a material with
+  `norm rock_n.png -bm 0.5` and no `map_Bump` must yield
+  `normalScale == 0.5F` (RED today: it reads 1.0). `BumpMultiplierDoesNotLeak
+  FromMapBumpOntoAPreferredNormDirective`: a material with both
+  `map_Bump height.png -bm 3.0` and `norm rock_n.png` must yield
+  `normalScale == 1.0F` and a `normalTextureID` pointing at the `norm` slot
+  (RED today: 3.0). Follow the existing suite's pattern of writing the fixture
+  files next to each other in a temp directory so `resolveObjTexturePath`
+  resolves them.
+
+  **Build:** `clangcl-debug` (no module-interface change, no `-FreshContainer`
+  needed):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjParseUnit.*`
+
+  **Context:** `normalScale` reached `ObjMaterial` only two days ago
+  (`e0e25ee6`) and the OBJ half was wired one day later (`54a39af2`); this is
+  the loose end of that wiring, not a long-standing defect. Keep the `norm`-over-
+  `map_Bump` preference exactly as it is — the comment there explaining why
+  (`norm` is a true tangent-space map, `map_Bump` is conventionally a height
+  map exporters repurpose) is the reason the leak matters at all.
+
+- [ ] **(S) Read `map_Ke` into `emissiveTextureID` in the C++ OBJ loader** — every C++ shading path samples an emissive texture, and the OBJ path is the one loader that never fills the slot, so an emissive OBJ material gets its `Ke` factor multiplied by an implicit 1.0.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` —
+    `loadTexturesAndMaterials`: the `resolveSlot` lambda and its
+    `(resolved path, srgb)` dedup key, the `diffuse_texname` branch (which
+    pushes an empty entry when absent) and the `normal_texname`/`bump_texname`
+    branch (which pushes nothing when absent) — the emissive slot follows the
+    second pattern
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.ixx` — the parsed-state accessors
+    (`getTextureSrgbFlags()` and friends) that `uploadParsed` reads
+  - `ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h` — `material_t::emissive_texname`
+    (`map_Ke`) and the `.mtl` reader arm that fills it
+  - `Src/shared/scene/ObjMaterial.hpp` — `emissiveTextureID`'s `-1` sentinel
+  - `Resources/ShadersSlang/common/emission.slang` — `material_emission()`, the
+    `factor * sampled` rule the slot feeds
+  - `Test/commit/VulkanEngine/objParseSuite.cpp` — the temp-fixture idiom and
+    the existing texture-slot/dedup assertions added for the normal slot
+
+  **Steps:**
+  1. In the per-material loop, after the normal-map branch, add:
+     when `mp->emissive_texname` is non-empty, `material.emissiveTextureID =
+     resolveSlot(mp->emissive_texname, true)`; otherwise leave it at `-1` and
+     push nothing, exactly like the normal branch's else arm.
+  2. Pass `true` for `srgb`: `map_Ke` is authored colour, so it goes through
+     `eR8G8B8A8Srgb` like `map_Kd` — say so in a comment, contrasted with the
+     `false` the normal slot passes.
+  3. Confirm the dense-counter invariant still holds: `resolveSlot` pushes to
+     `textures`/`textureSrgb` on every call (an empty name for a duplicate) and
+     `uploadParsed` adds one model texture per non-empty entry, so the k-th
+     non-empty entry keeps `texture_id == k` no matter how many slots a
+     material claims. Do not change `uploadParsed`.
+  4. Add the `.mtl` source column for `emissiveTextureID` to
+     `docs/model-loading.md`'s material table (today it reads `—`).
+
+  **Test:** Add `ObjParseUnit.MapKeBecomesTheEmissiveTextureSlot`: a temp
+  `.mtl` with `Ke 1 1 1` and `map_Ke glow.png` beside a `map_Kd base.png` must
+  yield `emissiveTextureID >= 0`, distinct from `textureID`, with the emissive
+  slot's `getTextureSrgbFlags()` entry set to 1. Add
+  `ObjParseUnit.MapKdAndMapKeNamingOneFileShareASlot` asserting that when both
+  directives name the same file the two IDs are equal (both sRGB, so the
+  `(path, srgb)` key collapses them — the mirror of the existing
+  `map_Kd`/`map_Bump` two-slot test). Add
+  `ObjParseUnit.AMaterialWithoutMapKeKeepsTheSentinel` asserting
+  `emissiveTextureID == -1` and that `textures.size()` is unchanged from
+  today's value for `dinosaurs.obj`.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjParseUnit.*:GltfParseUnit.*`
+
+  **Context:** This is the `map_Bump`/`norm` task (`54a39af2`) one slot over,
+  and the same rule applies: an OBJ that ships no `map_Ke` — every model
+  currently in `Resources/Models/` — must keep `textures`/`textureSrgb` exactly
+  as long as they are today, which is why the absent case pushes nothing. The
+  Rust converter half is a separate task in this batch; the two are independent
+  because the C++ engine loads `.obj` directly.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Emit `emissiveTexture` from `map_Ke` in the Rust OBJ→glTF converter** — `parse_mtl` reads the `Ke` factor and the four normal-map spellings but not `map_Ke`, so a converted asset loses the emissive map the WebGPU forward pass is already wired to sample.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs`
+    — the module doc comment listing what maps onto glTF, `ObjMaterial`'s
+    `base_color_texture` / `normal_texture` fields and defaults, `parse_mtl`'s
+    match arms (`map_Kd` for the "last token past any options" +
+    backslash-normalisation rule, the `norm`/`map_Bump` arm for the
+    texture-plus-option shape), the texture dedup loop over
+    `[&material.base_color_texture, &material.normal_texture]`, the
+    `normal_texture_json` / `emissive_json` construction in the material
+    writer, and the copy-referenced-textures loop near the end
+  - `crates/webgpu_renderer/src/asset/gltf_loader.rs` — the consumer:
+    `emissive_texture` is already read and passed `srgb: true`
+  - the crate's existing `parse_mtl` / `to_gltf` unit tests — the conversion is
+    pure string work and is tested that way
+
+  **Steps:**
+  1. Add `emissive_texture: Option<String>` to `ObjMaterial`, defaulting to
+     `None`, documented as `map_Ke` "as written in the .mtl".
+  2. Add a `"map_Ke"` arm to `parse_mtl` taking the last token and
+     backslash-normalising it, identical to the `map_Kd` arm.
+  3. Include `&material.emissive_texture` in the texture-dedup URI loop so a
+     `.mtl` naming one file as both `map_Kd` and `map_Ke` produces one image.
+  4. In the material writer, emit
+     `"emissiveTexture": { "index": N }` beside the existing `emissiveFactor` /
+     `KHR_materials_emissive_strength` output. Keep the current rule that
+     `emissiveFactor` is emitted only when non-zero, but note in a comment that
+     glTF's default factor is `[0,0,0]` — a material with a `map_Ke` and no
+     `Ke` line would render black — so emit an explicit `[1,1,1]` factor
+     whenever an emissive texture is present and no `Ke` was authored.
+  5. Include `emissive_texture` in the copy-referenced-textures loop so the
+     converted output is self-contained.
+  6. Update the module doc comment, which currently lists only base colour,
+     alpha, `Ke` and the normal map.
+
+  **Test:** Add a `parse_mtl` case asserting `map_Ke -s 1 1 1 glow.png` yields
+  `Some("glow.png")` (the option-skipping rule), and a `to_gltf` case asserting
+  the emitted JSON carries an `emissiveTexture` index pointing at the right
+  image and that a `map_Ke`-without-`Ke` material gets `emissiveFactor`
+  `[1,1,1]` rather than being omitted. Add a dedup case: `map_Kd wood.png` plus
+  `map_Ke wood.png` must produce exactly one entry in `images`.
+
+  **Build:** Rust submodule, not a CMake preset. `cargo test` and `cargo build`
+  cannot link on this host (the MSVC linker install is incomplete and Git Bash's
+  `link.exe` shadows it), so verify with, from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo check -p kataglyphis_webgpu_renderer`,
+  `cargo clippy -p kataglyphis_webgpu_renderer --all-targets`,
+  `cargo fmt --check`. The crate's ~150 tests run in this repo's always-on
+  Linux lane (`Scripts/Linux/run-cargo-tests.sh`), so push the submodule and
+  bump the gitlink here in the same change and let CI run them. Say plainly in
+  the commit message which of these you ran.
+
+  **Context:** Mirror of `4afd4669` (the `normalTexture` half), which took the
+  same shape: parse the directive, join the dedup loop, emit the JSON, join the
+  texture-copy loop, update the doc comment. The converter's own comment about
+  MTL directives having "no glTF equivalent" was already corrected once for
+  `map_Bump`; `map_Ke` is the other half of that correction — glTF's
+  `emissiveTexture` is its exact equivalent and both renderers sample it.
+
+### Docs
+
+- [ ] **(S) (refactor) Bring `docs/model-loading.md`'s material table back in line with `ObjMaterial`, and add the gate that keeps it there** — the table is introduced as the map of the whole struct and is missing the two members added in the last two days, with three more rows stale and two errors in `docs/shader-sharing.md`.
+
+  **Files to read:**
+  - `docs/model-loading.md` — the "Material fields and where they come from"
+    table and the `srgb` row just above `alphaCutoff`
+  - `Src/shared/scene/ObjMaterial.hpp` — the fourteen members the table is
+    supposed to cover
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `fromGltfMaterial`'s
+    `KHR_materials_emissive_strength` fold-in and `parseCpu`'s
+    `assignTextureSlot(..., false)` call for metallic-roughness
+  - `Resources/ShadersSlang/common/base_color.slang` — where `transform_uv`
+    actually lives, and its header comment explaining why it is not in
+    `material_fetch.slang`
+  - `docs/shader-sharing.md` — the `common/material_fetch.slang` bullet and the
+    "Known glTF loader divergences" list
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.ModelLoadingDocCitesSymbolsNotLineNumbers` and the
+    `<!-- max-texture-count: N -->` marker gate: the two existing gates over
+    this exact file, and the `readFileText` / `repoRoot()` helpers to reuse
+
+  **Steps:**
+  1. Add the missing `normalScale` row (glTF source: `normalTexture.scale`,
+     guarded on the texture pointer because cgltf zero-initialises the field;
+     `.mtl` source: the `-bm` option; read by `common/normal_map.slang`'s
+     `apply_normal_map()`).
+  2. Add the missing `metallicRoughnessTextureID` row (glTF source: the
+     `pbrMetallicRoughness.metallicRoughnessTexture` view, deduped into the
+     same `imageSlot` budget and uploaded linear; `.mtl` source: `—`; read by
+     `material_fetch.slang`'s `material_metallic_roughness()` in the three
+     BRDF paths, and by `path_tracing.slang` for the metallic term only).
+  3. Fix the `emission` row: name the `KHR_materials_emissive_strength`
+     fold-in in the glTF-source column, and list all four shading paths in
+     "Read by" (they reach it through `common/emission.slang`'s
+     `material_emission()`, not just `rasterizer.slang` and `deferred.slang`).
+  4. Fix the `srgb` row: linear is chosen for the normal **and**
+     metallic-roughness views, not the normal view alone.
+  5. In `docs/shader-sharing.md`, move `transform_uv` from the
+     `common/material_fetch.slang` bullet to the `common/base_color.slang`
+     bullet, and delete the "(including a rotation, which is also unapplied)"
+     clause from the divergence list — `fromGltfMaterial` applies the full
+     `T*R*S` including the negated rotation, and
+     `KhrTextureTransformRotationReachesTheMaterial` proves it.
+  6. Add the gate (see Test).
+
+  **Test:** Add `BuildIntegrity.ModelLoadingDocDocumentsEveryObjMaterialMember`
+  to `buildIntegritySuite.cpp`, alongside the two existing gates over this file.
+  Hold the member names in a `static constexpr` array in the test (the same
+  hand-maintained-list-plus-gate shape `ObjMaterial_natural` already uses, so
+  the two lists fail together when a member is appended without either being
+  updated), read `docs/model-loading.md` with the existing `readFileText`
+  helper, locate the "Material fields and where they come from" table, and
+  assert every name appears in a row of it — reporting the missing names in the
+  failure message. The RED form on today's tree names `normalScale` and
+  `metallicRoughnessTextureID`.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Context:** Run this **after** tasks 1 and 3 in this batch — task 1 renames
+  what the `uv_transform_row0`/`_row1` row describes and adds six members the
+  gate will demand rows for, and task 3 fills in the `emissiveTextureID` row's
+  `.mtl` column. This file already carries two gates because its content has
+  rotted before; the point of this one is that neither existing gate can see an
+  *absent* row, which is the failure mode four consecutive `ObjMaterial`
+  appends have now produced twice. Keep citing symbol names, not `file:line` —
+  `ModelLoadingDocCitesSymbolsNotLineNumbers` will fail the build otherwise.
+

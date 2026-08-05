@@ -161,7 +161,13 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, normalTextureID), 76U);
     EXPECT_EQ(offsetof(ObjMaterial, normalScale), 80U);
     EXPECT_EQ(offsetof(ObjMaterial, metallicRoughnessTextureID), 84U);
-    EXPECT_EQ(sizeof(ObjMaterial), 88U);
+    EXPECT_EQ(offsetof(ObjMaterial, normal_uv_transform_row0), 88U);
+    EXPECT_EQ(offsetof(ObjMaterial, normal_uv_transform_row1), 100U);
+    EXPECT_EQ(offsetof(ObjMaterial, metallic_roughness_uv_transform_row0), 112U);
+    EXPECT_EQ(offsetof(ObjMaterial, metallic_roughness_uv_transform_row1), 124U);
+    EXPECT_EQ(offsetof(ObjMaterial, emissive_uv_transform_row0), 136U);
+    EXPECT_EQ(offsetof(ObjMaterial, emissive_uv_transform_row1), 148U);
+    EXPECT_EQ(sizeof(ObjMaterial), 160U);
 }
 
 // ObjMaterial's default member initializers must carry exactly the sentinels
@@ -187,4 +193,10 @@ TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinel
     EXPECT_EQ(m.normalTextureID, -1);
     EXPECT_FLOAT_EQ(m.normalScale, 1.0F);
     EXPECT_EQ(m.metallicRoughnessTextureID, -1);
+    EXPECT_EQ(m.normal_uv_transform_row0, glm::vec3(1.0F, 0.0F, 0.0F));
+    EXPECT_EQ(m.normal_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
+    EXPECT_EQ(m.metallic_roughness_uv_transform_row0, glm::vec3(1.0F, 0.0F, 0.0F));
+    EXPECT_EQ(m.metallic_roughness_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
+    EXPECT_EQ(m.emissive_uv_transform_row0, glm::vec3(1.0F, 0.0F, 0.0F));
+    EXPECT_EQ(m.emissive_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
 }

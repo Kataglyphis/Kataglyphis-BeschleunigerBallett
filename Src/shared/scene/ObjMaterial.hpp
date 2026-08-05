@@ -25,12 +25,14 @@ struct ObjMaterial
     // in-shader buffer-reference struct in sync without shifting the vec3 members.
     float alphaCutoff{ -1.0F };
 
-    // glTF KHR_texture_transform for the base-colour texture: the shaders sample
-    // at the UV transformed by the top two rows of the T*R*S 3x3 matrix (the
-    // third row is always [0,0,1] and is omitted). Identity rows (1,0,0)/(0,1,0)
-    // leave the UV unchanged, so materials without the extension (and every OBJ
-    // material) are bit-identical. Trailing vec3s, same scalar-layout rationale
-    // as alphaCutoff.
+    // glTF KHR_texture_transform for the base-colour texture (the extension is
+    // per-slot; the normal/metallic-roughness/emissive slots have their own
+    // pairs below): the shaders sample at the UV transformed by the top two
+    // rows of the T*R*S 3x3 matrix (the third row is always [0,0,1] and is
+    // omitted). Identity rows (1,0,0)/(0,1,0) leave the UV unchanged, so
+    // materials without the extension (and every OBJ material) are
+    // bit-identical. Trailing vec3s, same scalar-layout rationale as
+    // alphaCutoff.
     glm::vec3 uv_transform_row0{ 1.0F, 0.0F, 0.0F };
     glm::vec3 uv_transform_row1{ 0.0F, 1.0F, 0.0F };
 
@@ -82,6 +84,22 @@ struct ObjMaterial
     // -1, so pre-existing scenes are bit-unchanged. Trailing scalar, same
     // scalar-layout rationale as alphaCutoff.
     int metallicRoughnessTextureID{ -1 };
+
+    // glTF KHR_texture_transform, per texture slot: glTF defines the extension
+    // per `textureInfo`, so a transform on one slot (e.g. an atlased base
+    // colour) does not imply the same transform on another (e.g. an untiled
+    // normal map). Same T*R*S-row-pair convention as uv_transform_row0/_row1
+    // above, which remains the base-colour pair. Identity rows mean "no
+    // extension on this slot"; every OBJ material and every glTF material
+    // without KHR_texture_transform on the given slot defaults to identity, so
+    // pre-existing scenes are bit-unchanged. Trailing vec3s, same scalar-layout
+    // rationale as alphaCutoff.
+    glm::vec3 normal_uv_transform_row0{ 1.0F, 0.0F, 0.0F };
+    glm::vec3 normal_uv_transform_row1{ 0.0F, 1.0F, 0.0F };
+    glm::vec3 metallic_roughness_uv_transform_row0{ 1.0F, 0.0F, 0.0F };
+    glm::vec3 metallic_roughness_uv_transform_row1{ 0.0F, 1.0F, 0.0F };
+    glm::vec3 emissive_uv_transform_row0{ 1.0F, 0.0F, 0.0F };
+    glm::vec3 emissive_uv_transform_row1{ 0.0F, 1.0F, 0.0F };
 
     int get_textureID() const { return textureID; }
 };

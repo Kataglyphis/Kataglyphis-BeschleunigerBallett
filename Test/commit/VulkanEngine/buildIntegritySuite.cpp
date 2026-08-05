@@ -1053,7 +1053,13 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "emissiveTextureID", offsetof(ObjMaterial, emissiveTextureID) },
             { "normalTextureID", offsetof(ObjMaterial, normalTextureID) },
             { "normalScale", offsetof(ObjMaterial, normalScale) },
-            { "metallicRoughnessTextureID", offsetof(ObjMaterial, metallicRoughnessTextureID) } } },
+            { "metallicRoughnessTextureID", offsetof(ObjMaterial, metallicRoughnessTextureID) },
+            { "normal_uv_transform_row0", offsetof(ObjMaterial, normal_uv_transform_row0) },
+            { "normal_uv_transform_row1", offsetof(ObjMaterial, normal_uv_transform_row1) },
+            { "metallic_roughness_uv_transform_row0", offsetof(ObjMaterial, metallic_roughness_uv_transform_row0) },
+            { "metallic_roughness_uv_transform_row1", offsetof(ObjMaterial, metallic_roughness_uv_transform_row1) },
+            { "emissive_uv_transform_row0", offsetof(ObjMaterial, emissive_uv_transform_row0) },
+            { "emissive_uv_transform_row1", offsetof(ObjMaterial, emissive_uv_transform_row1) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -2830,6 +2836,64 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
           << path.string() << " no longer derives a world-space tangent to build the TBN basis. " << kFailureMessage;
         EXPECT_NE(text.find("material.normalScale"), std::string::npos)
           << path.string() << " no longer passes ObjMaterial::normalScale into apply_normal_map(). "
+          << kFailureMessage;
+    }
+}
+
+// KHR_texture_transform is declared per texture slot (glTF 2.0 spec), so the normal, metallic-roughness and
+// emissive samples in every shading path must transform their UV with their OWN row members
+// (material.normal_uv_transform_row0/_row1 etc.), not material.uv_transform_row0/_row1 - the base-colour pair.
+// Sampling a non-base slot with the base-colour rows silently tiles/offsets that slot's texture identically to
+// base-colour instead of independently (or not at all, for a material that transforms only a non-base slot). This
+// scans the shader sources as text (the source-text gate pattern used throughout this file); alpha_test.slang and
+// shadow_map.slang are intentionally excluded - both sample only the base-colour texture, for which
+// material.uv_transform_row0/_row1 is correct.
+TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "KHR_texture_transform is per texture slot; a non-base sample naming material.uv_transform_row0/_row1 "
+      "(the base-colour pair) instead of its own slot's rows stamps the base-colour transform onto a slot that "
+      "may have a different transform, or none at all";
+
+    const std::vector<fs::path> shading_paths = {
+        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
+        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    };
+    for (const fs::path &path : shading_paths) {
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+
+        EXPECT_NE(text.find("material.normal_uv_transform_row0"), std::string::npos)
+          << path.string() << " no longer names the normal slot's own UV-transform rows. " << kFailureMessage;
+        EXPECT_NE(text.find("material.metallic_roughness_uv_transform_row0"), std::string::npos)
+          << path.string() << " no longer names the metallic-roughness slot's own UV-transform rows. "
+          << kFailureMessage;
+        EXPECT_NE(text.find("material.emissive_uv_transform_row0"), std::string::npos)
+          << path.string() << " no longer names the emissive slot's own UV-transform rows. " << kFailureMessage;
+
+        // The normal/metallic-roughness/emissive samples must not fall back to
+        // the bare (uv, material) overload, which resolves to the base-colour
+        // rows - count that every transform_uv(...) call passes explicit rows
+        // except exactly one (the base-colour sample every shading path has).
+        std::size_t bareMaterialOverloadCalls = 0;
+        std::size_t pos = 0;
+        while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
+            const std::size_t callEnd = text.find(')', pos);
+            ASSERT_NE(callEnd, std::string::npos) << path.string() << " has an unterminated transform_uv(...) call";
+            const std::string call = text.substr(pos, callEnd - pos);
+            if (call.find("_uv_transform_row0") == std::string::npos) { ++bareMaterialOverloadCalls; }
+            pos = callEnd;
+        }
+        EXPECT_EQ(bareMaterialOverloadCalls, 1U)
+          << path.string()
+          << " must call the bare transform_uv(uv, material) overload exactly once (the base-colour sample); "
+             "every non-base sample must pass its own slot's rows explicitly. "
           << kFailureMessage;
     }
 }
