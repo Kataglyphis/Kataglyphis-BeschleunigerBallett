@@ -57,14 +57,18 @@ float sample_density(float3 position, Clouds cloud)
     return baseDensity + fineDensity * 0.3;
 }
 
+// cosTheta = dot(rayDirection, normalize(-dirLight.direction)), i.e. the
+// cosine between the view ray and the vector toward the sun. A positive g
+// must put the maximum at cosTheta = +1 (forward scattering, looking
+// toward the sun), not at -1.
 float phase_HG(float cosTheta, float g)
 {
-    float denom = 1.0 + g * g + 2.0 * g * cosTheta;
+    float denom = 1.0 + g * g - 2.0 * g * cosTheta;
     return (1.0 / (4.0 * PI)) * ((1.0 - g * g) / (denom * sqrt(denom)));
 }
 
 // Ray-box intersection (iquilezles). Returns entry/exit in oT.
-bool box_intersect(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad, out float2 oT)
+bool box_intersect(float3 ro, float3 rd, float4x4 txx, float3 rad, out float2 oT)
 {
     float3 rdd = (mul(txx, float4(rd, 0.0))).xyz;
     float3 roo = (mul(txx, float4(ro, 1.0))).xyz;
@@ -91,7 +95,7 @@ float light_march(float3 samplePos, Clouds cloud)
     // reads this field (rasterizer/deferred/raytrace/path_tracing).
     float3 directionToLight = normalize(-scene.dirLight.direction.xyz);
     float2 oT;
-    bool intersection = box_intersect(samplePos, directionToLight, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
+    bool intersection = box_intersect(samplePos, directionToLight, cloud.inv_model_to_world, cloud.radius, oT);
 
     if (!intersection) return 1.0;
 
@@ -112,7 +116,7 @@ float light_march(float3 samplePos, Clouds cloud)
 void clouds_main(uint3 tid : SV_DispatchThreadID)
 {
     int2 texelCoord = int2(tid.xy);
-    uint width, height, layers;
+    uint width, height;
     outputImage.GetDimensions(width, height);
     int2 size = int2(int(width), int(height));
 
@@ -163,7 +167,7 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     cloud.inv_model_to_world[3][2] = -cloud.offset.z / cloud.radius.z;
 
     float2 oT;
-    bool intersection = box_intersect(eyePosition, rayDirection, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
+    bool intersection = box_intersect(eyePosition, rayDirection, cloud.inv_model_to_world, cloud.radius, oT);
 
     float lightEnergy = 0.0;
     float transmittance = 1.0;
@@ -179,19 +183,19 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
 
             float densityOfSample = sample_density(samplePos, cloud);
             float lightTransmittance = light_march(samplePos, cloud);
+            // Powder effect attenuates in-scattered light in dense regions
+            // (self-shadowing of small droplets near the sample). It must
+            // never raise transmittance: transmittance is monotonically
+            // non-increasing along the ray by construction, and nothing
+            // inside this loop may assign it anything but the `*=` below.
+            float powder = cloud.powder_effect ? (1.0 - exp(-densityOfSample * dt * 2.0)) : 1.0;
 
-            lightEnergy += densityOfSample * dt * transmittance * lightTransmittance
+            lightEnergy += densityOfSample * dt * transmittance * lightTransmittance * powder
                          * phase_HG(dot(normalize(rayDirection), normalize(-scene.dirLight.direction.xyz)), 0.5);
 
             transmittance *= exp(-densityOfSample * dt);
 
             if (transmittance < 0.01) break;
-
-            if (cloud.powder_effect)
-            {
-                float powderness = 1.0 - exp(-(densityOfSample * dt) / 2.0);
-                transmittance = saturate(transmittance + powderness);
-            }
         }
     }
 

@@ -6678,6 +6678,88 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
          "integrated optical depth (density * step length), not a mean density";
 }
 
+// phase_HG used to peak away from the sun (denominator added 2*g*cosTheta
+// instead of subtracting it), and the powder effect used to raise
+// transmittance directly instead of attenuating in-scattered light - both
+// silent, since neither has a numerical oracle in this suite (see the task
+// commit message for why one isn't added here either). This pins the text
+// shape of the fix so a future edit can't reintroduce either bug unnoticed:
+// a sign flip in the phase denominator, or a powder assignment onto
+// transmittance, would both slip past every other test in this file.
+TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto contentsOpt = readFileText(clouds_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
+    const std::string &contents = *contentsOpt;
+
+    // cosTheta = dot(rayDirection, normalize(-dirLight.direction)) - a positive
+    // g must peak at cosTheta = +1 (forward scattering, looking toward the
+    // sun), which requires SUBTRACTING 2*g*cosTheta from the denominator.
+    static const std::regex kPhaseSignFixed(R"(1\.0\s*\+\s*g\s*\*\s*g\s*-\s*2\.0\s*\*\s*g)");
+    EXPECT_TRUE(std::regex_search(contents, kPhaseSignFixed))
+      << clouds_path.string()
+      << "'s phase_HG denominator must be 1.0 + g*g - 2.0*g*cosTheta so a positive g peaks "
+         "toward the sun (cosTheta = +1), not away from it";
+
+    static const std::regex kPhaseSignBroken(R"(1\.0\s*\+\s*g\s*\*\s*g\s*\+\s*2\.0\s*\*\s*g)");
+    EXPECT_FALSE(std::regex_search(contents, kPhaseSignBroken))
+      << clouds_path.string()
+      << " contains the sign-flipped phase denominator (1.0 + g*g + 2.0*g*cosTheta), which "
+         "peaks away from the sun instead of toward it";
+
+    // No line may assign transmittance from an expression that mentions
+    // powder - the powder term belongs on lightEnergy, not on transmittance.
+    const auto lines = readFileLines(clouds_path);
+    ASSERT_TRUE(lines.has_value()) << "missing " << clouds_path.string();
+    static const std::regex kPlainTransmittanceAssign(R"(transmittance\s*=[^=*])");
+    for (std::size_t i = 0; i < lines->size(); ++i) {
+        const std::string &line = (*lines)[i];
+        if (!std::regex_search(line, kPlainTransmittanceAssign)) { continue; }
+        EXPECT_EQ(line.find("powder"), std::string::npos)
+          << clouds_path.string() << ":" << (i + 1)
+          << " assigns transmittance from an expression mentioning powder - the powder term "
+             "must attenuate lightEnergy, not raise transmittance ("
+          << line << ")";
+    }
+
+    // Inside the march loop, the ONLY assignment to transmittance must be the
+    // Beer-Lambert `*= exp(-...)` - transmittance is monotonically
+    // non-increasing along the ray by construction, and nothing else in the
+    // loop may touch it.
+    const std::size_t loop_start = contents.find("for (int i = 0; i < cloud.num_march_steps; i++)");
+    ASSERT_NE(loop_start, std::string::npos)
+      << clouds_path.string() << " is missing the primary march loop";
+    // Tolerate CRLF: the file is checked in with Windows line endings.
+    static const std::regex kLoopClosingBrace(R"(\r?\n        \}\r?\n)");
+    std::size_t loop_body_end = std::string::npos;
+    for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kLoopClosingBrace),
+              end = std::sregex_iterator();
+         it != end; ++it) {
+        if (static_cast<std::size_t>(it->position()) >= loop_start) {
+            loop_body_end = static_cast<std::size_t>(it->position());
+            break;
+        }
+    }
+    ASSERT_NE(loop_body_end, std::string::npos)
+      << clouds_path.string() << "'s primary march loop is missing its closing brace";
+    const std::string loop_body = contents.substr(loop_start, loop_body_end - loop_start);
+
+    static const std::regex kTransmittanceAssignAnyForm(R"(transmittance\s*(?:\*=|\+=|-=|=[^=])\s*[^;]*)");
+    auto begin = std::sregex_iterator(loop_body.begin(), loop_body.end(), kTransmittanceAssignAnyForm);
+    const auto end = std::sregex_iterator();
+    ASSERT_NE(begin, end) << clouds_path.string() << "'s march loop never assigns transmittance";
+    for (auto it = begin; it != end; ++it) {
+        const std::string matched = it->str();
+        EXPECT_TRUE(matched.find("*=") != std::string::npos && matched.find("exp(-") != std::string::npos)
+          << clouds_path.string()
+          << "'s march loop assigns transmittance with something other than `*= exp(-...)`: " << matched;
+    }
+}
+
 // SceneUboMarshal.hpp's fillSceneUboClouds (the host packer) and this shader
 // (the only unpack side) are two hand-written mirrors of the same seven-value
 // layout, tied together by nothing but a comment. sceneUboLayoutSuite pins
