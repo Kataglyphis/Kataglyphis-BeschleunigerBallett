@@ -73,6 +73,16 @@ struct ObjMaterial
     // scalar-layout rationale as alphaCutoff.
     float normalScale{ 1.0F };
 
+    // glTF pbrMetallicRoughness.metallicRoughnessTexture, dedup'd into the same
+    // textureImages/imageSlot budget as textureID/emissiveTextureID/normalTextureID
+    // (see GltfLoader.cpp's fromGltfMaterial/parseCpu). Uploaded linear, like the
+    // normal slot (glTF 2.0 SS3.9.2: G = roughness, B = metallic, not colour data).
+    // -1 = "no metallic-roughness texture" (same sentinel convention as textureID);
+    // every OBJ material and every glTF material without this texture defaults to
+    // -1, so pre-existing scenes are bit-unchanged. Trailing scalar, same
+    // scalar-layout rationale as alphaCutoff.
+    int metallicRoughnessTextureID{ -1 };
+
     int get_textureID() const { return textureID; }
 };
 

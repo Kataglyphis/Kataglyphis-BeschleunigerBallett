@@ -267,6 +267,28 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
                 float4 vertexColor = v0.color * barycentrics.x + v1.color * barycentrics.y + v2.color * barycentrics.z;
                 hitColor *= vertexColor.rgb;
+
+                // glTF metallic-roughness texture: this Lambertian-only path
+                // tracer has no specular BRDF and, unlike the other three
+                // shading paths, never consumed ObjMaterial::metallic at all -
+                // so there is no "existing metallic local" here to feed. Gated
+                // strictly on the texture (not the metallic FACTOR alone) to
+                // keep every pre-existing scene bit-unchanged, matching the
+                // other three shading paths' "no MR texture -> today's
+                // factors" contract. Same B-channel = metallic convention as
+                // common/material_fetch.slang's material_metallic_roughness(),
+                // duplicated rather than called because this compute kernel
+                // declares its own objectDescription binding and cannot
+                // `import material_fetch` (duplicate binding; see
+                // common/normal_map.slang's doc comment for the same
+                // constraint).
+                if (material.metallicRoughnessTextureID >= 0)
+                {
+                    int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
+                    // Explicit LOD: see the base-colour sample above for why.
+                    float metallicSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], transform_uv(texCoords, material), 0.0).b;
+                    hitColor *= (1.0 - material.metallic * metallicSample);
+                }
             }
 
             // Emissive is surface-emitted radiance, added at the hit before

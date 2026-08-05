@@ -37,6 +37,16 @@ float material_roughness(ObjMaterial material)
       : clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
 }
 
+// glTF 2.0 SS3.9.2 pbrMetallicRoughness texture channel assignment: G =
+// roughness, B = metallic, both multiplying the material's existing factors.
+// A material with no metallic-roughness texture passes mrSample = float4(1.0),
+// so this is exactly today's factors (material.metallic,
+// material_roughness(material)) unchanged.
+float2 material_metallic_roughness(ObjMaterial material, float4 mrSample)
+{
+    return float2(material.metallic * mrSample.b, material_roughness(material) * mrSample.g);
+}
+
 // glTF alphaMode MASK test. ObjMaterial.hpp defines a negative alphaCutoff as
 // "not a MASK material" (OPAQUE/BLEND) - never discard. OBJ materials and
 // every non-MASK glTF material default to -1, so they are unaffected. The

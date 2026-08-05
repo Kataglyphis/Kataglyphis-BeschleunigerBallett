@@ -91,10 +91,20 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
         float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], transform_uv(In.texCoords, material)).xyz;
         N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
     }
+    float metallic = material.metallic;
+    float roughness = material_roughness(material);
+    if (material.metallicRoughnessTextureID >= 0)
+    {
+        int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
+        float4 mrSample = textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], transform_uv(In.texCoords, material));
+        float2 metallicRoughness = material_metallic_roughness(material, mrSample);
+        metallic = metallicRoughness.x;
+        roughness = metallicRoughness.y;
+    }
     // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
     // and lighting_fs_main only ever read normal.xyz) - the free float
     // channel for metallic, so it does not need its own G-buffer attachment.
-    g.outNormal = float4(N, material.metallic);
+    g.outNormal = float4(N, metallic);
     // GBUFFER_ALBEDO_FORMAT is eR8G8B8A8Srgb: base colour is linear by
     // construction (glTF caps baseColorFactor/COLOR_0 to [0,1], texColor is
     // decoded from an sRGB source texture), so the hardware re-encodes on
@@ -117,7 +127,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     // KHR_materials_emissive_strength survives the G-buffer round-trip
     // instead of clamping to [0,1], and roughness is no longer quantized
     // to 256 steps.
-    g.outMaterial = float4(material_roughness(material), material_emission(material, emissiveSample));
+    g.outMaterial = float4(roughness, material_emission(material, emissiveSample));
     return g;
 }
 

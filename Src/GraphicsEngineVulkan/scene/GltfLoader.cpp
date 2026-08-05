@@ -161,6 +161,10 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         // say so. The Rust loader supports TEXCOORD_0/1 and warns past that -
         // this loader supports only TEXCOORD_0, so it warns on any non-zero set.
         warnUnsupportedTexCoordSet(materialName, pbr.base_color_texture, "base-colour");
+
+        // Same "only TEXCOORD_0 is supported" limitation for the metallic-roughness
+        // texture.
+        warnUnsupportedTexCoordSet(materialName, pbr.metallic_roughness_texture, "metallic-roughness");
     }
     // KHR_materials_emissive_strength scales the emissive contribution past the
     // [0,1] glTF factor range (for HDR emitters). Fold it into the factor so the
@@ -730,6 +734,10 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         ObjMaterial objMaterial = fromGltfMaterial(material);
         if (material.has_pbr_metallic_roughness != 0) {
             objMaterial.textureID = assignTextureSlot(material.pbr_metallic_roughness.base_color_texture, true);
+            // Linear, like the normal slot: G/B channels are roughness/metallic
+            // scalars, not gamma-encoded colour (glTF 2.0 SS3.9.2).
+            objMaterial.metallicRoughnessTextureID =
+              assignTextureSlot(material.pbr_metallic_roughness.metallic_roughness_texture, false);
         }
         objMaterial.emissiveTextureID = assignTextureSlot(material.emissive_texture, true);
         objMaterial.normalTextureID = assignTextureSlot(material.normal_texture, false);

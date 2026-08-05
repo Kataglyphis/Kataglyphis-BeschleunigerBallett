@@ -1052,7 +1052,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "roughness", offsetof(ObjMaterial, roughness) },
             { "emissiveTextureID", offsetof(ObjMaterial, emissiveTextureID) },
             { "normalTextureID", offsetof(ObjMaterial, normalTextureID) },
-            { "normalScale", offsetof(ObjMaterial, normalScale) } } },
+            { "normalScale", offsetof(ObjMaterial, normalScale) },
+            { "metallicRoughnessTextureID", offsetof(ObjMaterial, metallicRoughnessTextureID) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -2720,7 +2721,7 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
     EXPECT_NE(
-      deferred_text.find("outMaterial = float4(material_roughness(material), material_emission(material, emissiveSample))"),
+      deferred_text.find("outMaterial = float4(roughness, material_emission(material, emissiveSample))"),
       std::string::npos)
       << "deferred.slang's geometry pass no longer packs material_emission() into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
@@ -2831,6 +2832,78 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
           << path.string() << " no longer passes ObjMaterial::normalScale into apply_normal_map(). "
           << kFailureMessage;
     }
+}
+
+// ObjMaterial::metallicRoughnessTextureID (glTF pbrMetallicRoughness.metallicRoughnessTexture) is dedup'd into the
+// same texture-slot budget as textureID/emissiveTextureID/normalTextureID, but only actually varies the metallic/
+// roughness terms if every shading path samples it and runs the result through the shared
+// common/material_fetch.slang channel swizzle (glTF 2.0 SS3.9.2: G = roughness, B = metallic) rather than four
+// hand-rolled copies - this scans the shader sources as text (the source-text gate pattern used throughout this
+// file) and fails if material_fetch.slang stops exposing the swizzle, or if rasterizer/deferred/raytrace.rchit stop
+// calling it. path_tracing.slang is a documented exception: it is a Lambertian-only kernel with no roughness/BRDF
+// term and cannot `import material_fetch` (duplicate objectDescription binding, same constraint documented on
+// common/normal_map.slang) - it is checked only for referencing the texture ID and the metallic (B) channel, and
+// must NOT duplicate the roughness (G) channel read, which would make material_fetch.slang no longer the sole place
+// the two-channel swizzle appears.
+TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "material_metallic_roughness() in common/material_fetch.slang is the sole place the glTF G=roughness/B=metallic "
+      "channel swizzle happens; a shading path that hand-rolls it instead risks silently diverging from the others";
+
+    const fs::path material_fetch_path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
+    const auto material_fetch_text_opt = readFileText(material_fetch_path);
+    ASSERT_TRUE(material_fetch_text_opt.has_value()) << "could not open " << material_fetch_path.string();
+    const std::string &material_fetch_text = *material_fetch_text_opt;
+    EXPECT_NE(material_fetch_text.find("material.metallic * mrSample.b"), std::string::npos)
+      << "material_fetch.slang's material_metallic_roughness() no longer multiplies the sampled B channel into the "
+         "metallic factor. "
+      << kFailureMessage;
+    EXPECT_NE(material_fetch_text.find("material_roughness(material) * mrSample.g"), std::string::npos)
+      << "material_fetch.slang's material_metallic_roughness() no longer multiplies the sampled G channel into the "
+         "roughness factor. "
+      << kFailureMessage;
+
+    const std::vector<fs::path> brdf_shading_paths = {
+        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
+        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+    };
+    for (const fs::path &path : brdf_shading_paths) {
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+        EXPECT_NE(text.find("metallicRoughnessTextureID"), std::string::npos)
+          << path.string() << " no longer branches on ObjMaterial::metallicRoughnessTextureID. " << kFailureMessage;
+        EXPECT_NE(text.find("material_metallic_roughness("), std::string::npos)
+          << path.string() << " no longer calls material_metallic_roughness(). " << kFailureMessage;
+        EXPECT_EQ(text.find("mrSample.g"), std::string::npos)
+          << path.string() << " hand-rolls the roughness (G) channel read instead of going through "
+                               "material_metallic_roughness(). "
+          << kFailureMessage;
+        EXPECT_EQ(text.find("mrSample.b"), std::string::npos)
+          << path.string() << " hand-rolls the metallic (B) channel read instead of going through "
+                               "material_metallic_roughness(). "
+          << kFailureMessage;
+    }
+
+    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+    const auto path_tracing_text_opt = readFileText(path_tracing_path);
+    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
+    const std::string &path_tracing_text = *path_tracing_text_opt;
+    EXPECT_NE(path_tracing_text.find("metallicRoughnessTextureID"), std::string::npos)
+      << path_tracing_path.string() << " no longer branches on ObjMaterial::metallicRoughnessTextureID. "
+      << kFailureMessage;
+    EXPECT_NE(path_tracing_text.find(".b;"), std::string::npos)
+      << path_tracing_path.string()
+      << " no longer reads the metallic-roughness texture's B (metallic) channel. " << kFailureMessage;
+    EXPECT_EQ(path_tracing_text.find("mrSample"), std::string::npos)
+      << path_tracing_path.string() << " must not duplicate material_fetch.slang's mrSample-named G/B swizzle "
+                                        "(it cannot import material_fetch - see its own doc comment); "
+      << kFailureMessage;
 }
 
 // Vertex.color (glTF COLOR_0) is fetched by every loader and uploaded to the

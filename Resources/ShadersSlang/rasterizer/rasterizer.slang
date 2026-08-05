@@ -89,12 +89,21 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : S
 
     albedo *= In.fragmentColor.rgb;
 
+    float metallic = material.metallic;
     float roughness = material_roughness(material);
+    if (material.metallicRoughnessTextureID >= 0)
+    {
+        int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
+        float4 mrSample = textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], transform_uv(In.texCoords, material));
+        float2 metallicRoughness = material_metallic_roughness(material, mrSample);
+        metallic = metallicRoughness.x;
+        roughness = metallicRoughness.y;
+    }
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
-    float3 f0 = lerp(float3(0.04), albedo, material.metallic);
-    float3 color = brdf_direct(N, V, L, albedo, material.metallic, roughness, f0,
+    float3 f0 = lerp(float3(0.04), albedo, metallic);
+    float3 color = brdf_direct(N, V, L, albedo, metallic, roughness, f0,
                                lightColor * lightIntensity);
 
     float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);

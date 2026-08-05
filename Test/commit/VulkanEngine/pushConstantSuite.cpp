@@ -160,7 +160,8 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, emissiveTextureID), 72U);
     EXPECT_EQ(offsetof(ObjMaterial, normalTextureID), 76U);
     EXPECT_EQ(offsetof(ObjMaterial, normalScale), 80U);
-    EXPECT_EQ(sizeof(ObjMaterial), 84U);
+    EXPECT_EQ(offsetof(ObjMaterial, metallicRoughnessTextureID), 84U);
+    EXPECT_EQ(sizeof(ObjMaterial), 88U);
 }
 
 // ObjMaterial's default member initializers must carry exactly the sentinels
@@ -185,4 +186,5 @@ TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinel
     EXPECT_EQ(m.emissiveTextureID, -1);
     EXPECT_EQ(m.normalTextureID, -1);
     EXPECT_FLOAT_EQ(m.normalScale, 1.0F);
+    EXPECT_EQ(m.metallicRoughnessTextureID, -1);
 }

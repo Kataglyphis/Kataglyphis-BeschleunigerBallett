@@ -511,6 +511,101 @@ TEST(GltfParseUnit, NormalTextureScaleIsCarriedIntoTheMaterial)
     EXPECT_FLOAT_EQ(loader.getMaterials()[0].normalScale, 0.5F);
 }
 
+TEST(GltfParseUnit, MetallicRoughnessTextureGetsItsOwnLinearSlot)
+{
+    // A material whose baseColorTexture and metallicRoughnessTexture name
+    // distinct images must get distinct slots, and the metallic-roughness
+    // slot must be uploaded linear (not sRGB): its G/B channels are
+    // roughness/metallic scalars, not gamma-encoded colour.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        {
+          "pbrMetallicRoughness": {
+            "baseColorTexture": { "index": 0 },
+            "metallicRoughnessTexture": { "index": 1 }
+          }
+        }
+      ],
+      "textures": [ { "source": 0 }, { "source": 1 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" },
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_distinct_metallic_roughness_texture.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "the two distinct declared images must both be extracted";
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[0].metallicRoughnessTextureID, 1);
+    EXPECT_NE(loader.getMaterials()[0].textureID, loader.getMaterials()[0].metallicRoughnessTextureID)
+      << "distinct images must not collapse onto one slot";
+    ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureImages().size());
+    EXPECT_EQ(loader.getTextureSrgbFlags()[loader.getMaterials()[0].textureID], 1)
+      << "base-colour texel data is sRGB-encoded";
+    EXPECT_EQ(loader.getTextureSrgbFlags()[loader.getMaterials()[0].metallicRoughnessTextureID], 0)
+      << "metallic-roughness texel data is linear roughness/metallic scalars, not gamma-encoded colour";
+}
+
+TEST(GltfParseUnit, AMaterialWithoutAMetallicRoughnessTextureKeepsTheSentinel)
+{
+    // A material with a baseColorTexture but no metallicRoughnessTexture must
+    // keep ObjMaterial::metallicRoughnessTextureID at its -1 sentinel.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } }
+      ],
+      "textures": [ { "source": 0 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_metallic_roughness_texture.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[0].metallicRoughnessTextureID, -1)
+      << "a material without a metallicRoughnessTexture must keep the -1 sentinel";
+}
+
 TEST(GltfParseUnit, ReadsSamplerWrapAndFilterFromTheDocument)
 {
     // A texture naming an explicit sampler must have that sampler's wrap and
