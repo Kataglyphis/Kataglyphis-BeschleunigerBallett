@@ -266,16 +266,48 @@ jobs:
       # hoping they skip, and the CPU-only ones run here.
       #
       # New suites now run automatically; nothing to add here.
+      # The GPU-only suite list is built HOST-side and the container is handed
+      # one flat command line, which is how the last green Windows run
+      # (2026-07-21) did it: it composed `$cmd` on the runner and passed that
+      # single string to `powershell.exe -Command`. When the step moved to the
+      # composite action the whole multi-line script started being passed to
+      # `pwsh -Command` instead, and no Windows run reached this step again
+      # until 2026-08-05 - where the container produced ZERO output and exited
+      # 1 after 12 s, far too fast for a 650-test suite and with none of
+      # gtest's banner. The action's other user here, the build step, passes
+      # `file:` (an argv list), not a multi-line `-Command` payload; the
+      # timing/pixel steps below use folded single-line commands. This step is
+      # now the same shape as those.
+      #
+      # The array below stays multi-line and stays in THIS file on purpose:
+      # BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites parses it across
+      # lines out of the workflow, from its opening line to its joining line,
+      # so collapsing it to one line would fail that test with "parsed zero
+      # suites". For the same reason this comment does not spell either of
+      # those two anchor strings out - the parser takes the first line that
+      # matches.
+      - name: Determine the GPU-only suite filter
+        shell: pwsh
+        run: |
+          $gpuOnlySuites = @(
+            'GoldenRender.*'
+            'Integration.*'
+          ) -join ':'
+          Write-Host "Excluding GPU-only suites: $gpuOnlySuites"
+          "GPU_ONLY_SUITES=$gpuOnlySuites" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Run CPU-only tests inside the container
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
-          command: |
-            $gpuOnlySuites = @(
-              'GoldenRender.*'
-              'Integration.*'
-            ) -join ':'
-            & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="-$gpuOnlySuites"
+          # Test-Path first: a missing or unbuilt executable must say so, not
+          # surface as a bare "exit code 1" with an empty log the way the
+          # 2026-08-05 run did.
+          command: >-
+            $exe = 'C:\ws\build-clangcl-debug\commitTestSuite.exe';
+            if (-not (Test-Path $exe)) { Write-Host ('::error::missing ' + $exe); exit 1 };
+            Write-Host ('running ' + $exe + ' (' + (Get-Item $exe).Length + ' bytes)');
+            & $exe --gtest_filter='-${{ env.GPU_ONLY_SUITES }}';
             exit $LASTEXITCODE
 
       # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
@@ -292,15 +324,28 @@ jobs:
           # actually run before - every earlier attempt died at the docker run in
           # the build step - so the bug sat latent until the container finally
           # built successfully.
-          command: |
-            $ErrorActionPreference='Stop';
-            foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
-              $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe')
-              if (-not (Test-Path $exe)) { Write-Host ('missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); exit 1 }
-              Write-Host ('--- ' + $t)
-              & $exe
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
+          # Folded to ONE line for the same reason as the CPU-test step above:
+          # a multi-line payload to `pwsh -Command` is not a shape this action
+          # has ever been observed to run. Every line here is indented
+          # identically - a more-indented line in a YAML folded scalar keeps
+          # its newlines instead of being joined, which would quietly put the
+          # multi-line shape back.
+          #
+          # The loop's target list stays on a single line below because
+          # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi and
+          # EveryFuzzTargetIsInTheWindowsCiFuzzList parse that one line out of
+          # this file. Do not spell the loop's opening text in a comment
+          # either: both parsers take the FIRST line that matches it, so a
+          # comment quoting it wins over the real list and they fail with
+          # "parsed zero fuzz targets".
+          #
+          # It collects every failure instead of stopping at the first, as the
+          # Linux lane's loop now does: seven targets and a ~2.5 h round trip
+          # means aborting early costs a whole run per broken fuzzer.
+          command: >-
+            $failed = @();
+            foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) { $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe'); if (-not (Test-Path $exe)) { Write-Host ('::error::missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); $failed += $t; continue }; Write-Host ('--- ' + $t); & $exe; if ($LASTEXITCODE -ne 0) { Write-Host ('::error::fuzz target ' + $t + ' failed'); $failed += $t } else { Write-Host ('--- ' + $t + ' OK') } };
+            if ($failed.Count -gt 0) { Write-Host ('::error::fuzz targets failed: ' + ($failed -join ' ')); exit 1 };
             exit 0
 
       # GPU timing comparison — runs the Compare-RendererTimings.ps1 script
