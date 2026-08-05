@@ -44,6 +44,24 @@ An output is reused only when it is newer than its source **and** every
 every dependent). The compile scripts walk the manifest and recompile only
 stale entries.
 
+The `BuildIntegrity` gates that verify already-compiled/checked-in output
+(`CompiledShadersAreNotOlderThanSharedIncludes`,
+`CheckedInWgslIsNotOlderThanItsSlangSource`, in
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp`) do **not** mirror that
+whole-tree conservatism: they compare each source against `import_closure`,
+the set of `.slang` files it (transitively) actually `import`s, and only flag
+an artifact stale when one of *those* files is newer. This matters because
+the two rules verify different things — the compile scripts' conservative
+rebuild-everything is the correct policy for producing outputs from scratch,
+while a gate that reused the same "newest file anywhere under common/" logic
+to *check* an already-built tree would flag artifacts whose real dependencies
+never changed, which is exactly what made editing one material module turn
+every checked-in WGSL red. One gap survives either way: a dependent shader
+whose emitted output is byte-identical after a `common/` edit is never
+re-copied, so its mtime stays behind and the per-shader gate still reports it
+stale — fixing that needs a content stamp from the compile scripts
+themselves (upstream in ContainerHub), not a smarter mtime comparison here.
+
 ## The manifest is data, in one place
 
 The shader list (source file, entry point, stage, targets), the combined-WGSL

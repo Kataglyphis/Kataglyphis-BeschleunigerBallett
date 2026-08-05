@@ -75,22 +75,75 @@ fs::path source_for_spirv(const fs::path &spv_path, const fs::path &spirv_root, 
     return slang_root / relative_dir / (source_stem + ".slang");
 }
 
-// mtime of the most recently edited shared Slang module under common/, or
-// false if there are none. Slang has no preprocessor #include; modules under
-// common/ are pulled in via `import` and play the role .glsl includes used
-// to - editing one must be treated as editing every dependent shader.
-bool newest_shared_import(const fs::path &slang_root, fs::file_time_type &out)
+// Strips a trailing "// ..." comment so prose mentioning a constant's name
+// cannot be mistaken for its definition.
+std::string strip_line_comment(const std::string &line)
 {
-    const fs::path common_dir = slang_root / "common";
-    std::error_code error;
+    const auto comment_pos = line.find("//");
+    return comment_pos == std::string::npos ? line : line.substr(0, comment_pos);
+}
+
+// Recursion helper for import_closure: walks `source`'s `import <id>;`
+// statements, resolving each identifier to a real .slang path (common/ takes
+// precedence over the importing file's own directory, matching how the
+// remaining name candidates - if that resolution ever needs a third
+// fallback - could be added), and recurses into every resolved file exactly
+// once via `visited`.
+void collect_import_closure(const fs::path &slang_root, const fs::path &source, std::set<fs::path> &visited,
+  std::set<fs::path> &closure)
+{
+    if (visited.contains(source)) { return; }// cycle guard
+    visited.insert(source);
+
+    const auto lines = readFileLines(source);
+    if (!lines) { return; }
+
+    static const std::regex import_pattern(R"(^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s*;)");
+    for (const auto &raw_line : *lines) {
+        const std::string line = strip_line_comment(raw_line);
+        std::smatch match;
+        if (!std::regex_search(line, match, import_pattern)) { continue; }
+
+        const std::string identifier = match[1].str();
+        std::error_code error;
+        fs::path resolved = slang_root / "common" / (identifier + ".slang");
+        if (!fs::exists(resolved, error)) { resolved = source.parent_path() / (identifier + ".slang"); }
+        if (!fs::exists(resolved, error)) { continue; }// unresolvable import: the compiler's problem, not this gate's
+
+        closure.insert(resolved);
+        collect_import_closure(slang_root, resolved, visited, closure);
+    }
+}
+
+// Every .slang file transitively reachable from `source` via `import <id>;`
+// statements (Slang has no preprocessor #include; `import` plays the role
+// .glsl includes used to). Does not include `source` itself. `slang_root`'s
+// common/ is checked before the importing file's own directory, so a module
+// name that exists in both resolves to the shared one.
+std::set<fs::path> import_closure(const fs::path &slang_root, const fs::path &source)
+{
+    std::set<fs::path> visited;
+    std::set<fs::path> closure;
+    collect_import_closure(slang_root, source, visited, closure);
+    closure.erase(source);
+    return closure;
+}
+
+// The newest mtime across `source`'s import closure, plus which file it came
+// from (so callers can name the actual stale import instead of a generic
+// "somewhere under common/"). False when the closure is empty.
+bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::file_time_type &out_time, fs::path &out_path)
+{
+    const auto closure = import_closure(slang_root, source);
+
     bool found = false;
-    for (fs::recursive_directory_iterator it(common_dir, error), end; it != end; it.increment(error)) {
-        if (error) { break; }
-        if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
-        const auto stamp = fs::last_write_time(it->path(), error);
+    for (const auto &import_path : closure) {
+        std::error_code error;
+        const auto stamp = fs::last_write_time(import_path, error);
         if (error) { continue; }
-        if (!found || stamp > out) {
-            out = stamp;
+        if (!found || stamp > out_time) {
+            out_time = stamp;
+            out_path = import_path;
             found = true;
         }
     }
@@ -277,14 +330,6 @@ const std::vector<std::string> kSharedConstantNames = {
 };
 
 bool is_identifier_char(char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_'; }
-
-// Strips a trailing "// ..." comment so prose mentioning a constant's name
-// cannot be mistaken for its definition.
-std::string strip_line_comment(const std::string &line)
-{
-    const auto comment_pos = line.find("//");
-    return comment_pos == std::string::npos ? line : line.substr(0, comment_pos);
-}
 
 // Parses the integer that follows a constant name at `name_end`, accepting
 // both "#define NAME 3" (no '=') and "[static] const int NAME = 3;" (with
@@ -1230,10 +1275,11 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
                                  }();
 }
 
-// A shared Slang module under common/ (imported by entry-point shaders) that
-// is newer than a .spv means the dependent shader was not recompiled.
-// compile-slang-shaders.ps1 is conservative about this (any .slang edit
-// invalidates every output); this guards that behaviour.
+// A Slang module that a compiled .spv's source actually imports (transitively,
+// via import_closure) being newer than that .spv means the shader was not
+// recompiled after the module changed. Scoped per-entry-point rather than to
+// "the newest edit anywhere under common/", so editing one material module no
+// longer flags every .spv that never imports it.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
 {
     const fs::path repo_root = repoRoot();
@@ -1243,22 +1289,68 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
     const fs::path spirv_root = spirvRoot();
     ASSERT_TRUE(fs::exists(spirv_root));
 
-    fs::file_time_type newest_import{};
-    if (!newest_shared_import(slang_root, newest_import)) { GTEST_SKIP() << "no shared Slang imports under common/"; }
-
     std::error_code error;
     std::vector<std::string> stale;
+    int checked = 0;
     for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
+
+        const fs::path source = source_for_spirv(it->path(), spirv_root, slang_root);
+        if (source.empty() || !fs::exists(source)) { continue; }// unmapped: CompiledShadersAreNotOlderThanTheirSources owns this
+
+        fs::file_time_type newest_import{};
+        fs::path newest_import_path;
+        if (!newest_import_for(slang_root, source, newest_import, newest_import_path)) { continue; }// no imports: nothing shared to be stale against
+
         const auto spv_time = fs::last_write_time(it->path(), error);
         if (error) { continue; }
-        if (spv_time < newest_import) { stale.push_back(fs::relative(it->path(), repo_root).string()); }
+
+        ++checked;
+        if (spv_time < newest_import) {
+            stale.push_back(fs::relative(it->path(), repo_root).string() + " is older than its imported "
+                             + fs::relative(newest_import_path, repo_root).string());
+        }
     }
 
+    if (checked == 0) { GTEST_SKIP() << "no compiled .spv imports a shared Slang module under common/"; }
+
     EXPECT_TRUE(stale.empty()) << stale.size()
-                               << " SPIR-V binaries are older than the newest shared Slang import under "
-                                  "common/; editing a shared module must rebuild its dependents.";
+                               << " SPIR-V binaries are older than a shared Slang import they actually depend "
+                                  "on; editing a shared module must rebuild its dependents:"
+                               << [&stale] {
+                                      std::string joined;
+                                      for (const auto &entry : stale) { joined += "\n  " + entry; }
+                                      return joined;
+                                  }();
+}
+
+// Proves import_closure resolves only real `import` statements and recurses
+// through them: ssao.slang imports fullscreen and nothing material-related,
+// so material_fetch must not appear in its closure. rasterizer.slang imports
+// material_fetch directly, and material_fetch itself imports scene_types, so
+// scene_types reaching rasterizer's closure only works if the recursion
+// actually walks material_fetch's own imports rather than just rasterizer's.
+TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root));
+
+    const auto relative_closure = [&slang_root](const fs::path &source) {
+        std::set<std::string> relative;
+        for (const auto &import_path : import_closure(slang_root, source)) {
+            relative.insert(fs::relative(import_path, slang_root).generic_string());
+        }
+        return relative;
+    };
+
+    const auto ssao_closure = relative_closure(slang_root / "ssao" / "ssao.slang");
+    EXPECT_TRUE(ssao_closure.contains("common/fullscreen.slang"));
+    EXPECT_FALSE(ssao_closure.contains("common/material_fetch.slang"));
+
+    const auto rasterizer_closure = relative_closure(slang_root / "rasterizer" / "rasterizer.slang");
+    EXPECT_TRUE(rasterizer_closure.contains("common/material_fetch.slang"));
+    EXPECT_TRUE(rasterizer_closure.contains("common/scene_types.slang"));
 }
 
 // Nothing in this repo validated the Slang compiler's output against the
@@ -2011,13 +2103,20 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 // Slang source that generates them. A regenerate that drops one of the
 // depth-texture patches, or a .slang edit that never gets propagated, is
 // silent today. This walks the wgslMap and asserts each checked-in .wgsl is
-// not older than its source OR any shared Slang import under common/ - the
-// same pair of checks CompiledShadersAreNotOlderThanTheirSources /
-// …ThanSharedIncludes apply to the SPIR-V side. mtimes are meaningless after a
-// fresh clone (git does not preserve them), so this is a local-iteration
-// guard that catches "I edited a .slang and forgot to regenerate" before you
-// commit - not the CI backstop; that is the content-based freshness gate
-// (task 3 below).
+// not older than its source OR the newest import in that source's real
+// import_closure (see import_closure/newest_import_for above) - the same
+// pair of checks CompiledShadersAreNotOlderThanTheirSources /
+// …ThanSharedIncludes apply to the SPIR-V side, now scoped to imports the
+// source actually reaches rather than "newest file anywhere under common/".
+// mtimes are meaningless after a fresh clone (git does not preserve them), so
+// this is a local-iteration guard that catches "I edited a .slang and forgot
+// to regenerate" before you commit - not the CI backstop; that is the
+// content-based freshness gate (task 3 below). What this still does NOT
+// catch: a shader that genuinely imports the edited module but whose emitted
+// WGSL is byte-identical is never re-copied by the compile scripts, so its
+// mtime stays behind and this gate keeps reporting it stale on every run.
+// The real fix is a content stamp written by the compile scripts (which live
+// upstream in ContainerHub); out of scope here.
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = repoRoot();
@@ -2027,9 +2126,6 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
-
-    fs::file_time_type newest_import{};
-    const bool has_shared_imports = newest_shared_import(slang_root, newest_import);
 
     std::vector<std::string> stale;
     int checked = 0;
@@ -2047,14 +2143,17 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
         const auto dest_time = fs::last_write_time(dest, error);
         if (error) { continue; }
 
-        const bool import_is_newer = has_shared_imports && newest_import > source_time;
+        fs::file_time_type newest_import{};
+        fs::path newest_import_path;
+        const bool has_shared_import = newest_import_for(slang_root, source, newest_import, newest_import_path);
+        const bool import_is_newer = has_shared_import && newest_import > source_time;
         const auto newest_time = import_is_newer ? newest_import : source_time;
 
         ++checked;
         if (dest_time < newest_time) {
             stale.push_back(fs::relative(dest, repo_root).string() + " (mtime ticks=" + std::to_string(dest_time.time_since_epoch().count())
                              + ") is older than "
-                             + (import_is_newer ? std::string("a shared Slang import under common/")
+                             + (import_is_newer ? fs::relative(newest_import_path, repo_root).string()
                                                  : fs::relative(source, repo_root).string())
                              + " (mtime ticks=" + std::to_string(newest_time.time_since_epoch().count()) + ')');
         }
