@@ -1032,6 +1032,37 @@ std::optional<SpirvEntryPointInfo> parse_spirv_entry_point_info(const fs::path &
     return info;
 }
 
+// Sibling of parse_spirv_entry_point_info that counts occurrences instead of
+// just presence - some gates (e.g. TracedObjectIndexAddsTheGeometryIndex)
+// need to know an instruction appears at least N times, which a std::set
+// membership test cannot express. Same "not a SPIR-V module" contract.
+std::optional<std::map<uint32_t, std::size_t>> parse_spirv_opcode_counts(const fs::path &spv_path)
+{
+    const auto text = readFileText(spv_path);
+    if (!text) { return std::nullopt; }
+    const std::vector<char> raw(text->begin(), text->end());
+    if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
+        return std::nullopt;
+    }
+
+    std::vector<uint32_t> words(raw.size() / sizeof(uint32_t));
+    std::memcpy(words.data(), raw.data(), raw.size());
+    if (words[0] != kSpirvMagicNumber) { return std::nullopt; }
+
+    std::map<uint32_t, std::size_t> counts;
+    std::size_t pos = kSpirvHeaderWordCount;
+    while (pos < words.size()) {
+        const uint32_t instruction_word = words[pos];
+        const uint32_t word_count = instruction_word >> 16U;
+        const uint32_t opcode = instruction_word & 0xFFFFU;
+        if (word_count == 0 || pos + word_count > words.size()) { break; }// malformed stream - stop, do not read OOB
+
+        ++counts[opcode];
+        pos += word_count;
+    }
+    return counts;
+}
+
 // One shared-layout struct's contract: the struct name Slang emits it as in
 // compiled SPIR-V, paired with { emitted member name -> offsetof(HostType,
 // member) }. ArrayStride/MatrixStride are deliberately not checked here -
@@ -3576,6 +3607,107 @@ TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
              for (const auto &entry : violations) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+// One traced object-index source file and how many instance+geometry index
+// pairs it is expected to contain, backing TracedObjectIndexAddsTheGeometryIndex.
+struct TracedObjectIndexFile
+{
+    std::string relative_path;
+    int expected_pair_count;
+};
+
+// path_tracing.slang's two RayQuery candidate loops (bounce + NEE shadow)
+// plus its committed-hit block; raytrace.rchit.slang and raytrace.rahit.slang
+// each resolve their one hit with a single expression. Update the expected
+// count here if a traced object-index site is added, removed, or moved.
+const std::vector<TracedObjectIndexFile> kTracedObjectIndexFiles = {
+    {"path_tracing/path_tracing.slang", 3},
+    {"raytracing/raytrace.rchit.slang", 1},
+    {"raytracing/raytrace.rahit.slang", 1},
+};
+
+// Regression gate for the multi-mesh device-lost fix (BACKLOG.md):
+// ASManager stamps instanceCustomIndex/InstanceIndex with the model's
+// *first-mesh* flat index (ASManager.cpp's createTLAS), so every traced
+// object-index expression must add the matching geometry accessor
+// (Committed*/Candidate*/bare GeometryIndex()) to reach the mesh that was
+// actually hit - an instance accessor alone always resolves to the model's
+// first mesh. path_tracing_main's committed-hit block used to read only
+// CommittedInstanceIndex(), which faulted on any multi-mesh model past its
+// first mesh (out-of-bounds buffer-device-address read on the mismatched
+// vertex/index buffers). Source half below asserts every instance accessor
+// pairs with its geometry counterpart; SPIR-V half confirms the compiled
+// path_tracing module actually emits the extra opcode this implies.
+TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::regex kInstanceIndexRegex(R"(((?:Committed|Candidate)?)InstanceIndex\(\))");
+
+    std::vector<std::string> violations;
+    for (const auto &file : kTracedObjectIndexFiles) {
+        const fs::path path = slang_root / file.relative_path;
+        const auto lines = readFileLines(path);
+        ASSERT_TRUE(lines.has_value()) << "could not read " << path.string();
+
+        int pair_count = 0;
+        for (const auto &raw_line : *lines) {
+            const std::string line = strip_line_comment(raw_line);
+
+            for (auto it = std::sregex_iterator(line.begin(), line.end(), kInstanceIndexRegex);
+                 it != std::sregex_iterator(); ++it) {
+                const std::string prefix = (*it)[1].str();
+                const std::string geometry_call = prefix + "GeometryIndex()";
+                if (line.find(geometry_call) == std::string::npos) {
+                    violations.push_back(
+                      file.relative_path + ": '" + it->str() + "' with no matching '" + geometry_call
+                      + "' on the same line");
+                } else {
+                    ++pair_count;
+                }
+            }
+        }
+
+        EXPECT_EQ(pair_count, file.expected_pair_count)
+          << file.relative_path << ": expected " << file.expected_pair_count
+          << " instance+geometry index pair(s), found " << pair_count
+          << " - update kTracedObjectIndexFiles in TracedObjectIndexAddsTheGeometryIndex "
+             "if this file's traced object-index sites changed";
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " traced object-index site(s) use an instance accessor with no matching geometry accessor - "
+         "a multi-mesh model resolves every mesh past its first to mesh 0's vertex/index/material "
+         "buffers unless the geometry term is added (see raytrace.rchit.slang's "
+         "InstanceIndex() + GeometryIndex() shape):"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    constexpr uint32_t kOpRayQueryGetIntersectionGeometryIndexKHR = 6022;
+    constexpr std::size_t kMinGeometryIndexOpcodeCount = 3;// 2 candidate loops + 1 committed-hit block
+
+    const fs::path spv_path = spirvRoot() / "path_tracing" / "path_tracing.path_tracing_main.spv";
+    if (!fs::exists(spv_path)) {
+        GTEST_SKIP() << "missing " << spv_path.string() << " - shaders have not been compiled";
+    }
+
+    const auto counts = parse_spirv_opcode_counts(spv_path);
+    ASSERT_TRUE(counts.has_value()) << "could not parse " << spv_path.string() << " as SPIR-V";
+
+    const auto count_it = counts->find(kOpRayQueryGetIntersectionGeometryIndexKHR);
+    const std::size_t actual_count = (count_it == counts->end()) ? 0 : count_it->second;
+    EXPECT_GE(actual_count, kMinGeometryIndexOpcodeCount)
+      << spv_path.string() << ": expected OpRayQueryGetIntersectionGeometryIndexKHR at least "
+      << kMinGeometryIndexOpcodeCount
+      << " times (one per RayQuery candidate/committed-hit site), found " << actual_count
+      << " - path_tracing.slang may have regressed to a bare instance index, or the compiled .spv is "
+         "stale (recompile with compile-slang-shaders.ps1)";
 }
 
 // Regression gate for the RT/PT objectDescription centralization:

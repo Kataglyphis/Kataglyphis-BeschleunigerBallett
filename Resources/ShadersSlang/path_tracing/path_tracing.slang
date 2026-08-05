@@ -156,36 +156,28 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 break;
             }
 
-            // KNOWN ISSUE, unresolved (see BACKLOG.md): on the large
-            // Dinosaurs.obj scene this hit-info block still reproduces
-            // VK_ERROR_DEVICE_LOST on the RX 9070 XT with zero preceding
-            // validation errors, whenever v0/v1/v2.position or .normal
-            // (fetched via this RayQuery-derived Vertices* BDA pointer)
-            // actually feed the output image - regardless of whether a
-            // matrix transform is applied, whether the code is factored into
-            // a helper or inlined as here, whether sceneUBO is involved, and
-            // independent of
-            // CommittedObjectToWorld3x4()/CommittedWorldToObject3x4()
-            // specifically (removing those calls and using the raw
-            // object-space position still faults). Consuming ONLY the
-            // material-fetched .color (no vertex-buffer position/normal
-            // read) never faults, across 40+ frames and an 8x-per-invocation
-            // RayQuery loop, on this same large mesh.
-            // raytracing/raytrace.rchit.slang reads the identical fields via
-            // the identical Vertex/Vertices BDA types successfully, but has
-            // only ever been
-            // exercised against the tiny shadow_rig.obj rig - it is NOT yet
-            // known whether this is scoped to RayQuery/compute specifically
-            // or is a more general large-mesh vertex-buffer-device-address
-            // bug the RT pipeline has simply never hit. Root-causing further
-            // needs a GPU capture (RenderDoc/PIX) or AMD crash-dump tooling,
-            // or an RT-pipeline golden test against the dinosaur mesh - out
-            // of reach here.
-            uint instanceIndex = rayQuery.CommittedInstanceIndex();
+            // Bug fixed here (was "KNOWN ISSUE, unresolved" - see BACKLOG.md),
+            // device-lost repro NOT yet re-run to confirm: this block used to
+            // resolve every hit to instance 0's *first* mesh, because it read
+            // only CommittedInstanceIndex() with no geometry term (unlike the
+            // candidate loops above, which already add
+            // CandidateGeometryIndex()). On any multi-mesh model, a hit
+            // against mesh N>0 fetched mesh 0's vertex/index/material
+            // buffers via fetch_object_description(), then indexed
+            // indices->i[primitiveID] against a primitive count that
+            // belonged to a different (usually smaller) mesh - an
+            // out-of-bounds buffer-device-address read. That would explain
+            // why only the vertex-consuming variant faulted: dead-code
+            // elimination dropped the OOB load whenever nothing downstream
+            // consumed v0/v1/v2, so the material-fetched .color path (which
+            // never reads Vertices*) never faulted. See
+            // raytracing/raytrace.rchit.slang's identical
+            // InstanceIndex() + GeometryIndex() shape.
+            uint objIndex = rayQuery.CommittedInstanceIndex() + rayQuery.CommittedGeometryIndex();
             float3x4 objToWorld = rayQuery.CommittedObjectToWorld3x4();
             float3x4 worldToObject = rayQuery.CommittedWorldToObject3x4();
 
-            ObjectDescription obj = fetch_object_description(instanceIndex);
+            ObjectDescription obj = fetch_object_description(objIndex);
             Vertices* vertices = (Vertices*)obj.vertex_address;
             Indices* indices = (Indices*)obj.index_address;
 

@@ -10859,3 +10859,426 @@ but do not belong to the three tasks above:
   of knowledge a dead-code sweep destroys. Recorded so the next sweep stops
   here instead of re-deriving it.
 
+## 2026-08-05 batch X — planner (the path tracer's committed hit resolves every mesh past the first to mesh 0's vertex/index/material buffers — the out-of-bounds buffer-device-address read the tracked `VK_ERROR_DEVICE_LOST` has been hunted for since 2026-07-31, three of its four sibling call sites already get it right; the `instanceCustomIndex` the host stamps on every TLAS instance, which no shader reads; the four texture-slot sample blocks batch IX deferred, now that their stated prerequisite has landed; and the host half of the same object-index contract, still an inline accumulator with a stale comment and no test)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch IX's three tasks all shipped
+(`13f377b6`, `c9ba1be6`, `9ee460cb`). Everything below was read out of the tree
+at `9ee460cb`, and the two correctness findings were additionally confirmed
+against the **compiled** SPIR-V with `C:\VulkanSDK\1.4.350.0\Bin\spirv-dis`,
+not just the Slang source.
+
+**First, and this is the headline: `path_tracing.slang`'s committed hit drops
+the geometry index, and that is an out-of-bounds buffer-device-address read on
+any multi-mesh model.** The engine's object descriptions are one entry per
+MESH, flattened across models (`VulkanRenderer.cpp`'s
+`updateObjectDescriptions`, and `Kataglyphis::assignTextureOffsets`'s doc
+comment). `ASManager::createTLAS` therefore stamps each TLAS instance's
+`instanceCustomIndex` with that model's **first-mesh flat index** and expects
+the traced shaders to add the geometry index (the mesh within the BLAS —
+`createBLAS` pushes one `AccelerationStructureGeometryKHR` per mesh). Four call
+sites compute that index. Three are right:
+
+- `raytrace.rchit.slang`'s `rchit_main`: `InstanceIndex() + GeometryIndex()`
+- `raytrace.rahit.slang`'s `rahit_main`: `InstanceIndex() + GeometryIndex()`
+- `path_tracing.slang`'s two ray-query **candidate** loops (bounce and NEE
+  shadow): `Candidate*InstanceIndex() + Candidate*GeometryIndex()`
+
+The fourth — `path_tracing.slang`'s **committed** hit — is
+`uint instanceIndex = rayQuery.CommittedInstanceIndex();` with no geometry
+term, fifty lines below its own candidate loop that has one. Confirmed in the
+emitted SPIR-V: `path_tracing.path_tracing_main.spv` contains
+`OpRayQueryGetIntersectionGeometryIndexKHR` exactly **2** times against
+`OpRayQueryGetIntersectionInstanceIdKHR` **3** times.
+
+Consequence: for a hit on any mesh but the model's first, `obj` is mesh 0's
+`ObjectDescription`, and `indices->i[primitiveID]` then indexes mesh 0's index
+buffer with a primitive ID drawn from a *different, larger* mesh — a raw
+`PhysicalStorageBuffer` read past the end of the allocation, with the fetched
+`int3` then used to index `vertices->v[]`.
+
+**This is almost certainly the root cause of the `- [b]` device-lost entry
+near line 2030**, and every observation recorded there falls out of it:
+
+- The reproducer scene is `Models/Dinosaurs/dinosaurs.obj`, which has **three**
+  `o` shapes (`Plane`, `www_joel3d_com_Tricer`, `polySurface39_Tricera`) and
+  `ObjLoader.cpp` makes **one Mesh per OBJ shape** — so it is a three-mesh
+  model, and mesh 0 is the tiny `Plane`. Every hit on either dinosaur reads
+  hundreds of thousands of elements past a two-triangle index buffer.
+- "Consuming ONLY the material-fetched `hitColor` ... is safe; the instant the
+  caller also consumes `v0.position`/`v0.normal`, the device is lost within
+  0–2 frames" — exactly the dead-code-elimination boundary. Drop the vertex
+  read and the whole `indices->i[primitiveID]` chain becomes unused and is
+  eliminated; keep it and the OOB load is actually emitted.
+- "`GoldenRender.RaytracedLargeMeshDoesNotLoseTheDevice` raytraces the same
+  dinosaur mesh through the RT *pipeline* and does NOT lose the device ... the
+  bug is confirmed scoped to `path_tracing.slang`/RayQuery compute" — because
+  `rchit_main` adds `GeometryIndex()` and `path_tracing_main`'s committed hit
+  does not. That entry's own closing advice was to look for "a compute-specific
+  buffer-device-address indexing bug". This is it.
+- The other two device-losing goldens
+  (`GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice`,
+  `Integration.RenderModesSelectableInGui`) sweep render modes over the same
+  default dinosaur scene, so they hit the same read.
+
+I am **not** flipping that `- [b]` to `- [ ]`: confirming the device loss is
+gone needs a host GPU run, which is still blocked (see below). Task 1 lands the
+fix and its gate; whoever next gets a console session runs
+`GoldenRender.PathTracingAccumulatesAndConverges` and closes the `- [b]` on
+evidence.
+
+**Second, no shader reads `instanceCustomIndex` at all.** Slang's HLSL-shaped
+`InstanceIndex()` is the **TLAS instance index**, not the user-supplied custom
+index — `spirv-dis raytrace.rchit.rchit_main.spv` shows
+`OpDecorate %gl_InstanceID BuiltIn InstanceId` (SPIR-V `BuiltInInstanceId`, 6),
+and `raytrace.rahit.rahit_main.spv` the same;
+`BuiltInInstanceCustomIndexKHR` (5327) appears in neither. The custom-index
+spelling is `InstanceID()` / `CandidateInstanceID()` / `CommittedInstanceID()`
+(→ `OpRayQueryGetIntersectionInstanceCustomIndexKHR`, 6019, which appears
+**0** times in `path_tracing.path_tracing_main.spv` today). So
+`ASManager::createTLAS`'s `geometry_instance.instanceCustomIndex =
+mesh_base_offset` is written and never read; the shaders substitute the TLAS
+instance index, which equals the flat mesh base offset only while **every**
+model holds exactly one mesh. `ASManager.cpp`'s comment still asserts that
+equivalence ("== model_index while a Model holds one mesh, so this is a no-op
+today") — false for the default scene since it became multi-mesh. Latent, not
+firing today (the reproducer scene has one model, so both spellings give 0),
+and it fires the moment a scene puts a multi-mesh model ahead of any other
+model: model 1's descriptions get read at index 1 instead of 3.
+
+**Third, the four texture-slot sample blocks, which batch IX deferred with a
+stated prerequisite that has now landed.** Batch IX recorded this under "Not in
+this batch" and said it "should land after task 3 has made the binding numbers
+symbolic everywhere". Task 3 is `9ee460cb`. The finding stands verbatim:
+`rasterizer.slang`'s `fs_main` and `deferred.slang`'s `geometry_fs_main` carry
+byte-identical `if (material.XTextureID >= 0) { resolve_texture_slot(...);
+Sample(...); }` triples for the alpha (`map_d`), normal, metallic-roughness and
+emissive slots — including the four-line `map_d` comment reproduced verbatim —
+and `raytrace.rchit.slang` / `path_tracing.slang` carry the same four with
+`SampleLevel(..., 0.0)`. Underneath it, `[vk::binding(TEXTURES_BINDING, 0)]
+Texture2D<float4> textures[MAX_TEXTURE_COUNT]` plus its sampler twin is
+declared **five** times: `rasterizer.slang`, `deferred.slang`,
+`shadow_map.slang`, `raytrace.rchit.slang`, `alpha_test.slang`.
+
+**Fourth, `alpha_test.slang` still hand-rolls `fetch_material()`'s body, and
+`material_fetch.slang` still carries the paragraph batch IX disproved.**
+`ray_hit_masked_out()` opens with the `MaterialIDs*` / `Materials*` /
+`materials->m[materialIDs->i[primitiveID]]` triple that *is*
+`fetch_material(obj, primitiveID)`, character for character.
+`material_fetch.slang`'s header comment still says the material rules live
+elsewhere "so the ray tracing / path tracing entry points — which declare their
+own objectDescription binding and cannot also import this module — can still
+use them", while `rchit`, `rahit` and `path_tracing` all import it today.
+`alpha_test.slang`'s own comment already records that the two shaders that
+import it "import material_fetch and alpha_test together without conflict", so
+the import is provably safe.
+
+**Fifth, the host half of the object-index contract has no test.**
+`ASManager::createTLAS` accumulates `mesh_base_offset` inline in the TLAS loop.
+Its sibling contract half — `assignTextureOffsets`, which walks the same
+per-model mesh counts to stamp `texture_offset` — was extracted into
+`scene/ObjectDescription.ixx` and is unit-tested in
+`Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp`, including the
+overrun case. The base-offset accumulator was never given the same treatment,
+so the number tasks 1 and 2 make the shaders actually read is produced by an
+untested inline loop behind a stale comment. Same shape as
+`BlasCompaction.hpp`'s `compactedSizesAreUsable` (device-free helper next to
+its caller, tested in `blasGeometryLimitsSuite.cpp`).
+
+**Verification context — read this before claiming anything.** Host GPU goldens
+remain blocked over RDP (the `- [b]` near the end of this file) and
+`path_tracing` mode device-losts on the host RX 9070 XT on unmodified
+`develop`. **No task below may claim a rendered result.** The oracles available
+without a GPU are strong and every task has one:
+
+- Tasks 1, 2 and 5 change behaviour, so their oracle is the **emitted SPIR-V**,
+  read with `spirv-dis` and pinned by a new gate. Opcode/BuiltIn numbers, taken
+  from `C:\VulkanSDK\1.4.350.0\Include\spirv\unified1\spirv.hpp`:
+  `OpRayQueryGetIntersectionInstanceCustomIndexKHR` 6019,
+  `OpRayQueryGetIntersectionInstanceIdKHR` 6020,
+  `OpRayQueryGetIntersectionGeometryIndexKHR` 6022,
+  `BuiltInInstanceId` 6, `BuiltInInstanceCustomIndexKHR` 5327,
+  `BuiltInRayGeometryIndexKHR` 5352.
+- Tasks 3 and 4 are pure source refactors that must leave the emitted SPIR-V
+  **byte-identical**:
+
+```pwsh
+# before touching anything
+Copy-Item -Recurse Resources\ShadersSlang\build\spirv $env:TEMP\spirv-before
+# ... make the change ...
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1
+Compare-Object `
+  (Get-ChildItem -Recurse $env:TEMP\spirv-before -File | Get-FileHash) `
+  (Get-ChildItem -Recurse Resources\ShadersSlang\build\spirv -File | Get-FileHash) `
+  -Property Hash, @{E={Split-Path $_.Path -Leaf}}
+```
+
+A non-empty `Compare-Object` result on task 3 or 4 means the refactor changed
+behaviour — stop and find out why rather than re-baselining. **Say which suites
+you actually ran**, and say explicitly that no image was rendered.
+
+**Ordering.** Land 1 → 2 → 3 → 4 → 5, one at a time. Task 2 extends the gate
+task 1 adds and edits the same four expressions; task 4 edits
+`alpha_test.slang`, which task 3 also touches; tasks 1–4 all add to
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp`, so serialize for that
+reason too. Only task 5 changes a C++23 module interface
+(`scene/ObjectDescription.ixx`) and therefore needs `-FreshContainer`; tasks
+1–4 change no `Src/` compiled output at all.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Read the TLAS `instanceCustomIndex` the host actually writes, not the TLAS instance index** — `ASManager` stamps each instance with its model's first-mesh flat index and no shader reads it; all four traced object-index sites substitute the instance's position in the TLAS, which only coincides while every model holds exactly one mesh.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` —
+    `createTLAS`: `geometry_instance.instanceCustomIndex = mesh_base_offset;`
+    and the comment above it (which still claims the equivalence is a "no-op
+    today" — no longer true, the default `dinosaurs.obj` model has three meshes).
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang`,
+    `raytracing/raytrace.rahit.slang` — `InstanceIndex() + GeometryIndex()`.
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — the two
+    `Candidate*InstanceIndex()` sites and the committed one task 1 fixed.
+
+  **Steps:**
+  1. Confirm the premise yourself before editing, so the change rests on the
+     artifact and not on this entry:
+     `& 'C:\VulkanSDK\1.4.350.0\Bin\spirv-dis.exe' Resources\ShadersSlang\build\spirv\raytracing\raytrace.rchit.rchit_main.spv | Select-String BuiltIn`
+     shows `OpDecorate %gl_InstanceID BuiltIn InstanceId` and no
+     `InstanceCustomIndexKHR`.
+  2. Replace `InstanceIndex()` with `InstanceID()` in `raytrace.rchit.slang` and
+     `raytrace.rahit.slang`; replace `CandidateInstanceIndex()` /
+     `CommittedInstanceIndex()` with `CandidateInstanceID()` /
+     `CommittedInstanceID()` at all three `path_tracing.slang` sites.
+  3. Add a one-line comment at `rchit_main`'s index (the site the other three
+     already point at) naming `instanceCustomIndex` and
+     `ASManager::createTLAS` as where the value comes from, so the next reader
+     does not "simplify" it back.
+  4. Fix `ASManager::createTLAS`'s stale comment: the meshes-per-model
+     equivalence is not a no-op today — `Models/Dinosaurs/dinosaurs.obj` is a
+     three-mesh model (three `o` shapes; `ObjLoader` makes one Mesh per shape).
+  5. Recompile shaders and verify with `spirv-dis` that
+     `BuiltIn InstanceCustomIndexKHR` (5327) replaced `BuiltIn InstanceId` (6)
+     in both RT shaders, and that
+     `OpRayQueryGetIntersectionInstanceCustomIndexKHR` (6019) replaced
+     `OpRayQueryGetIntersectionInstanceIdKHR` (6020) in
+     `path_tracing.path_tracing_main.spv`. Record the counts in the commit
+     message.
+
+  **Test:** Extend task 1's `BuildIntegrity.TracedObjectIndexAddsTheGeometryIndex`
+  (or add `BuildIntegrity.TracedObjectIndexReadsTheInstanceCustomIndex`
+  alongside it): assert the SPIR-V for `raytrace.rchit`, `raytrace.rahit` and
+  `path_tracing` carries `BuiltInInstanceCustomIndexKHR` /
+  `OpRayQueryGetIntersectionInstanceCustomIndexKHR` and **no**
+  `BuiltInInstanceId` / `OpRayQueryGetIntersectionInstanceIdKHR`. Presence and
+  absence, not exact counts — counts move with inlining. Reuse the same
+  skip-when-`.spv`-absent guard.
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Same bug class as batch XV's tile-light binning and batch
+  XVIII's depth-aspect rule: one contract, several hand-written spellings, and
+  the host half writing a value the device half never reads. The
+  reproducer scene has a single model, so this does **not** change any
+  currently-testable pixel — it is a latent multi-model bug, and the SPIR-V
+  diff is the whole of the evidence. Do not claim otherwise.
+
+- [ ] **(M) (refactor) Give the four texture-slot sample blocks and the five `textures[]`/`textureSamplers[]` declarations one owning module** — deferred from batch IX with its stated prerequisite (`9ee460cb`, symbolic binding numbers) now landed.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang` — `fs_main`'s alpha,
+    normal, metallic-roughness and emissive blocks (implicit-LOD `Sample`).
+  - `Resources/ShadersSlang/deferred/deferred.slang` — `geometry_fs_main`'s
+    byte-identical four, including the duplicated four-line `map_d` comment.
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang` and
+    `path_tracing/path_tracing.slang` — the same four with
+    `SampleLevel(..., 0.0)` and the "Explicit LOD: ..." comments.
+  - `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang` — the fifth
+    declaration of the two arrays; uses only the base-colour and alpha slots.
+  - `Resources/ShadersSlang/common/alpha_test.slang` — the current owner of a
+    copy of both arrays, and the module comment explaining why it declares them.
+  - `Resources/ShadersSlang/common/base_color.slang` — the per-slot
+    `normal_uv` / `metallic_roughness_uv` / `emissive_uv` accessors the helpers
+    must keep calling.
+  - `Resources/ShadersSlang/common/raster_geometry.slang` (`c9ba1be6`) — the
+    most recent example of extracting a shared stage into `common/`.
+
+  **Steps:**
+  1. Add `Resources/ShadersSlang/common/material_textures.slang` declaring the
+     two arrays once at `TEXTURES_BINDING` / `SAMPLER_BINDING` (named
+     constants, per `9ee460cb`), plus explicit-LOD helpers for the four slots —
+     e.g. `sample_normal_lod0`, `sample_metallic_roughness_lod0`,
+     `sample_emissive_lod0`, `sample_alpha_lod0` — each taking
+     `(ObjectDescription obj, ObjMaterial material, float2 texCoords)`, doing
+     the `resolve_texture_slot` + `SampleLevel(..., 0.0)` pair, and each
+     documented once (move the `map_d` comment and the "Explicit LOD" rationale
+     here rather than copying them).
+  2. Add the implicit-LOD variants for the raster paths. **Try one module
+     first**; if Slang's capability checking rejects an implicit-LOD `Sample()`
+     in a module a ray-tracing/compute entry point imports, split the
+     implicit-LOD helpers into a second module (e.g.
+     `common/material_textures_raster.slang`) that imports the first and is
+     imported only by `rasterizer.slang`, `deferred.slang` and
+     `shadow_map.slang`. Record in the module comment which of the two shapes
+     you ended up with **and why** — that is the finding, not an implementation
+     detail.
+  3. Route all five consumers through the module: delete their local `textures`
+     / `textureSamplers` declarations (including `alpha_test.slang`'s, updating
+     its module comment, which currently explains why it owns them) and replace
+     the `if (material.XTextureID >= 0) { ... }` bodies with helper calls. Keep
+     each shader's surrounding control flow (`rasterizer.slang`'s `albedo`
+     branch, `deferred.slang`'s G-buffer packing, `path_tracing.slang`'s
+     `furnace` gate) exactly as it is — this task moves the sampling, not the
+     shading.
+  4. Recompile and run the byte-identical SPIR-V check from the batch preamble.
+     If any hash moves, the refactor changed behaviour — find out why.
+
+  **Test:** Add `BuildIntegrity.TextureSlotSamplingHasOneOwner` to
+  `buildIntegritySuite.cpp`: assert `[vk::binding(TEXTURES_BINDING, 0)]` and
+  `[vk::binding(SAMPLER_BINDING, 0)]` each appear in exactly the module(s) that
+  own them and in no consumer, and that no consumer still spells a
+  `resolve_texture_slot(...)` + `Sample`/`SampleLevel` pair inline for the four
+  slots. Same explicit-file-list shape as
+  `SharedDescriptorSetBindingsUseTheNamedConstants`.
+
+  **Build:** `clangcl-debug`, same invocation as task 1. No C++ rebuild is
+  needed for the shader edits themselves, but the new gate needs one.
+
+  **Context:** Batch IX deferred this deliberately: "A shared module cannot
+  simply own them, because it would have to own the `textures[]` /
+  `textureSamplers[]` arrays — which five files each declare separately today.
+  Deciding whether one module owns those arrays for all five, or whether the
+  sample helpers take the array as a parameter, is a design call worth its own
+  batch." Step 2 is where that call gets made; the parameter-passing
+  alternative is the fallback if *both* module shapes fail. Update
+  `docs/shader-sharing.md`'s per-module target table if it enumerates
+  `common/` modules — `bae7fc45` added a gate over it.
+
+- [ ] **(S) (refactor) Have `alpha_test.slang` call `fetch_material()`, and delete `material_fetch.slang`'s disproved "cannot import this module" paragraph** — the last two survivors of batch IX's stale-rationale sweep.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/alpha_test.slang` — `ray_hit_masked_out`'s
+    first three lines (`MaterialIDs*` / `Materials*` /
+    `materials->m[materialIDs->i[primitiveID]]`) and the module comment above,
+    which already records that both importers "import material_fetch and
+    alpha_test together without conflict".
+  - `Resources/ShadersSlang/common/material_fetch.slang` — `fetch_material`,
+    whose body those three lines reproduce exactly, and the header comment
+    ending "...which declare their own objectDescription binding and cannot
+    also import this module — can still use them".
+  - `Resources/ShadersSlang/raytracing/raytrace.rahit.slang`,
+    `path_tracing/path_tracing.slang` — the only two importers of
+    `alpha_test.slang`; both already import `material_fetch`.
+
+  **Steps:**
+  1. Add `import material_fetch;` to `alpha_test.slang` and replace the
+     inline three-line lookup in `ray_hit_masked_out` with
+     `ObjMaterial material = fetch_material(obj, primitiveID);`.
+  2. Rewrite `alpha_test.slang`'s "Declares its own textures/textureSamplers
+     bindings rather than importing them from material_fetch.slang..."
+     paragraph to say what is now true. If task 3 already moved those arrays
+     out, this paragraph mostly goes away — resolve the two edits, do not stack
+     two contradictory comments.
+  3. Rewrite `material_fetch.slang`'s header comment: `raytrace.rchit.slang`,
+     `raytrace.rahit.slang` and `path_tracing.slang` all import this module as
+     of `13f377b6`, so the reason given for splitting the rules into
+     `material_rules.slang` / `base_color.slang` / `emission.slang` /
+     `normal_map.slang` must be restated as what it actually is (those modules
+     declare no bindings and are therefore importable by shaders that own their
+     own descriptor declarations) rather than as a claim about entry points
+     that cannot import this one.
+  4. Recompile and run the byte-identical SPIR-V check from the batch preamble.
+
+  **Test:** Extend the existing gate that pins the shared-module rationale, or
+  add `BuildIntegrity.NoModuleReDeclaresFetchMaterialsBody`: assert no file
+  under `Resources/ShadersSlang/` other than `common/material_fetch.slang`
+  contains the `materials->m[materialIDs->i[` lookup. One assertion, explicit
+  allow-list of one file.
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Batch IX's task 1 (`13f377b6`) rewrote this rationale in five
+  `common/` modules and routed `path_tracing.slang` and `raytrace.rchit.slang`
+  through `material_fetch`; it did not reach `material_fetch.slang`'s own
+  header or `alpha_test.slang`'s copy of `fetch_material`'s body. This closes
+  that sweep. Land it after task 3 — both edit `alpha_test.slang`.
+
+- [ ] **(S) Extract the TLAS instance base-offset accumulator next to `assignTextureOffsets`, and unit-test it** — the number tasks 1 and 2 make the shaders read is produced by an untested inline loop in `createTLAS`, while its mirror-image contract half was extracted and tested long ago.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjectDescription.ixx` —
+    `assignTextureOffsets` and `planFlattenedTextureSlots`: the module that
+    already owns the "one entry per MESH, flattened across models" contract,
+    including the doc-comment style and the "stops cleanly on a count mismatch"
+    guard.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` —
+    `createTLAS`'s `uint32_t mesh_base_offset = 0;` accumulator and the
+    `scene->getMeshCount(model_index)` advance inside the instance loop.
+  - `Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp` — the suite to
+    extend; `ObjectDescriptionOffsets.MoreMeshesThanDescriptionsDoesNotOverrun`
+    is the guard-case pattern to mirror.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/BlasCompaction.hpp`
+    — the "device-free helper beside its caller, tested headlessly" precedent.
+
+  **Steps:**
+  1. Add `meshBaseOffsets(std::span<const uint32_t> meshCountPerModel) ->
+     std::vector<uint32_t>` to `scene/ObjectDescription.ixx`, exported from
+     `kataglyphis.vulkan.object_description`, returning one entry per model:
+     the running sum of preceding models' mesh counts. Document it as the
+     value written to `VkAccelerationStructureInstanceKHR::instanceCustomIndex`
+     and read by the traced shaders as the object-index base, and cross-link it
+     to `assignTextureOffsets` (which walks the same counts for
+     `texture_offset`) the way that function's comment already cross-links back.
+  2. Route `createTLAS` through it: compute the offsets once before the
+     instance loop, index by `model_index`, and drop the inline accumulator.
+     Keep the loop's existing early-return guards untouched.
+  3. Fix `createTLAS`'s stale comment if task 2 has not already (the
+     "== model_index while a Model holds one mesh" claim) — do not leave two
+     edits fighting over it.
+
+  **Test:** Add to `Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp`:
+  - `ObjectDescriptionOffsets.MeshBaseOffsetsAccumulateInModelOrder` —
+    `{2, 3, 1}` → `{0, 2, 5}`.
+  - `ObjectDescriptionOffsets.MeshBaseOffsetsHandleEmptyAndSingleMeshModels` —
+    `{}` → empty; `{1, 1, 1}` → `{0, 1, 2}` (the case that made the bug in
+    tasks 1–2 invisible); a model with 0 meshes does not shift its successors.
+  - `ObjectDescriptionOffsets.MeshBaseOffsetsAgreeWithAssignTextureOffsets` —
+    for the same `meshCountPerModel`, the offset of model *m* equals the index
+    of its first description in the flattened vector `assignTextureOffsets`
+    stamps. This is the contract, asserted directly.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — `ObjectDescription.ixx`
+  is a C++23 module interface (AGENTS.md § Containerized Windows Builds):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='ObjectDescriptionOffsets.*:BuildIntegrity.*'`.
+
+  **Context:** Pure host-side, device-free, fully verifiable in the container —
+  the one task in this batch whose correctness does not depend on reading
+  disassembly. It exists because tasks 1 and 2 make a host-computed number
+  load-bearing for the first time; leaving it in an untested inline loop with a
+  comment that says it does not matter is how the divergence survived.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+### Docs
+
+**Not in this batch, recorded so it is not lost.**
+
+- **`obj_to_gltf` drops `map_d` entirely, and `docs/shader-sharing.md` already
+  calls it a "Real gap, not an intended divergence".** The C++ `ObjLoader`
+  reads `map_d` into `ObjMaterial::alphaTextureID` and treats it as a `MASK`
+  cut-out at `alphaCutoff = 0.5` (`159c1c74`), honoured in four shaders. The
+  Rust converter parses only the scalar `d`/`Tr` directives and has no branch
+  for a textured opacity map at all, so a `map_d` material converts with
+  neither a cut-out nor per-texel alpha. Not sized here because the honest fix
+  needs a decision the converter's current design does not support: glTF has no
+  opacity-texture slot, so matching the C++ behaviour means compositing
+  `map_d`'s red channel into `map_Kd`'s alpha and emitting a *new image file* —
+  a converter that today only rewrites paths would gain an image decode/encode
+  dependency. Worth its own batch with that trade-off stated up front; a
+  warning-only stopgap would be cheap but leaves the renderers disagreeing.
+- **`ObjMaterial::get_textureID()` has no production caller** — only
+  `gltfParseSuite.cpp` and `objParseSuite.cpp` call it, on a struct whose
+  `textureID` member is public and read directly everywhere in `Src/`. Too
+  small to be worth a task on its own; fold it into the next dead-code sweep
+  that touches `Src/shared/scene/`, and change the two call sites to the member.
+
