@@ -54,8 +54,9 @@ distance already travelled -
 `BuildIntegrity.CloudRayMarchesUseAConstantStepLength` guards the distinction,
 which once made the quality slider a de-facto density slider). Each step:
 
-- Samples density from the noise volume (`sample_density`: two LODs, 128- and
-  32-texel period, blended) and accumulates Beer-Lambert transmittance
+- Samples density from the noise volume (`sample_density`: two world-space
+  periods, 256 and 64 units, both wrapped with `frac` into the volume's
+  `[0, 1)` domain and blended) and accumulates Beer-Lambert transmittance
   (`transmittance *= exp(-density * dt)`, the *only* assignment to
   `transmittance` inside the loop - march-loop-internal, monotonically
   non-increasing by construction).

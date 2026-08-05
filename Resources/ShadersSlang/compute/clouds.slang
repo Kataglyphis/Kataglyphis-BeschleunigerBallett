@@ -34,25 +34,30 @@ struct Clouds
 
 float sample_density(float3 position, Clouds cloud)
 {
-    float3 uvw128 = abs(fmod(position + cloud.offset, 256.0)) / 256.0;
+    // Wrap with frac(), not the old abs-of-fmod trick: fmod keeps the
+    // dividend's sign, so for negative inputs, taking fmod(x, N)'s absolute
+    // value mapped -x and +x onto the SAME texel - a mirror across the
+    // origin plane, not a wrap. frac() = x - floor(x) returns [0, 1) for
+    // negative inputs too, wrapping correctly on both sides of the origin.
+    float3 uvwCoarse = frac((position + cloud.offset) / 256.0);
     // Explicit LOD: this compute kernel has no fragment derivatives, so an
     // implicit-LOD .Sample() fails SPIR-V validation. See rchit_main's
     // base-colour sample comment in raytracing/raytrace.rchit.slang.
-    float4 noise128 = noiseTexture.SampleLevel(uvw128, 0.0);
+    float4 noiseCoarse = noiseTexture.SampleLevel(uvwCoarse, 0.0);
 
-    float baseDensity = ((cloud.pillowness * 0.25)) * max(0.0, noise128.r - cloud.threshold) * cloud.scale
-                      + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise128.g - cloud.threshold) * cloud.scale
-                      + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise128.b - cloud.threshold) * cloud.scale;
+    float baseDensity = ((cloud.pillowness * 0.25)) * max(0.0, noiseCoarse.r - cloud.threshold) * cloud.scale
+                      + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noiseCoarse.g - cloud.threshold) * cloud.scale
+                      + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noiseCoarse.b - cloud.threshold) * cloud.scale;
 
     baseDensity = baseDensity * (1.0 - cloud.cirrus_effect)
-                + max(0.0, noise128.a - cloud.threshold) * cloud.scale * cloud.cirrus_effect;
+                + max(0.0, noiseCoarse.a - cloud.threshold) * cloud.scale * cloud.cirrus_effect;
 
-    float3 uvw32 = abs(fmod(position + cloud.offset, 64.0)) / 64.0;
-    float4 noise32 = noiseTexture.SampleLevel(uvw32, 0.0);
+    float3 uvwFine = frac((position + cloud.offset) / 64.0);
+    float4 noiseFine = noiseTexture.SampleLevel(uvwFine, 0.0);
 
-    float fineDensity = 0.6 * max(0.0, noise32.r - cloud.threshold) * cloud.scale
-                      + 0.15 * max(0.0, noise32.g - cloud.threshold) * cloud.scale
-                      + 0.15 * max(0.0, noise32.b - cloud.threshold) * cloud.scale;
+    float fineDensity = 0.6 * max(0.0, noiseFine.r - cloud.threshold) * cloud.scale
+                      + 0.15 * max(0.0, noiseFine.g - cloud.threshold) * cloud.scale
+                      + 0.15 * max(0.0, noiseFine.b - cloud.threshold) * cloud.scale;
 
     return baseDensity + fineDensity * 0.3;
 }

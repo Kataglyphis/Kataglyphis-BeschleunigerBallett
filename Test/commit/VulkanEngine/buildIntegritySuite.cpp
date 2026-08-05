@@ -7192,9 +7192,10 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     }
 
     // Cross-check: the swizzle components clouds.slang's sample_density
-    // actually reads off noise128/noise32 must be exactly {r, g, b, a}, so
-    // this gate fails loudly if that consumer contract changes instead of
-    // silently checking a stale set.
+    // actually reads off noiseCoarse/noiseFine (the 256- and 64-world-unit
+    // period samples) must be exactly {r, g, b, a}, so this gate fails
+    // loudly if that consumer contract changes instead of silently checking
+    // a stale set.
     const auto clouds_contents = readFileText(clouds_path);
     ASSERT_TRUE(clouds_contents.has_value()) << "could not read " << clouds_path.string();
     const std::string sample_density_body =
@@ -7202,7 +7203,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     ASSERT_FALSE(sample_density_body.empty())
       << "could not locate sample_density's body in " << clouds_path.string();
 
-    static const std::regex kSwizzleRead(R"(noise(?:128|32)\.([rgba]))");
+    static const std::regex kSwizzleRead(R"(noise(?:Coarse|Fine)\.([rgba]))");
     std::set<char> swizzle_components;
     for (auto it = std::sregex_iterator(sample_density_body.begin(), sample_density_body.end(), kSwizzleRead);
          it != std::sregex_iterator(); ++it) {
@@ -7211,7 +7212,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     const std::set<char> expected_components = { 'r', 'g', 'b', 'a' };
     EXPECT_EQ(swizzle_components, expected_components)
       << clouds_path.string()
-      << "'s sample_density reads a different swizzle-component set off noise128/noise32 than {r, g, b, a}";
+      << "'s sample_density reads a different swizzle-component set off noiseCoarse/noiseFine than {r, g, b, a}";
 }
 
 // The cloud noise volume used to be written on a dedicated compute queue
@@ -7247,6 +7248,40 @@ TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
     EXPECT_EQ(device_header_source.find("getComputeQueue"), std::string::npos)
       << "VulkanDevice must not expose getComputeQueue() - the only caller (Clouds.cpp) now dispatches on the "
          "graphics queue instead";
+}
+
+// sample_density used to wrap the sample position into the noise volume's
+// [0, 1) domain with abs(fmod(x, N)) / N. fmod keeps the sign of its
+// dividend, so for negative x that returns (-N, 0], and abs() then maps -x
+// and +x onto the SAME texel - a mirror across the origin plane, not a wrap.
+// With the shipped cloud defaults the mirror plane sits almost exactly in
+// the middle of the visible box, so the cloud field rendered as a mirror
+// image of itself. frac(x) = x - floor(x) returns [0, 1) for negative
+// inputs too and wraps correctly. Guards against abs(fmod(...)) reappearing.
+TEST(BuildIntegrity, CloudNoiseSamplingWrapsRatherThanMirrors)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto contentsOpt = readFileText(clouds_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
+    const std::string &contents = *contentsOpt;
+
+    const std::string sample_density_body =
+      extract_function_body(contents, "float sample_density(float3 position, Clouds cloud)");
+    ASSERT_FALSE(sample_density_body.empty())
+      << "could not locate sample_density's body in " << clouds_path.string();
+
+    EXPECT_EQ(sample_density_body.find("abs(fmod("), std::string::npos)
+      << clouds_path.string()
+      << "'s sample_density wraps the sample position with abs(fmod(...)), which mirrors the "
+         "noise field across the origin plane for negative coordinates instead of wrapping it - "
+         "the default cloud box straddles that plane, so this renders as a mirror image of "
+         "itself. Use frac(x), which returns [0, 1) for negative x too.";
+    EXPECT_NE(sample_density_body.find("frac("), std::string::npos)
+      << clouds_path.string() << "'s sample_density must wrap the sample position with frac(), "
+                                 "not abs(fmod(...))";
 }
 
 // clouds.slang used to multiply density by the distance already travelled
