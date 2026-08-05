@@ -16,8 +16,8 @@ struct ShadowPushConstants
 };
 [[vk::push_constant]] ShadowPushConstants pc;
 
-[vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
+[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
+[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
 struct ShadowVsOut
 {

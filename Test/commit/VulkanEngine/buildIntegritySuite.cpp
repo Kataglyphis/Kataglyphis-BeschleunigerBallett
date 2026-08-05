@@ -3430,9 +3430,157 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
          }();
 }
 
+// One declared variable's [vk::binding(...)] attribute in the shared render
+// descriptor set, checked against scene_types.slang's named constant for it.
+struct SharedDescriptorBinding
+{
+    std::string relative_path;
+    std::string variable_name;
+};
+
+// The shared render descriptor set's nineteen set-0 declarations
+// (globalUBO_BINDING / sceneUBO_BINDING / OBJECT_DESCRIPTION_BINDING /
+// TEXTURES_BINDING / SAMPLER_BINDING / SHADOW_MAP_BINDING) plus the
+// ray-tracing set-1 declarations that share the same shared descriptor set
+// resources (TLAS_BINDING / OUT_IMAGE_BINDING / ACCUMULATION_IMAGE_BINDING),
+// across the eight files that declare them. common/alpha_test.slang is not
+// listed: it already used the named constants before this gate existed.
+// Deliberately NOT the full set of every [vk::binding(...)] in these files -
+// shadow_map.slang's own [vk::binding(1, 1)] lightSpaceMatrices and
+// deferred.slang's four set-1 subpass-input bindings are pipeline-local sets
+// with no named constant in scene_types.slang, so listing them here would be
+// a permanent, unfixable violation rather than a real regression.
+const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
+    {"common/material_fetch.slang", "objectDescription"},
+    {"common/cascaded_shadow.slang", "directionalShadowMaps"},
+    {"rasterizer/rasterizer.slang", "globalUBO"},
+    {"rasterizer/rasterizer.slang", "sceneUBO"},
+    {"rasterizer/rasterizer.slang", "textures"},
+    {"rasterizer/rasterizer.slang", "textureSamplers"},
+    {"deferred/deferred.slang", "globalUBO"},
+    {"deferred/deferred.slang", "textures"},
+    {"deferred/deferred.slang", "textureSamplers"},
+    {"deferred/deferred.slang", "globalUBO_lighting"},
+    {"deferred/deferred.slang", "sceneUBO_lighting"},
+    {"rasterizer/shadows/shadow_map.slang", "textures"},
+    {"rasterizer/shadows/shadow_map.slang", "textureSamplers"},
+    {"raytracing/raytrace.rchit.slang", "sceneUBO"},
+    {"raytracing/raytrace.rchit.slang", "textureSamplers"},
+    {"raytracing/raytrace.rchit.slang", "textures"},
+    {"raytracing/raytrace.rchit.slang", "TLAS"},
+    {"raytracing/raytrace.rgen.slang", "globalUBO"},
+    {"raytracing/raytrace.rgen.slang", "TLAS"},
+    {"raytracing/raytrace.rgen.slang", "image"},
+    {"path_tracing/path_tracing.slang", "globalUBO"},
+    {"path_tracing/path_tracing.slang", "sceneUBO"},
+    {"path_tracing/path_tracing.slang", "TLAS"},
+    {"path_tracing/path_tracing.slang", "image"},
+    {"path_tracing/path_tracing.slang", "accumulationImage"},
+};
+
+// HostAndShaderSharedConstantsAgree pins scene_types.slang's nine binding
+// constants against host_device_shared_vars.hpp, and the C++ side writes its
+// descriptor layout with the names
+// (VulkanRenderer::createSharedRenderDescriptorResources) - but nothing
+// checked that a shader's own [vk::binding(...)] attribute is actually
+// derived from the name rather than a bare integer that happens to agree
+// today. Renaming or renumbering e.g. SHADOW_MAP_BINDING would update the
+// host header and scene_types.slang in lockstep while a shader's literal
+// stayed behind, with every existing pin test still green. Same failure
+// mode NoShaderRedeclaresTheCascadeCount closes for MAX_CASCADES above; same
+// gate shape here, but over an explicit (file, declared-variable) list
+// rather than a directory walk - the exclusions noted on
+// kSharedDescriptorSetBindings above are the reason: a walk would also have
+// to explain away the pipeline-local bindings that have no named constant to
+// begin with (shadow_map.slang's lightSpaceMatrices, deferred.slang's
+// subpass inputs, and every standalone post-processing shader's own set).
+TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    std::set<std::string> distinct_paths;
+    for (const auto &binding : kSharedDescriptorSetBindings) { distinct_paths.insert(binding.relative_path); }
+    for (const auto &relative_path : distinct_paths) {
+        ASSERT_TRUE(fs::exists(slang_root / relative_path))
+          << "kSharedDescriptorSetBindings names a file that no longer exists: " << relative_path
+          << " - update the gate in buildIntegritySuite.cpp";
+    }
+
+    std::vector<std::string> violations;
+    for (const auto &binding : kSharedDescriptorSetBindings) {
+        const fs::path path = slang_root / binding.relative_path;
+        const auto lines = readFileLines(path);
+        ASSERT_TRUE(lines.has_value()) << "could not read " << path.string();
+
+        bool found_declaration = false;
+        for (const auto &raw_line : *lines) {
+            const std::string line = strip_line_comment(raw_line);
+            const std::size_t binding_pos = line.find("vk::binding(");
+            if (binding_pos == std::string::npos) { continue; }
+
+            // Whole-word search: the variable name may also occur as a
+            // prefix of a longer identifier earlier on the same line (e.g.
+            // "globalUBO" inside "globalUBO_BINDING" or "GlobalUBO"'s type),
+            // so every occurrence must be tried, not just the first.
+            bool matched_this_line = false;
+            std::size_t search_from = 0;
+            while (true) {
+                const std::size_t name_pos = line.find(binding.variable_name, search_from);
+                if (name_pos == std::string::npos) { break; }
+                search_from = name_pos + 1;
+
+                const bool left_ok = name_pos == 0 || !is_identifier_char(line[name_pos - 1]);
+                const std::size_t name_end = name_pos + binding.variable_name.size();
+                const bool right_ok = name_end >= line.size() || !is_identifier_char(line[name_end]);
+                if (!left_ok || !right_ok) { continue; }
+
+                matched_this_line = true;
+                break;
+            }
+            if (!matched_this_line) { continue; }
+
+            found_declaration = true;
+
+            const std::size_t arg_start = binding_pos + std::string("vk::binding(").size();
+            const std::size_t comma_pos = line.find(',', arg_start);
+            ASSERT_NE(comma_pos, std::string::npos)
+              << path.string() << ": malformed vk::binding(...) on the " << binding.variable_name << " declaration";
+            std::string first_arg = line.substr(arg_start, comma_pos - arg_start);
+            const auto first_non_space = first_arg.find_first_not_of(" \t");
+            const auto last_non_space = first_arg.find_last_not_of(" \t");
+            first_arg = (first_non_space == std::string::npos)
+              ? std::string()
+              : first_arg.substr(first_non_space, last_non_space - first_non_space + 1);
+
+            const bool is_integer_literal = !first_arg.empty()
+              && std::all_of(first_arg.begin(), first_arg.end(),
+                              [](unsigned char c) { return std::isdigit(c) != 0; });
+            if (is_integer_literal) {
+                violations.push_back(fs::path(binding.relative_path).generic_string() + ":" + binding.variable_name);
+            }
+            break;
+        }
+        ASSERT_TRUE(found_declaration)
+          << "kSharedDescriptorSetBindings names a declaration that no longer exists: " << binding.variable_name
+          << " in " << path.string() << " - update the gate in buildIntegritySuite.cpp";
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " shared render descriptor set binding(s) use a bare integer literal - "
+      << "use scene_types.slang's named binding constant - host_device_shared_vars.hpp and "
+      << "HostAndShaderSharedConstantsAgree already pin these: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Regression gate for the RT/PT objectDescription centralization:
-// common/material_fetch.slang owns the [vk::binding(2, 0)] objectDescription
-// binding and the raw MaterialIDs*/Materials* lookup it wraps
+// common/material_fetch.slang owns the [vk::binding(OBJECT_DESCRIPTION_BINDING, 0)]
+// objectDescription binding and the raw MaterialIDs*/Materials* lookup it wraps
 // (fetch_object_description() / fetch_material()) - every other shading path
 // must fetch through those two functions rather than re-declaring the
 // binding or hand-rolling the lookup, the way path_tracing.slang and

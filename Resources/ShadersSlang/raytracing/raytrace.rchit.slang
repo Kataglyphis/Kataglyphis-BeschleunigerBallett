@@ -15,12 +15,12 @@ import material_rules;
 // addresses — the same mechanism as the GLSL buffer_reference. The shared
 // BRDF math (import brdf) is used for the Epic/Unreal4 shading model.
 
-[vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO;
+[vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 
-[vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
-[vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
+[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
+[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
 
-[vk::binding(0, 1)] RaytracingAccelerationStructure TLAS;
+[vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 
 [[vk::push_constant]] PushConstantRaytracing pc_ray;
 

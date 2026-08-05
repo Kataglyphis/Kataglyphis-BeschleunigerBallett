@@ -18,10 +18,10 @@ import raster_geometry;
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
-[vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
-[vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-[vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
+[vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
+[vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
+[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
+[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
 [shader("vertex")]
 RasterVsOut vs_main(

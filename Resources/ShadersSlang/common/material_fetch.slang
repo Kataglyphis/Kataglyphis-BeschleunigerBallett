@@ -11,7 +11,7 @@ import scene_types;
 // entry points - which declare their own objectDescription binding and
 // cannot also import this module - can still use them.
 
-[vk::binding(2, 0)] StructuredBuffer<ObjectDescription> objectDescription;
+[vk::binding(OBJECT_DESCRIPTION_BINDING, 0)] StructuredBuffer<ObjectDescription> objectDescription;
 
 // The object description for a per-draw object index.
 ObjectDescription fetch_object_description(uint objectIndex)

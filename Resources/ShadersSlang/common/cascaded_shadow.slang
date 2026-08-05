@@ -8,7 +8,7 @@ import scene_types;
 // CascadedShadowMap.cpp): SampleCmpLevelZero below gets a free bilinear 2x2
 // PCF tap per sample instead of thresholding a bilinear-filtered raw depth
 // value, which is not PCF (it blends depths, not visibility).
-[vk::binding(5, 0)] Sampler2DArrayShadow directionalShadowMaps;
+[vk::binding(SHADOW_MAP_BINDING, 0)] Sampler2DArrayShadow directionalShadowMaps;
 
 // Fraction of direct light blocked: 0 = fully lit, 1 = fully shadowed.
 float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<SceneUBO> sceneUBO)

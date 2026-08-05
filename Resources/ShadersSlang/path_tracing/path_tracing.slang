@@ -26,15 +26,15 @@ struct PushConstantPathTracing
     uint max_bounces;
 };
 
-[vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
-[vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-// objectDescription (binding 2) comes from material_fetch.slang.
-// textures/textureSamplers (bindings 3, 4) come from alpha_test.slang,
-// shared with raytrace.rahit.slang's alpha test.
+[vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
+[vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
+// objectDescription (OBJECT_DESCRIPTION_BINDING) comes from material_fetch.slang.
+// textures/textureSamplers (TEXTURES_BINDING, SAMPLER_BINDING) come from
+// alpha_test.slang, shared with raytrace.rahit.slang's alpha test.
 
-[vk::binding(0, 1)] RaytracingAccelerationStructure TLAS;
-[vk::binding(1, 1)] RWTexture2D<float4> image;
-[vk::binding(2, 1)] RWTexture2D<float4> accumulationImage;
+[vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
+[vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;
+[vk::binding(ACCUMULATION_IMAGE_BINDING, 1)] RWTexture2D<float4> accumulationImage;
 
 [[vk::push_constant]] PushConstantPathTracing pc_ray;
 

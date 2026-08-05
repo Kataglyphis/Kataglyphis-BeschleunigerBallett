@@ -15,9 +15,9 @@ import raster_geometry;
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
-[vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
-[vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
+[vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
+[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
+[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
 struct GBufferOut
 {
@@ -137,8 +137,8 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
 
 // --- Deferred lighting pass ---
 
-[vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO_lighting;
-[vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO_lighting;
+[vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO_lighting;
+[vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO_lighting;
 
 [[vk::binding(0, 1)]] [[vk::input_attachment_index(0)]] SubpassInput<float4> inNormal;
 [[vk::binding(1, 1)]] [[vk::input_attachment_index(1)]] SubpassInput<float4> inAlbedo;

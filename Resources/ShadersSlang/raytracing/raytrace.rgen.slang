@@ -4,10 +4,10 @@ import rt_types;
 // Ray generation shader: camera ray setup + trace + image store.
 // Sole source for this shader. Emits SPIR-V only.
 
-[vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
+[vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 
-[vk::binding(0, 1)] RaytracingAccelerationStructure TLAS;
-[vk::binding(1, 1)] RWTexture2D<float4> image;
+[vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
+[vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;
 
 [[vk::push_constant]] PushConstantRaytracing pc_ray;
 
