@@ -171,7 +171,13 @@ jobs:
       # the loop: with `set -e` semantics the first bad target hid the verdict
       # on every target after it, so each round trip revealed exactly one
       # broken fuzzer out of seven.
+      # A hanging fuzz target must fail the step, not sit until the 6-hour job
+      # cap: on 2026-08-05 the Windows twin of this step spent 68 minutes
+      # inside one seed ("con", the Windows console device, which readTextFile
+      # opened and then read forever) and had to be killed by hand. Seven
+      # targets need well under a minute in total here.
       - name: Run fuzzer tests
+        timeout-minutes: 15
         run: |
           failed=""
           for t in first_fuzz_test example_fuzz_test obj_parsing_fuzz_test gltf_parsing_fuzz_test scene_config_fuzz_test shader_file_reader_fuzz_test texture_loading_fuzz_test; do
