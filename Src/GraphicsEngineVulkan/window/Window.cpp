@@ -127,6 +127,9 @@ void Window::window_focus_callback(GLFWwindow *window, int focused)
         Kataglyphis::Frontend::handle_focus_lost(the_window->input_state.keys.data(),
           the_window->input_state.mouse_first_moved,
           the_window->input_state.look_mode_active);
+
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        if (glfwRawMouseMotionSupported()) { glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE); }
     }
 }
 
@@ -166,8 +169,17 @@ void Window::mouse_button_callback(GLFWwindow *window, int button, int action, i
     ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    bool const was_look_mode_active = the_window->input_state.look_mode_active;
     Kataglyphis::Frontend::handle_mouse_button_callback(
       window, the_window->input_state.mouse_first_moved, the_window->input_state.look_mode_active, button, action);
+
+    bool const is_look_mode_active = the_window->input_state.look_mode_active;
+    if (is_look_mode_active != was_look_mode_active) {
+        glfwSetInputMode(window, GLFW_CURSOR, Kataglyphis::Frontend::cursor_input_mode_for(is_look_mode_active));
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, is_look_mode_active ? GLFW_TRUE : GLFW_FALSE);
+        }
+    }
 }
 
 void Window::scroll_callback(GLFWwindow *window, double x_offset, double y_offset)

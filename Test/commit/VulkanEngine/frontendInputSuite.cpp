@@ -21,8 +21,10 @@ import kataglyphis.shared.frontend.window_input_callbacks;
 namespace {
 using Kataglyphis::Frontend::clamp_frame_delta;
 using Kataglyphis::Frontend::consume_axis_delta;
+using Kataglyphis::Frontend::cursor_input_mode_for;
 using Kataglyphis::Frontend::handle_focus_lost;
 using Kataglyphis::Frontend::handle_key_callback;
+using Kataglyphis::Frontend::handle_mouse_button_callback;
 using Kataglyphis::Frontend::handle_mouse_callback;
 using Kataglyphis::Frontend::reset_window_keys;
 using Kataglyphis::Frontend::should_capture_cursor;
@@ -379,4 +381,30 @@ TEST(WindowInputUnit, OnlyTheRightButtonReleaseEndsLookMode)
     EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS));
     EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE));
     EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_MIDDLE, GLFW_RELEASE));
+}
+
+TEST(WindowInputUnit, CursorInputModeFollowsLookMode)
+{
+    EXPECT_EQ(cursor_input_mode_for(true), GLFW_CURSOR_DISABLED);
+    EXPECT_EQ(cursor_input_mode_for(false), GLFW_CURSOR_NORMAL);
+
+    // Drive the state machine through a full press -> release cycle and
+    // confirm the cursor mode implied by look_mode_active ends back at
+    // GLFW_CURSOR_NORMAL, matching Window::mouse_button_callback's
+    // transition-only glfwSetInputMode call.
+    bool mouse_first_moved = false;
+    bool look_mode_active = false;
+
+    handle_mouse_button_callback(nullptr, mouse_first_moved, look_mode_active, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS);
+    EXPECT_EQ(cursor_input_mode_for(look_mode_active), GLFW_CURSOR_DISABLED);
+
+    handle_mouse_button_callback(nullptr, mouse_first_moved, look_mode_active, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE);
+    EXPECT_EQ(cursor_input_mode_for(look_mode_active), GLFW_CURSOR_NORMAL);
+
+    // A focus loss mid-drag must also end at GLFW_CURSOR_NORMAL.
+    handle_mouse_button_callback(nullptr, mouse_first_moved, look_mode_active, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS);
+    bool keys[window_key_count];
+    reset_window_keys(keys);
+    handle_focus_lost(keys, mouse_first_moved, look_mode_active);
+    EXPECT_EQ(cursor_input_mode_for(look_mode_active), GLFW_CURSOR_NORMAL);
 }

@@ -115,6 +115,11 @@ inline bool imgui_wants_mouse_capture()
     return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
 }
 
+inline int cursor_input_mode_for(bool look_mode_active)
+{
+    return look_mode_active ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
+}
+
 inline bool should_capture_cursor(int button, int action)
 {
     return (action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT);
