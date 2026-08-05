@@ -14,6 +14,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -86,6 +87,22 @@ inline std::optional<std::vector<std::string>> readFileLines(const std::filesyst
         lines.push_back(std::move(line));
     }
     return lines;
+}
+
+/// Formats a collected list of gate violations for a gtest failure message.
+/// Three suites' worth of gate checks (102 sites in buildIntegritySuite.cpp
+/// alone) each grew their own copy of this join loop; three of those had
+/// already drifted into their own spelling of the separator, which is why
+/// prefix/suffix are parameters rather than hard-coded.
+inline std::string joinViolations(const std::vector<std::string> &entries,
+  std::string_view prefix = "\n  ",
+  std::string_view suffix = {})
+{
+    std::string joined;
+    for (const auto &entry : entries) {
+        joined.append(prefix).append(entry).append(suffix);
+    }
+    return joined;
 }
 
 }// namespace Kataglyphis::TestSupport

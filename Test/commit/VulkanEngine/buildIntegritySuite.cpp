@@ -50,6 +50,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
+using Kataglyphis::TestSupport::joinViolations;
 using Kataglyphis::TestSupport::readFileLines;
 using Kataglyphis::TestSupport::readFileText;
 using Kataglyphis::TestSupport::repoRoot;
@@ -1334,19 +1335,11 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
       << unmapped.size()
       << " compiled .spv could not be mapped back to a .slang source under Resources/ShadersSlang "
          "(naming contract in compile-slang-shaders.ps1 broken, or a source was deleted after compiling): "
-      << [&unmapped] {
-             std::string joined;
-             for (const auto &entry : unmapped) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(unmapped);
 
     EXPECT_TRUE(stale.empty()) << "SPIR-V older than its source - the GPU would run stale shaders. "
                               << "Stale binaries (" << stale.size() << "): "
-                              << [&stale] {
-                                     std::string joined;
-                                     for (const auto &entry : stale) { joined += "\n  " + entry; }
-                                     return joined;
-                                 }();
+                              << joinViolations(stale);
 }
 
 // A Slang module that a compiled .spv's source actually imports (transitively,
@@ -1392,11 +1385,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
     EXPECT_TRUE(stale.empty()) << stale.size()
                                << " SPIR-V binaries are older than a shared Slang import they actually depend "
                                   "on; editing a shared module must rebuild its dependents:"
-                               << [&stale] {
-                                      std::string joined;
-                                      for (const auto &entry : stale) { joined += "\n  " + entry; }
-                                      return joined;
-                                  }();
+                               << joinViolations(stale);
 }
 
 // Proves import_closure resolves only real `import` statements and recurses
@@ -1469,11 +1458,7 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
          "automatic derivative, which is only defined for Fragment shader invocations. Use the explicit-LOD form "
          "instead (see raytrace.rchit.slang's rchit_main base-colour sample, SampleLevel(..., 0.0), for the fix "
          "pattern). Offending module(s):"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // VulkanBuffer and VulkanImage are documented in AGENTS.md as "move-only with
@@ -1663,11 +1648,7 @@ TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
     EXPECT_TRUE(missing.empty()) << missing.size()
                                  << " shader source(s) have no SPIR-V, which means slangc was never run for "
                                     "them (missing from compile-slang-shaders.ps1's manifest?) or failed: "
-                                 << [&missing] {
-                                        std::string joined;
-                                        for (const auto &entry : missing) { joined += "\n  " + entry; }
-                                        return joined;
-                                    }();
+                                 << joinViolations(missing);
 }
 
 // Every literal .spv path referenced from Src/**/*.cpp, expressed relative to
@@ -1756,11 +1737,7 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
     EXPECT_TRUE(missing.empty()) << missing.size()
                                  << " active pipeline shaders have no compiled SPIR-V; pipeline "
                                     "creation would fail at runtime: "
-                                 << [&missing] {
-                                        std::string joined;
-                                        for (const auto &entry : missing) { joined += "\n  " + entry; }
-                                        return joined;
-                                    }();
+                                 << joinViolations(missing);
 }
 
 // host_device_shared_vars.hpp (C++) and scene_types.slang (Slang) hand-mirror
@@ -1915,11 +1892,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << missing_from_ci.size()
       << " fuzz target(s) declared in Test/fuzz/CMakeLists.txt are neither in Windows.yml's fuzz-seed foreach "
          "array nor in the smoke-target exclusion list, so they silently do not run in CI: "
-      << [&missing_from_ci] {
-             std::string joined;
-             for (const auto &entry : missing_from_ci) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing_from_ci);
 
     std::vector<std::string> dead_ci_entries;
     for (const auto &target : ci_targets) {
@@ -1929,11 +1902,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << dead_ci_entries.size()
       << " entry/entries in Windows.yml's fuzz-seed foreach array do not correspond to any target declared "
          "in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
-      << [&dead_ci_entries] {
-             std::string joined;
-             for (const auto &entry : dead_ci_entries) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(dead_ci_entries);
 }
 
 // shader_file_reader_fuzz_test and texture_loading_fuzz_test used to run only
@@ -2018,11 +1987,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
       << missing.size()
       << " fuzz target(s) declared in Test/fuzz/CMakeLists.txt do not run in every CI lane and are not listed "
          "in kNotRunInCi with a reason: "
-      << [&missing] {
-             std::string joined;
-             for (const auto &entry : missing) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing);
 
     // Unlike the two workflow files (whose foreach arrays are cross-checked
     // against declared_targets in BuildIntegrity.EveryFuzzTargetIsInTheWindowsCiFuzzList
@@ -2036,11 +2001,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
       << dead_local_entries.size()
       << " entry/entries in run_clangcl_debug.ps1's local fuzz-run foreach array do not correspond to any "
          "target declared in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
-      << [&dead_local_entries] {
-             std::string joined;
-             for (const auto &entry : dead_local_entries) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(dead_local_entries);
 }
 
 // A source-shape gate, not a behavioural one: it does not exercise a runner
@@ -2095,11 +2056,7 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
       << missing_exit.size()
       << " run_clangcl_*.ps1 helper(s) have no top-level 'exit $<variable>' line, so a failing launch inside "
          "them can silently report success to the caller: "
-      << [&missing_exit] {
-             std::string joined;
-             for (const auto &entry : missing_exit) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing_exit);
 }
 
 // Test/perf/perfSuite.cpp and Test/perf/baselines/win-9070xt-32core.json are
@@ -2143,11 +2100,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
       << missing_from_baseline.size()
       << " benchmark(s) registered in Test/perf/perfSuite.cpp have no row in " << baseline_path.string()
       << ", so Compare-PerfBaseline.ps1 silently never compares them (" << kRefreshHint << "): "
-      << [&missing_from_baseline] {
-             std::string joined;
-             for (const auto &entry : missing_from_baseline) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing_from_baseline);
 
     std::vector<std::string> dead_baseline_rows;
     for (const auto &name : baseline_names) {
@@ -2158,11 +2111,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
       << " do not correspond to any BENCHMARK(...) currently registered in Test/perf/perfSuite.cpp (renamed or "
          "removed? "
       << kRefreshHint << "): "
-      << [&dead_baseline_rows] {
-             std::string joined;
-             for (const auto &entry : dead_baseline_rows) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(dead_baseline_rows);
 }
 
 // SlangWgslPatchTablesAgree and SlangCompileManifestsAgree lived here until
@@ -2246,11 +2195,7 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
                                << " checked-in Rust-crate WGSL file(s) are older than the Slang source (or a "
                                   "shared common/ import) that generates them (regenerate via "
                                   "compile-slang-shaders.ps1/.sh): "
-                               << [&stale] {
-                                      std::string joined;
-                                      for (const auto &entry : stale) { joined += "\n  " + entry; }
-                                      return joined;
-                                  }();
+                               << joinViolations(stale);
 }
 
 // WGSL has no string literals, so a "//" can only ever appear as the start of
@@ -2296,11 +2241,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
       << " line(s) with '//' found in checked-in generated WGSL - generated WGSL must not be hand-edited - put "
          "the change in the .slang source, or in the post-emit patch table in "
          "compile-slang-shaders.ps1/.sh: "
-      << [&hand_edits] {
-             std::string joined;
-             for (const auto &entry : hand_edits) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(hand_edits);
 }
 
 // WGSL requires every non-builtin member of an inter-stage (varying) struct to
@@ -2395,11 +2336,7 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
       << " member(s) of an inter-stage WGSL struct carry neither @builtin nor @location - naga rejects that. "
          "This is the signature of a regeneration with slangc older than the manifest's "
          "minSlangcVersionForWgsl; regenerate with a newer slangc rather than hand-editing: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // The floor above is only enforced if it is actually in the manifest: both
@@ -2539,11 +2476,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
       << violations.size()
       << " line(s) reference a deleted GLSL-era shader file or an unresolved .slang filename - update the "
          "comment to name the file that actually exists today:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // The deferred geometry pass used to invent its own "0.1 alpha cutoff"
@@ -2620,11 +2553,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " raster shader(s) do not share the single alpha_masked_out() MASK rule:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Batch XVIII moved the guard-plus-default-plus-combine wrapper around the
@@ -2691,11 +2620,7 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " raw texture-slot sampler call(s) found outside their owning module:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // common/material_rules.slang exists so the ray tracing / path tracing entry
@@ -2800,11 +2725,7 @@ TEST(BuildIntegrity, EveryShadingPathAlphaTestsMaskMaterials)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " shading path(s) do not alpha-test MASK materials in their ray queries:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // glTF base colour = baseColorFactor * sampled texture (see
@@ -2871,11 +2792,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
 
     EXPECT_TRUE(violations.empty())
       << violations.size() << " shader(s) do not scale their sampled base colour by the material factor:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // f0 = mix(0.04, albedo, metallic) is brdf.slang's contract for reflectance
@@ -2916,11 +2833,7 @@ TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " shading path(s) pin f0's metallic mix to a 0.0 literal instead of the material's metallic value:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // KHR_texture_transform must apply to every base-colour sample, not just
@@ -2987,11 +2900,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 
     EXPECT_TRUE(violations.empty())
       << violations.size() << " base-colour sample site(s) skip the KHR_texture_transform UV matrix:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // ObjMaterial::emission is parsed by both loaders and uploaded to the GPU,
@@ -3373,11 +3282,7 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size() << " texture-slot sampling ownership violation(s):" << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << violations.size() << " texture-slot sampling ownership violation(s):" << joinViolations(violations);
 }
 
 // normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang (C++ Vulkan renderer, ObjMaterial) and
@@ -3457,11 +3362,7 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
          "scene_types.slang's/forward.slang's struct declarations - call normal_uv()/metallic_roughness_uv()/"
          "emissive_uv() (or forward.slang's base_color_uv()/metallic_roughness_uv()/normal_uv()/emissive_uv()/"
          "occlusion_uv()) instead:\n"
-      << [&violations]() {
-             std::string joined;
-             for (const std::string &violation : violations) { joined += violation + "\n"; }
-             return joined;
-         }();
+      << joinViolations(violations, "", "\n");
 }
 
 // forward.slang's uv-set mask bit (prim.material_flags.y) must be read by exactly one accessor per texture slot -
@@ -3792,11 +3693,7 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
       << violations.size()
       << " shader-local cascade-count constant(s) redeclare MAX_CASCADES (" << max_cascades
       << ") outside scene_types.slang - import MAX_CASCADES instead: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // One declared variable's [vk::binding(...)] attribute in the shared render
@@ -3945,11 +3842,7 @@ TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
       << " shared render descriptor set binding(s) use a bare integer literal - "
       << "use scene_types.slang's named binding constant - host_device_shared_vars.hpp and "
       << "HostAndShaderSharedConstantsAgree already pin these: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // One traced object-index source file and how many instance+geometry index
@@ -4027,11 +3920,7 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
          "a multi-mesh model resolves every mesh past its first to mesh 0's vertex/index/material "
          "buffers unless the geometry term is added (see raytrace.rchit.slang's "
          "InstanceID() + GeometryIndex() shape):"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     constexpr uint32_t kOpRayQueryGetIntersectionGeometryIndexKHR = 6022;
     constexpr std::size_t kMinGeometryIndexOpcodeCount = 3;// 2 candidate loops + 1 committed-hit block
@@ -4181,21 +4070,13 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
     EXPECT_TRUE(binding_violations.empty())
       << binding_violations.size() << " file(s) redeclare the objectDescription binding outside "
       << kMaterialFetchRelative << ": "
-      << [&binding_violations] {
-             std::string joined;
-             for (const auto &entry : binding_violations) { joined += "\n  " + entry; }
-             return joined;
-         }()
+      << joinViolations(binding_violations)
       << " - " << kFixSuggestion;
 
     EXPECT_TRUE(lookup_violations.empty())
       << lookup_violations.size() << " file(s) hand-roll the material_index_address lookup outside "
       << kMaterialFetchRelative << ": "
-      << [&lookup_violations] {
-             std::string joined;
-             for (const auto &entry : lookup_violations) { joined += "\n  " + entry; }
-             return joined;
-         }()
+      << joinViolations(lookup_violations)
       << " - " << kFixSuggestion;
 }
 
@@ -4316,11 +4197,7 @@ TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
                                        << " - resolve_texture_slot() moved or was rewritten?";
     EXPECT_TRUE(other_definitions.empty())
       << other_definitions.size() << " .slang file(s) besides scene_types.slang re-derive the clamp instead of "
-      << "calling resolve_texture_slot(): " << [&other_definitions] {
-             std::string joined;
-             for (const auto &entry : other_definitions) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << "calling resolve_texture_slot(): " << joinViolations(other_definitions);
 }
 
 // dirLight.direction stores the direction the light TRAVELS (a host-slider
@@ -4401,11 +4278,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
       << violations.size()
       << " shader site(s) read dirLight.direction without negating it inside normalize(...) - "
          "dirLight.direction is a travel direction, negate it to get the vector toward the light: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Completed item 8 removed the hard-coded `roughness = 0.9` from forward
@@ -4451,11 +4324,7 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
 
     EXPECT_TRUE(violations.empty())
       << violations.size() << " shader site(s) hard-code roughness instead of deriving it from the material:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     // Batch XVIII moved the metallic-roughness guard-plus-default-plus-combine
     // wrapper - including the material_roughness() fallback call - into
@@ -4536,11 +4405,7 @@ TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
       << " shader site(s) read material.shininess outside common/material_rules.slang - that field is pinned "
          "to a fixed fallback value by GltfLoader.cpp and is only meaningful through material_roughness()'s "
          "sentinel branch:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // bloom.slang's fs_brightpass and tonemap.slang's fs_main must agree on
@@ -4697,11 +4562,7 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
       << " PCF tap(s) sample past the shadow map's border unguarded - the ClampToEdge comparison "
          "sampler replicates the border texel's depth for an out-of-map tap rather than treating it "
          "as unshadowed, so every tap must be range-checked to [0,1] before sampling: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 namespace {
@@ -5073,11 +4934,7 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
       << " - this almost always means a lost call site (see this test's comment), not dead code to delete; wire "
          "the call back up, or if it is deliberate add a \"// UNREACHABLE_SLANG_FUNCTION_OK: <marker>\" comment "
          "on the definition line and a justified entry to kUnreachableSlangAllowlist above:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     std::vector<std::string> dead_exemptions;
     for (std::size_t idx = 0; idx < kUnreachableSlangAllowlist.size(); ++idx) {
@@ -5089,11 +4946,7 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
       << dead_exemptions.size()
       << " kUnreachableSlangAllowlist entr(y/ies) matched no unreachable function - the exemption is dead and "
          "must be deleted:"
-      << [&dead_exemptions] {
-             std::string joined;
-             for (const auto &entry : dead_exemptions) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(dead_exemptions);
 }
 
 namespace {
@@ -5259,11 +5112,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
       << violations.size()
       << " Slang function(s) reachable from a wgslMap source's own entry point(s) are missing from the "
          "checked-in WGSL that source generates: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 namespace {
@@ -5455,11 +5304,7 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
       << violations.size()
       << " Slang import(s) pull in a module whose exported functions/structs are never referenced by the "
          "importing file - delete the dead import (and any comment justifying it):"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // histogram.slang used to compile to nothing (its manifest row was
@@ -5504,11 +5349,7 @@ TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
       << violations.size()
       << " Slang source(s) with an entry point have no enabled row in shader-manifest.json - a source that "
          "compiles to nothing:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // The ten Slang sources feeding wgslMap used to say "Mirrors <x>.wgsl" in
@@ -5540,11 +5381,7 @@ TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
       << violations.size()
       << " wgslMap source(s) still claim to \"Mirror\" their generated output instead of saying they generate "
          "it:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 namespace {
@@ -5677,11 +5514,7 @@ TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
       << unimported.size()
       << " module interface(s) have no importer anywhere under Src/ or Test/ - either delete the dead module, "
          "or if it is deliberately rootless, add a justified entry to allowed_rootless_modules above: "
-      << [&unimported] {
-             std::string joined;
-             for (const auto &entry : unimported) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(unimported);
 }
 
 namespace {
@@ -5872,11 +5705,7 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
          "than continue with a silently default/empty value; or, for a deliberate exception, add a "
          "\"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" comment on the line and a justified entry "
          "to kCheckedResultAllowlist above):"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     std::vector<std::string> dead_exemptions;
     for (std::size_t idx = 0; idx < kCheckedResultAllowlist.size(); ++idx) {
@@ -5889,11 +5718,7 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
       << dead_exemptions.size()
       << " kCheckedResultAllowlist entr(y/ies) matched no \"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" "
          "comment in the source - the exemption is dead and must be deleted:"
-      << [&dead_exemptions] {
-             std::string joined;
-             for (const auto &entry : dead_exemptions) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(dead_exemptions);
 }
 
 namespace {
@@ -5992,11 +5817,7 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
       << " lines - beginCommandBuffer documents a null return on allocate/begin failure, and exceptions are "
          "disabled project-wide, so that null handle is the only failure signal available; recording into it "
          "or submitting it is undefined behaviour:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // endAndSubmitCommandBuffer's submit half used to return void, so a failed
@@ -6052,11 +5873,7 @@ TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
       << violations.size()
       << " endAndSubmitCommandBuffer(...) call(s) whose bool result is neither assigned, used in a condition, "
          "nor explicitly static_cast<void>-discarded - a failed submit must not be silently ignored:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // 0c4d2faa added the null-check gate above (EveryBeginCommandBufferResultIsChecked)
@@ -6291,11 +6108,7 @@ TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
       << violations.size()
       << " post-acquire early return(s) in drawFrame do not retire imageAvailableSemaphore() before returning "
          "(via abort_frame_after_acquire( or abort_frame_with_fatal_error():"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // docs/gpu-golden-testing.md's golden-suite counts have already had to be
@@ -6404,11 +6217,7 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
       << doc_path.string()
       << " hand-types a count next to 'runnable'/'defined'/'`Integration` tests' outside the golden-counts marker "
          "- the marker is the single source of truth, a second copy just drifts out of sync with it:"
-      << [&bare_copies] {
-             std::string joined;
-             for (const auto &entry : bare_copies) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(bare_copies);
 }
 
 // docs/path-tracing.md's "## Verification" section drifted out of sync with
@@ -6630,11 +6439,7 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
       << " file:line location(s), including the same-file `:NNN` shorthand, across Src/, "
          "Resources/ShadersSlang/, Test/ and docs/model-loading.md, which rot within days - cite the function or "
          "member name instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // docs/model-loading.md's "Material fields and where they come from" table
@@ -6694,11 +6499,7 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
 
     EXPECT_TRUE(missing.empty()) << doc_path.string()
                                   << "'s material table is missing a row for the following ObjMaterial member(s):"
-                                  << [&missing] {
-                                         std::string joined;
-                                         for (const auto &entry : missing) { joined += "\n  " + entry; }
-                                         return joined;
-                                     }();
+                                  << joinViolations(missing);
 }
 
 // docs/model-loading.md's "srgb" row hand-summarises which `.mtl` directives
@@ -6799,11 +6600,7 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
 
     EXPECT_TRUE(missing.empty())
       << doc_path.string() << "'s `srgb` row's `.mtl` cell (\"" << srgb_mtl_cell
-      << "\") is missing the following directive(s) named in a *TextureID row's `.mtl` cell:" << [&missing] {
-             std::string joined;
-             for (const auto &entry : missing) { joined += "\n  add `" + entry + "` to the srgb row's .mtl column"; }
-             return joined;
-         }();
+      << "\") is missing the following directive(s) named in a *TextureID row's `.mtl` cell:" << joinViolations(missing, "\n  add `", "` to the srgb row's .mtl column");
 }
 
 // docs/shader-sharing.md's "Known glTF loader divergences" section claims to
@@ -6841,11 +6638,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryKnownLoaderDivergence)
     EXPECT_TRUE(missing.empty())
       << doc_path.string()
       << "'s \"Known glTF loader divergences\" section is missing a row covering the following key(s):"
-      << [&missing] {
-             std::string joined;
-             for (const auto &entry : missing) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing);
 }
 
 // Parses docs/code-quality.md's `<!-- format-drift-denominator: N -->` marker
@@ -7088,11 +6881,7 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
       << "shader-manifest.json has " << ambiguous.size()
       << " non-test file(s) compiled to BOTH spirv and wgsl - " << doc_path.string()
       << "'s shader-targets table has only two columns (spirv-only / wgsl-only) and needs a third list for:"
-      << [&ambiguous] {
-             std::string joined;
-             for (const auto &entry : ambiguous) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(ambiguous);
 
     std::vector<std::string> doc_only;
     std::vector<std::string> mismatched;
@@ -7110,23 +6899,11 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
     }
 
     EXPECT_TRUE(doc_only.empty()) << doc_path.string() << " lists file(s) shader-manifest.json does not have:"
-                                  << [&doc_only] {
-                                         std::string joined;
-                                         for (const auto &entry : doc_only) { joined += "\n  " + entry; }
-                                         return joined;
-                                     }();
+                                  << joinViolations(doc_only);
     EXPECT_TRUE(manifest_only.empty())
-      << doc_path.string() << " is missing file(s) shader-manifest.json has:" << [&manifest_only] {
-             std::string joined;
-             for (const auto &entry : manifest_only) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << doc_path.string() << " is missing file(s) shader-manifest.json has:" << joinViolations(manifest_only);
     EXPECT_TRUE(mismatched.empty())
-      << doc_path.string() << " disagrees with shader-manifest.json on target(s):" << [&mismatched] {
-             std::string joined;
-             for (const auto &entry : mismatched) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << doc_path.string() << " disagrees with shader-manifest.json on target(s):" << joinViolations(mismatched);
 
     EXPECT_FALSE(doc_targets->contains("histogram.wgsl"))
       << doc_path.string()
@@ -7181,23 +6958,11 @@ TEST(BuildIntegrity, SharedModuleTargetsTableMatchesTheImportGraph)
 
     EXPECT_TRUE(doc_only.empty())
       << doc_path.string() << "'s shared-module-targets table lists module(s) not found under "
-      << (slang_root / "common").string() << ":" << [&doc_only] {
-             std::string joined;
-             for (const auto &entry : doc_only) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << (slang_root / "common").string() << ":" << joinViolations(doc_only);
     EXPECT_TRUE(truth_only.empty())
-      << doc_path.string() << "'s shared-module-targets table is missing module(s):" << [&truth_only] {
-             std::string joined;
-             for (const auto &entry : truth_only) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << doc_path.string() << "'s shared-module-targets table is missing module(s):" << joinViolations(truth_only);
     EXPECT_TRUE(mismatched.empty())
-      << doc_path.string() << "'s shared-module-targets table disagrees with the import graph on:" << [&mismatched] {
-             std::string joined;
-             for (const auto &entry : mismatched) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << doc_path.string() << "'s shared-module-targets table disagrees with the import graph on:" << joinViolations(mismatched);
 }
 
 // Parses the X, Y, Z triple out of the first "[numthreads(X, Y, Z)]" in
@@ -8060,11 +7825,7 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
     ASSERT_GT(gated_barriers_found, 0u) << "found zero image barriers transitioning to eShaderReadOnlyOptimal in "
                                            "PathTracing.cpp/Raytracing.cpp - the scan itself is broken";
 
-    EXPECT_TRUE(violations.empty()) << [&violations] {
-        std::string joined;
-        for (const auto &entry : violations) { joined += "\n  " + entry; }
-        return joined;
-    }();
+    EXPECT_TRUE(violations.empty()) << joinViolations(violations);
 }
 
 // A stray NUL or other C0 control byte inside a source file makes
@@ -8130,11 +7891,7 @@ TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
       << " project source file(s) contain a stray control byte (NUL or a C0 control other than tab/LF/CR), "
          "which makes grep/ripgrep treat the file as binary and silently excludes it from every text search "
          "this project's tooling relies on: "
-      << [&offenders] {
-             std::string joined;
-             for (const auto &entry : offenders) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(offenders);
 }
 
 // Every layout contract in this repo used to be a hand-copied number: the
@@ -8195,19 +7952,11 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
       << not_found_in_any_spv.size()
       << " struct(s) expected in the compiled SPIR-V were not emitted by ANY .spv under " << spirv_root.string()
       << " - renamed or deleted shader struct: "
-      << [&not_found_in_any_spv] {
-             std::string joined;
-             for (const auto &entry : not_found_in_any_spv) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(not_found_in_any_spv);
 
     EXPECT_TRUE(offset_mismatches.empty())
       << offset_mismatches.size() << " host/SPIR-V struct-offset mismatch(es):"
-      << [&offset_mismatches] {
-             std::string joined;
-             for (const auto &entry : offset_mismatches) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(offset_mismatches);
 }
 
 // The host/device push-constant and UBO headers (PushConstant*.hpp,
@@ -8256,11 +8005,7 @@ TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
       << " line(s) under " << src_root.string()
       << " still carry the retired GLSL dual-compile shim (__cplusplus guard or KTG_VEC macro) - the GLSL tree "
          "these guarded against is gone and these headers are compiled only by C++: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 namespace {
@@ -8411,11 +8156,7 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
       << slang_root.string()
       << " - either wire the field into a shader or delete it (see the cloudMovementDirection removal for the "
          "precedent):"
-      << [&unread] {
-             std::string joined;
-             for (const auto &entry : unread) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(unread);
 }
 
 // ObjMaterial mirrors SceneUBO's blind spot: a member the host packs into
@@ -8461,11 +8202,7 @@ TEST(BuildIntegrity, EveryObjMaterialFieldIsReadByAShader)
       << slang_root.string()
       << " - either wire the field into a shader or delete it (see the ambient/specular/transmittance/ior/illum "
          "removal for the precedent):"
-      << [&unread] {
-             std::string joined;
-             for (const auto &entry : unread) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(unread);
 }
 
 // EverySceneUboFieldIsReadByAShader above checks whole member names, so a
@@ -8604,11 +8341,7 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
          "exceptions are disabled project-wide (-fno-exceptions/EHs-), so this aborts the process instead of "
          "returning an error; pass the error_code overload (see FileReader.ixx), or for a deliberate exception "
          "add a \"// NO_EC_OK: <reason>\" trailing comment on the line:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
@@ -8648,11 +8381,7 @@ TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
       << " spdlog call(s) under Src/ log a raw Vulkan handle - these are noise (the validation layers and Vulkan "
          "debug labels already give a better diagnostic) and read as intentional instrumentation; delete them "
          "instead of demoting to spdlog::debug:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Descriptor set layout/pool/set triads must be declared through
@@ -8730,11 +8459,7 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " budget mismatch(es) for hand-rolled descriptor set layout/pool/set triad(s) found under Src/:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 TEST(BuildIntegrity, DescriptorBudgetsNameOnlyFilesThatStillHaveTriads)
@@ -8865,11 +8590,7 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
       << " acceleration-structure rebuild(s) bypass VulkanRenderer::refreshAfterSceneChange(), the only place "
          "that follows a rebuild with updateAllDescriptorSets() - route through it instead of calling "
          "asManager.createASForScene()/createTLAS() directly:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     const auto header_contents_opt =
       readFileText(repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.ixx");
@@ -8959,11 +8680,7 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
       << "VulkanRenderer::shaderHotReload only calls " << call_sites << " stage(s)' shaderHotReload, but "
       << implementing_classes.size() << " stage(s) implement it - some implementation is silently unreachable. "
          "Stage classes implementing shaderHotReload: "
-      << [&implementing_classes] {
-             std::string joined;
-             for (const auto &name : implementing_classes) { joined += "\n  " + name; }
-             return joined;
-         }();
+      << joinViolations(implementing_classes);
 }
 
 // Every subsystem that loads SPIR-V must implement shaderHotReload, or the
@@ -9016,11 +8733,7 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
     EXPECT_TRUE(missing_implementation.empty())
       << missing_implementation.size()
       << " subsystem(s) load SPIR-V but declare no shaderHotReload (neither the .cpp nor its paired .ixx): "
-      << [&missing_implementation] {
-             std::string joined;
-             for (const auto &entry : missing_implementation) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing_implementation);
 
     const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
     const auto renderer_contents_opt = readFileText(renderer_path);
@@ -9137,11 +8850,7 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
       << offenders.size()
       << " shaderHotReload(...) implementation(s) recreate a pipeline layout without destroying the previous "
          "one first, leaking a vk::PipelineLayout on every hot reload: "
-      << [&offenders] {
-             std::string joined;
-             for (const auto &entry : offenders) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(offenders);
 }
 
 // Raytracing::shaderHotReload destroys and recreates graphicsPipeline, but
@@ -9239,11 +8948,7 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
       << violations.size()
       << " hand-rolled vk::ComputePipelineCreateInfo found under Src/ - create compute pipelines through "
          "createComputePipeline (vulkan_base/ShaderHelper.ixx) instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Raytracing.cpp used to hand-roll six vk::PipelineShaderStageCreateInfo
@@ -9321,11 +9026,7 @@ TEST(BuildIntegrity, EveryPipelineShaderStageGoesThroughTheSharedBuilder)
       << " hand-rolled vk::PipelineShaderStageCreateInfo field assignment(s) found under "
          "Src/GraphicsEngineVulkan/ - build shader stages through common/ShaderStageHelper.hpp's "
          "buildShaderStageCreateInfo instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Every hand-rolled destroyPipelineLayout(...)/destroyPipeline(...) teardown
@@ -9376,11 +9077,7 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
       << " hand-rolled destroyPipelineLayout(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy "
          "pipelines and their layouts through Kataglyphis::destroyPipelineAndLayout "
          "(common/PipelineLayoutHelper.hpp) instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Every raster stage used to spell out its own depth attachment creation
@@ -9449,11 +9146,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
          "Kataglyphis::VulkanRendererInternals::createDepthAttachment (renderer/DepthAttachment.ixx) instead, "
          "or add a \"// DEPTH_ATTACHMENT_CHAIN_OK: <marker>\" trailing comment on the line if the site is a "
          "deliberate non-goal:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     EXPECT_TRUE(marker_found) << "expected to find the CascadedShadowMap.cpp shadow-map-array exemption marker "
                                   "(\"// DEPTH_ATTACHMENT_CHAIN_OK: ...\") in source - if it was removed, delete "
@@ -9520,11 +9213,7 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
       << " hand-rolled external subpass dependency/dependencies found under Src/GraphicsEngineVulkan/ - route "
          "single-depth-image raster stages through Kataglyphis::buildExternalColorDepthDependency "
          "(common/RenderPassHelper.hpp) instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Colour twin of NoStageHandRollsTheDepthAttachmentChain: every raster stage
@@ -9586,11 +9275,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
          "Kataglyphis::VulkanRendererInternals::createColorAttachment (renderer/ColorAttachment.ixx) instead, "
          "or add a \"// COLOR_ATTACHMENT_CHAIN_OK: <marker>\" trailing comment on the line if the site is a "
          "deliberate non-goal:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     EXPECT_TRUE(marker_found) << "expected to find at least one of the non-goal exemption markers "
                                   "(\"// COLOR_ATTACHMENT_CHAIN_OK: ...\") in source - if all of them were "
@@ -9691,11 +9376,7 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
       << violations.size()
       << " hand-rolled .destroyFramebuffer(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy "
          "framebuffers through Kataglyphis::destroyFramebuffers (common/FramebufferHelper.hpp) instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Every hand-rolled render-pass teardown used to be spelled out at each of
@@ -9743,11 +9424,7 @@ TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
       << violations.size()
       << " hand-rolled .destroyRenderPass(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy render "
          "passes through Kataglyphis::destroyRenderPass (common/RenderPassHelper.hpp) instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Four render stages' framebuffers reference the outgoing swapchain's image
@@ -9969,11 +9646,7 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
       << " device feature bit(s) are hardcoded to true outside the " << kGuard
       << " block - every enabled feature must be copied from an availability query so a device that does not "
          "support it degrades instead of failing vkCreateDevice:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // Pins the SHAPE of the cascade light-matrix double-buffering fix, not its
@@ -10176,11 +9849,7 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
          "callers under Src/ - build meshes and texture slots through "
          "addMeshesForRanges/addTextureOrDefault/ensureAtLeastOneTexture and check upload preconditions through "
          "uploadPreconditionsMet (kataglyphis.vulkan.model_assembly) instead:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // CascadedShadowMap::createDescriptorSetAndPipeline() used to spin up a
@@ -10223,11 +9892,7 @@ TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
       kExpected.begin(),
       kExpected.end()))
       << "expected only VulkanRenderer.cpp to create a vk::CommandPool, found:"
-      << [&files_with_pool_creation] {
-             std::string joined;
-             for (const auto &entry : files_with_pool_creation) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(files_with_pool_creation);
 }
 
 TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
@@ -10373,11 +10038,7 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
     EXPECT_TRUE(violations.empty())
       << violations.size() << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier declarations under "
          "Src/GraphicsEngineVulkan/:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
@@ -10519,11 +10180,7 @@ TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
          "\"inline\" - internal linkage in a header gives every translation unit its own copy, which is how "
          "chooseDepthFormat (FormatHelper.hpp) ended up calling an internal-linkage function across ten TUs, "
          "an IFNDR ODR violation the compiler is not required to diagnose:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // AGENTS.md states that cleanUp() must be idempotent and safe to call twice.
@@ -10594,11 +10251,7 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
          "(`~Name() { cleanUp(); }`) - AGENTS.md requires cleanUp() to double as the destructor body so a "
          "forgotten explicit call still tears the object down. Add the destructor call, or add the class to "
          "kExemptClasses with a reason if it genuinely cannot call cleanUp() from its destructor:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // App::run() used to unconditionally `return EXIT_SUCCESS;`, so a device-lost
@@ -10676,11 +10329,7 @@ TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
          "Src/shared/ - take the parameter as `const std::shared_ptr<VulkanDevice> &` instead, or add a "
          "trailing \"// DEVICE_SINK_OK: <reason>\" comment on the line if the parameter is a deliberate sink "
          "moved into a member:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     EXPECT_TRUE(marker_found) << "expected to find at least one \"// DEVICE_SINK_OK: ...\" exemption marker "
                                   "(DescriptorSetGroup::create, the GltfLoader ctor, the ShaderStagePair ctor) - "
@@ -10753,11 +10402,7 @@ TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " Test source file(s) reimplement RepoFiles.hpp's repoRoot()/readFileText() instead of including it: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // README.md and docs/source/conf.py drifted to the old "Kataglyphis-Renderer"
@@ -10799,11 +10444,7 @@ TEST(BuildIntegrity, DocsNameThisRepository)
 
     EXPECT_TRUE(violations.empty())
       << violations.size() << " doc file(s) still reference the old repository slug \"" << kStaleSlug << "\":"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // The C++ engine's swapchain is UNORM, not sRGB (SwapchainChoices.hpp's
@@ -10961,20 +10602,12 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
     EXPECT_TRUE(anisotropy_violations.empty())
       << "buildSamplerCreateInfo call(s) hard-code a maxAnisotropy literal above the disabled sentinel - route "
          "through Kataglyphis::resolveMaxAnisotropy(anisotropyEnabled, device->maxSamplerAnisotropy()) instead:"
-      << [&anisotropy_violations] {
-             std::string joined;
-             for (const auto &entry : anisotropy_violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(anisotropy_violations);
 
     EXPECT_TRUE(get_features_violations.empty())
       << "getFeatures()/getFeatures2() called outside VulkanDevice.cpp - device capability queries belong in one "
          "place so availability and the features actually enabled cannot diverge:"
-      << [&get_features_violations] {
-             std::string joined;
-             for (const auto &entry : get_features_violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(get_features_violations);
 }
 
 // ASSERT_VULKAN (common/Utilities.hpp) used to expand to a bare unbraced
@@ -11060,11 +10693,7 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
       << violations.size()
       << " ASSERT_VULKAN call site(s) do not end in \");\" - the macro is a do/while(false) statement and requires "
          "the trailing semicolon:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 }
 
 // glTF 2.0 Section 3.9.4 ("Normals") requires that a back-facing fragment of
@@ -11321,11 +10950,7 @@ TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
          "static_cast<void>(...) - capture the bool and handle the false case (it means the submitted work "
          "never happened), or add a trailing \"// SUBMIT_RESULT_IGNORED_OK: <reason>\" comment on the line if "
          "the discard is a deliberate, reasoned exception:"
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
 
     EXPECT_TRUE(call_site_seen) << "expected to find at least one non-discarded endAndSubmitCommandBuffer() call "
                                     "site under Src/ - if this fired, either the function was renamed (update "
@@ -11503,20 +11128,12 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
 
     EXPECT_TRUE(malformed_rows.empty())
       << doc_path.string()
-      << "'s per-shading-path table has row(s) with an empty shading-path cell:" << [&malformed_rows] {
-             std::string joined;
-             for (const auto &entry : malformed_rows) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << "'s per-shading-path table has row(s) with an empty shading-path cell:" << joinViolations(malformed_rows);
 
     EXPECT_TRUE(extra_rows.empty())
       << doc_path.string()
       << "'s per-shading-path table has row(s) that are not a current ObjMaterial member (or are duplicates):"
-      << [&extra_rows] {
-             std::string joined;
-             for (const auto &entry : extra_rows) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(extra_rows);
 
     std::vector<std::string> missing_rows;
     for (const auto &member : members) {
@@ -11524,11 +11141,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
     }
     EXPECT_TRUE(missing_rows.empty())
       << doc_path.string() << "'s per-shading-path table is missing a row for the following ObjMaterial member(s):"
-      << [&missing_rows] {
-             std::string joined;
-             for (const auto &entry : missing_rows) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing_rows);
 
     // One shading-path source blob per table column, in table-column order.
     // shadow_map.slang and alpha_test.slang share one column - neither ever
@@ -11612,11 +11225,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
       << doc_path.string()
       << "'s per-shading-path table claims the following (member / shading path) read(s), but neither "
          "material.<name> nor a known helper appears in that shading path's own source:"
-      << [&unverified] {
-             std::string joined;
-             for (const auto &entry : unverified) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(unverified);
 }
 
 // PostStage::createRenderpass builds its single colour attachment with
@@ -11754,18 +11363,10 @@ TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
     }
 
     EXPECT_TRUE(missing.empty()) << perf_suite_path.string() << " registers benchmark(s) with no row in "
-                                  << baseline_path.string() << ":" << [&missing] {
-        std::string joined;
-        for (const auto &entry : missing) { joined += "\n  " + entry; }
-        return joined;
-    }();
+                                  << baseline_path.string() << ":" << joinViolations(missing);
     EXPECT_TRUE(stale.empty()) << baseline_path.string()
                                 << " has benchmarks[] row(s) for benchmark(s) no longer registered in "
-                                << perf_suite_path.string() << " - delete the stale row(s):" << [&stale] {
-        std::string joined;
-        for (const auto &entry : stale) { joined += "\n  " + entry; }
-        return joined;
-    }();
+                                << perf_suite_path.string() << " - delete the stale row(s):" << joinViolations(stale);
 }
 
 // GUISceneSharedVars.ixx has grown eleven fields since GUI.cpp's shadow block
@@ -11806,11 +11407,7 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
       << gui_path.string()
       << " does not read/write the following GUISceneSharedVars tunable(s) - add a control, or if it is not "
          "meant to be user-facing, add it to the exemption list in this test:"
-      << [&missing] {
-             std::string joined;
-             for (const auto &entry : missing) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(missing);
 }
 
 // Parses docs/cpp-renderer-improvements.md's `<!-- commit-suite-test-count: N -->` marker.
@@ -11986,9 +11583,38 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
       << violations.size()
       << " read-only accessor(s) are missing const - either add const, or if the compiler rejects it, add a "
          "named Exemption recording the member that forced it: "
-      << [&violations] {
-             std::string joined;
-             for (const auto &entry : violations) { joined += "\n  " + entry; }
-             return joined;
-         }();
+      << joinViolations(violations);
+}
+
+// This suite used to hand-roll the same "join a vector of strings for a gtest
+// failure message" lambda at 102 call sites, three of which had already
+// drifted into their own spelling of the separator. Kataglyphis::TestSupport::
+// joinViolations (RepoFiles.hpp) is now the one place that loop lives - this
+// pins that down the same way ImageMemoryBarriersGoThroughTheSharedHelper does
+// for hand-rolled barriers. A flat budget of 0 is correct here, unlike the
+// per-file barrier budgets: there is no legitimate reason for this file to
+// hand-roll the join again.
+TEST(BuildIntegrity, ViolationListsGoThroughTheSharedJoiner)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path this_file = repo_root / "Test" / "commit" / "VulkanEngine" / "buildIntegritySuite.cpp";
+    const auto lines = readFileLines(this_file);
+    ASSERT_TRUE(lines.has_value()) << "could not read " << this_file.string();
+
+    const std::string kHandRolledJoinDecl = std::string("std::string ") + "joined;";
+
+    std::vector<std::string> violations;
+    std::size_t line_number = 0;
+    for (const auto &line : *lines) {
+        ++line_number;
+        if (line.find(kHandRolledJoinDecl) != std::string::npos) {
+            violations.push_back(this_file.string() + ':' + std::to_string(line_number)
+                                  + ": hand-rolled join loop - use Kataglyphis::TestSupport::joinViolations instead");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " hand-rolled join loop(s) found, budget is 0: " << joinViolations(violations);
 }

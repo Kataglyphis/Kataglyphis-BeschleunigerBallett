@@ -10,6 +10,7 @@
 
 #include "RepoFiles.hpp"
 
+using Kataglyphis::TestSupport::joinViolations;
 using Kataglyphis::TestSupport::readFileLines;
 using Kataglyphis::TestSupport::readFileText;
 
@@ -145,4 +146,22 @@ TEST(RepoFilesUnit, ReadFileLinesReturnsLastLineWithNoTrailingNewline)
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
+}
+
+TEST(RepoFilesUnit, JoinViolationsEmptyVectorReturnsEmptyString)
+{
+    EXPECT_EQ(joinViolations({}), "");
+}
+
+TEST(RepoFilesUnit, JoinViolationsDefaultPrefixesEachEntryWithIndentedNewline)
+{
+    EXPECT_EQ(joinViolations({ "one" }), "\n  one");
+    EXPECT_EQ(joinViolations({ "one", "two" }), "\n  one\n  two");
+}
+
+TEST(RepoFilesUnit, JoinViolationsSupportsExplicitPrefixAndSuffix)
+{
+    EXPECT_EQ(joinViolations({ "one", "two" }, "", "\n"), "one\ntwo\n");
+    EXPECT_EQ(joinViolations({ "x" }, "\n  add `", "` to the srgb row's .mtl column"),
+      "\n  add `x` to the srgb row's .mtl column");
 }
