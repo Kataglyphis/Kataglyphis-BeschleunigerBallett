@@ -11017,6 +11017,24 @@ A non-empty `Compare-Object` result on task 3 or 4 means the refactor changed
 behaviour — stop and find out why rather than re-baselining. **Say which suites
 you actually ran**, and say explicitly that no image was rendered.
 
+**Task 3's actual finding (relevant to task 4 too):** the SPIR-V was NOT
+byte-identical after extracting the four texture-slot blocks into
+`common/material_textures.slang`. Root cause, confirmed by disassembling
+before/after with `spirv-dis` and diffing with SSA IDs normalized: identical
+`OpCapability`/`OpExtension` lists, identical single-fully-inlined-`OpFunction`
+shape (no `OpFunctionCall` either side), and identical opcode-count histograms
+in 4 of 6 touched shaders (only `OpName` debug-info counts differed). The
+other 2 shaders (`raytrace.rahit.rahit_main`, `path_tracing.path_tracing_main`)
+each gained one extra `OpLoad` per call site of the newly-extracted
+`alpha_test.slang` helper: before, two sibling `if` branches in the same
+function shared one hoisted load of `obj.texture_offset`; after, each inlined
+call to the shared helper re-loads it. Same address, immutable in between —
+value-identical, not a behaviour change — but not byte-identical either, so
+task 4 (which also moves code across a function boundary in `alpha_test.slang`)
+should expect the same kind of diff and apply the same disassemble-and-diff
+scrutiny rather than assuming a non-empty `Compare-Object` is a real
+regression.
+
 **Ordering.** Land 1 → 2 → 3 → 4 → 5, one at a time. Task 2 extends the gate
 task 1 adds and edits the same four expressions; task 4 edits
 `alpha_test.slang`, which task 3 also touches; tasks 1–4 all add to
@@ -11026,77 +11044,6 @@ reason too. Only task 5 changes a C++23 module interface
 1–4 change no `Src/` compiled output at all.
 
 ### C++ Vulkan engine
-
-- [ ] **(M) (refactor) Give the four texture-slot sample blocks and the five `textures[]`/`textureSamplers[]` declarations one owning module** — deferred from batch IX with its stated prerequisite (`9ee460cb`, symbolic binding numbers) now landed.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang` — `fs_main`'s alpha,
-    normal, metallic-roughness and emissive blocks (implicit-LOD `Sample`).
-  - `Resources/ShadersSlang/deferred/deferred.slang` — `geometry_fs_main`'s
-    byte-identical four, including the duplicated four-line `map_d` comment.
-  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang` and
-    `path_tracing/path_tracing.slang` — the same four with
-    `SampleLevel(..., 0.0)` and the "Explicit LOD: ..." comments.
-  - `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang` — the fifth
-    declaration of the two arrays; uses only the base-colour and alpha slots.
-  - `Resources/ShadersSlang/common/alpha_test.slang` — the current owner of a
-    copy of both arrays, and the module comment explaining why it declares them.
-  - `Resources/ShadersSlang/common/base_color.slang` — the per-slot
-    `normal_uv` / `metallic_roughness_uv` / `emissive_uv` accessors the helpers
-    must keep calling.
-  - `Resources/ShadersSlang/common/raster_geometry.slang` (`c9ba1be6`) — the
-    most recent example of extracting a shared stage into `common/`.
-
-  **Steps:**
-  1. Add `Resources/ShadersSlang/common/material_textures.slang` declaring the
-     two arrays once at `TEXTURES_BINDING` / `SAMPLER_BINDING` (named
-     constants, per `9ee460cb`), plus explicit-LOD helpers for the four slots —
-     e.g. `sample_normal_lod0`, `sample_metallic_roughness_lod0`,
-     `sample_emissive_lod0`, `sample_alpha_lod0` — each taking
-     `(ObjectDescription obj, ObjMaterial material, float2 texCoords)`, doing
-     the `resolve_texture_slot` + `SampleLevel(..., 0.0)` pair, and each
-     documented once (move the `map_d` comment and the "Explicit LOD" rationale
-     here rather than copying them).
-  2. Add the implicit-LOD variants for the raster paths. **Try one module
-     first**; if Slang's capability checking rejects an implicit-LOD `Sample()`
-     in a module a ray-tracing/compute entry point imports, split the
-     implicit-LOD helpers into a second module (e.g.
-     `common/material_textures_raster.slang`) that imports the first and is
-     imported only by `rasterizer.slang`, `deferred.slang` and
-     `shadow_map.slang`. Record in the module comment which of the two shapes
-     you ended up with **and why** — that is the finding, not an implementation
-     detail.
-  3. Route all five consumers through the module: delete their local `textures`
-     / `textureSamplers` declarations (including `alpha_test.slang`'s, updating
-     its module comment, which currently explains why it owns them) and replace
-     the `if (material.XTextureID >= 0) { ... }` bodies with helper calls. Keep
-     each shader's surrounding control flow (`rasterizer.slang`'s `albedo`
-     branch, `deferred.slang`'s G-buffer packing, `path_tracing.slang`'s
-     `furnace` gate) exactly as it is — this task moves the sampling, not the
-     shading.
-  4. Recompile and run the byte-identical SPIR-V check from the batch preamble.
-     If any hash moves, the refactor changed behaviour — find out why.
-
-  **Test:** Add `BuildIntegrity.TextureSlotSamplingHasOneOwner` to
-  `buildIntegritySuite.cpp`: assert `[vk::binding(TEXTURES_BINDING, 0)]` and
-  `[vk::binding(SAMPLER_BINDING, 0)]` each appear in exactly the module(s) that
-  own them and in no consumer, and that no consumer still spells a
-  `resolve_texture_slot(...)` + `Sample`/`SampleLevel` pair inline for the four
-  slots. Same explicit-file-list shape as
-  `SharedDescriptorSetBindingsUseTheNamedConstants`.
-
-  **Build:** `clangcl-debug`, same invocation as task 1. No C++ rebuild is
-  needed for the shader edits themselves, but the new gate needs one.
-
-  **Context:** Batch IX deferred this deliberately: "A shared module cannot
-  simply own them, because it would have to own the `textures[]` /
-  `textureSamplers[]` arrays — which five files each declare separately today.
-  Deciding whether one module owns those arrays for all five, or whether the
-  sample helpers take the array as a parameter, is a design call worth its own
-  batch." Step 2 is where that call gets made; the parameter-passing
-  alternative is the fallback if *both* module shapes fail. Update
-  `docs/shader-sharing.md`'s per-module target table if it enumerates
-  `common/` modules — `bae7fc45` added a gate over it.
 
 - [ ] **(S) (refactor) Have `alpha_test.slang` call `fetch_material()`, and delete `material_fetch.slang`'s disproved "cannot import this module" paragraph** — the last two survivors of batch IX's stale-rationale sweep.
 

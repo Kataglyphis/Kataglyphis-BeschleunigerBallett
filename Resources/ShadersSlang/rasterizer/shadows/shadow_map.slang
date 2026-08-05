@@ -2,6 +2,7 @@ import scene_types;
 import material_fetch;
 import material_rules;
 import base_color;
+import material_textures;
 
 // Cascaded shadow map shaders. Sole source for this shader. Emits SPIR-V
 // only. Single-pass layered cascade rendering: SV_ViewID IS the cascade
@@ -15,9 +16,6 @@ struct ShadowPushConstants
     uint objectIndex;
 };
 [[vk::push_constant]] ShadowPushConstants pc;
-
-[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
 struct ShadowVsOut
 {
@@ -57,8 +55,7 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
         float alphaTexSample = 1.0;
         if (material.alphaTextureID >= 0)
         {
-            int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-            alphaTexSample = textures[alphaTexId].Sample(textureSamplers[alphaTexId], transform_uv(In.fragUV, material)).r;
+            alphaTexSample = sample_alpha(obj, material, In.fragUV);
         }
 
         if (material.textureID >= 0)

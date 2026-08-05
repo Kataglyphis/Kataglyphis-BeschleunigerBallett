@@ -8,6 +8,7 @@ import brdf;
 import cascaded_shadow;
 import push_constants;
 import raster_geometry;
+import material_textures;
 
 // Deferred geometry pass + lighting pass. Sole source for this shader.
 // Emits SPIR-V only. Writes G-buffer (normal, albedo, material) for the
@@ -16,8 +17,6 @@ import raster_geometry;
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
-[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
 struct GBufferOut
 {
@@ -50,8 +49,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     float alphaTexSample = 1.0;
     if (material.alphaTextureID >= 0)
     {
-        int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-        alphaTexSample = textures[alphaTexId].Sample(textureSamplers[alphaTexId], transform_uv(In.texCoords, material)).r;
+        alphaTexSample = sample_alpha(obj, material, In.texCoords);
     }
 
     float4 texColor;
@@ -80,16 +78,14 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     if (!isFrontFace) N = -N;
     if (material.normalTextureID >= 0)
     {
-        int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-        float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], normal_uv(In.texCoords, material)).xyz;
+        float3 normalSample = sample_normal(obj, material, In.texCoords);
         N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
     }
     float metallic = material.metallic;
     float roughness = material_roughness(material);
     if (material.metallicRoughnessTextureID >= 0)
     {
-        int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-        float4 mrSample = textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(In.texCoords, material));
+        float4 mrSample = sample_metallic_roughness(obj, material, In.texCoords);
         float2 metallicRoughness = material_metallic_roughness(material, mrSample);
         metallic = metallicRoughness.x;
         roughness = metallicRoughness.y;
@@ -123,8 +119,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     float3 emissiveSample = float3(1.0);
     if (material.emissiveTextureID >= 0)
     {
-        int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-        emissiveSample = textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], emissive_uv(In.texCoords, material)).xyz;
+        emissiveSample = sample_emissive(obj, material, In.texCoords);
     }
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
     // eR16G16B16A16Sfloat, so emissive above 1.0 from

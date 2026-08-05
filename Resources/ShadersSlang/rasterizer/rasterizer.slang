@@ -8,6 +8,7 @@ import normal_map;
 import cascaded_shadow;
 import push_constants;
 import raster_geometry;
+import material_textures;
 
 // Forward rasterizer shaders. Sole source for this shader. Emits SPIR-V only.
 //
@@ -20,8 +21,6 @@ import raster_geometry;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
 [shader("vertex")]
 RasterVsOut vs_main(
@@ -49,8 +48,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     if (!isFrontFace) N = -N;
     if (material.normalTextureID >= 0)
     {
-        int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-        float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], normal_uv(In.texCoords, material)).xyz;
+        float3 normalSample = sample_normal(obj, material, In.texCoords);
         N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
@@ -62,8 +60,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float alphaTexSample = 1.0;
     if (material.alphaTextureID >= 0)
     {
-        int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-        alphaTexSample = textures[alphaTexId].Sample(textureSamplers[alphaTexId], transform_uv(In.texCoords, material)).r;
+        alphaTexSample = sample_alpha(obj, material, In.texCoords);
     }
 
     float3 albedo;
@@ -91,8 +88,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float roughness = material_roughness(material);
     if (material.metallicRoughnessTextureID >= 0)
     {
-        int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-        float4 mrSample = textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(In.texCoords, material));
+        float4 mrSample = sample_metallic_roughness(obj, material, In.texCoords);
         float2 metallicRoughness = material_metallic_roughness(material, mrSample);
         metallic = metallicRoughness.x;
         roughness = metallicRoughness.y;
@@ -112,8 +108,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float3 emissiveSample = float3(1.0);
     if (material.emissiveTextureID >= 0)
     {
-        int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-        emissiveSample = textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], emissive_uv(In.texCoords, material)).xyz;
+        emissiveSample = sample_emissive(obj, material, In.texCoords);
     }
     color += material_emission(material, emissiveSample);
 

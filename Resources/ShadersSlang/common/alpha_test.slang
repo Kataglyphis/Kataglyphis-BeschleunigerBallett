@@ -1,6 +1,7 @@
 import scene_types;
 import base_color;
 import material_rules;
+import material_textures;
 
 // Shared glTF MASK alpha test for ray queries: raytrace.rahit.slang's
 // any-hit shader and path_tracing.slang's ray-query candidate loop (which
@@ -10,16 +11,14 @@ import material_rules;
 // (baseColorFactor.a * baseColorTexture.a * COLOR_0.a), which this module
 // now calls directly rather than mirroring.
 //
-// Declares its own textures/textureSamplers bindings rather than importing
-// them from material_fetch.slang: material_fetch.slang declares only
-// objectDescription, not textures, and ray_hit_masked_out() takes its
-// ObjectDescription as a parameter rather than fetching it itself, so this
-// module has no need to import material_fetch.slang at all. Both
-// raytrace.rahit.slang and path_tracing.slang import material_fetch and
-// alpha_test together without conflict.
-
-[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
-[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
+// Imports its textures/textureSamplers bindings from material_textures.slang
+// rather than declaring its own copy (material_fetch.slang declares only
+// objectDescription, not textures, so that module still cannot supply them):
+// ray_hit_masked_out() takes its ObjectDescription as a parameter rather
+// than fetching it itself, so this module has no need to import
+// material_fetch.slang at all. Both raytrace.rahit.slang and
+// path_tracing.slang import material_fetch and alpha_test together without
+// conflict.
 
 // True when a ray hit's triangle should be treated as transparent: a glTF
 // MASK material whose sampled alpha falls below its cutoff. Non-MASK
@@ -58,8 +57,7 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
         }
         if (material.alphaTextureID >= 0)
         {
-            int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-            sampledAlpha *= textures[alphaTexId].SampleLevel(textureSamplers[alphaTexId], transform_uv(texCoords, material), 0.0).r;
+            sampledAlpha *= sample_alpha_lod0(obj, material, texCoords);
         }
     }
 

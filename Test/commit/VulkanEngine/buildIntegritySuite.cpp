@@ -3116,13 +3116,14 @@ TEST(BuildIntegrity, AlphaTextureIsSampledByEveryAlphaTestingPath)
 }
 
 // KHR_texture_transform is declared per texture slot (glTF 2.0 spec), so the normal, metallic-roughness and
-// emissive samples in every shading path must transform their UV through their OWN named accessor
-// (normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang), not the bare
-// transform_uv(uv, material) overload - which resolves to the base-colour rows. Sampling a non-base slot with the
-// base-colour rows silently tiles/offsets that slot's texture identically to base-colour instead of independently
-// (or not at all, for a material that transforms only a non-base slot). This scans the shader sources as text (the
-// source-text gate pattern used throughout this file); alpha_test.slang and shadow_map.slang are intentionally
-// excluded - both sample only the base-colour texture, for which transform_uv(uv, material) is correct.
+// emissive samples must transform their UV through their OWN named accessor (normal_uv()/metallic_roughness_uv()/
+// emissive_uv() in common/base_color.slang), not the bare transform_uv(uv, material) overload - which resolves to
+// the base-colour rows. Sampling a non-base slot with the base-colour rows silently tiles/offsets that slot's
+// texture identically to base-colour instead of independently (or not at all, for a material that transforms only
+// a non-base slot). common/material_textures.slang is the sole place these three slots are sampled today - every
+// shading path calls its explicit-LOD or implicit-LOD helper instead of hand-rolling the sample
+// (TextureSlotSamplingHasOneOwner below pins that no shading path still does) - so this scans that one file rather
+// than every shading path, once each for its explicit-LOD and implicit-LOD helper.
 TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
 {
     const fs::path repo_root = repoRoot();
@@ -3133,48 +3134,127 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
       "overload (the base-colour pair) instead of its own slot's named accessor stamps the base-colour transform "
       "onto a slot that may have a different transform, or none at all";
 
-    // rasterizer.slang/deferred.slang additionally sample ObjMaterial::alphaTextureID (OBJ map_d) at the
-    // base-colour UV - a second, legitimate bare transform_uv( call, not a non-base slot falling back to it -
-    // so they expect two occurrences where raytrace.rchit.slang/path_tracing.slang (no alphaTextureID sample of
-    // their own; the any-hit/ray-query alpha test lives in common/alpha_test.slang instead) expect one.
-    const std::vector<std::pair<fs::path, std::size_t>> shading_paths = {
-        { repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang", 2U },
-        { repo_root / "Resources/ShadersSlang/deferred/deferred.slang", 2U },
-        { repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang", 1U },
-        { repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang", 1U },
+    const fs::path path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
+    const auto text_opt = readFileText(path);
+    ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+    const std::string &text = *text_opt;
+
+    static const std::pair<const char *, std::size_t> kExpectedCounts[] = {
+        { "normal_uv(", 2U },
+        { "metallic_roughness_uv(", 2U },
+        { "emissive_uv(", 2U },
     };
-    for (const auto &[path, expected_bare_transform_uv_calls] : shading_paths) {
+    for (const auto &[accessor, expected_count] : kExpectedCounts) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = text.find(accessor, pos)) != std::string::npos) {
+            ++count;
+            pos += std::strlen(accessor);
+        }
+        EXPECT_EQ(count, expected_count)
+          << path.string() << " must call " << accessor
+          << ") exactly once from its explicit-LOD helper and once from its implicit-LOD helper. " << kFailureMessage;
+    }
+
+    // The alpha (map_d) slot has no KHR_texture_transform slot of its own (an OBJ-only extension, not part of the
+    // glTF spec's per-slot transform list) and deliberately reuses the base-colour rows via the bare
+    // transform_uv(uv, material) overload, same as every shading path's own inline base-colour sample - that is the
+    // legitimate case this gate must not flag. sample_alpha_lod0/sample_alpha are the only two bare-overload callers
+    // left in this file.
+    std::size_t bareTransformUvCalls = 0;
+    std::size_t pos = 0;
+    while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
+        ++bareTransformUvCalls;
+        pos += std::strlen("transform_uv(");
+    }
+    EXPECT_EQ(bareTransformUvCalls, 2U)
+      << path.string() << " must call the bare transform_uv(uv, material) overload exactly twice (sample_alpha_lod0 "
+         "and sample_alpha); every other slot must go through its own named accessor instead. "
+      << kFailureMessage;
+}
+
+// Deferred from batch IX with a stated prerequisite (9ee460cb, symbolic binding numbers) that has since landed:
+// rasterizer.slang, deferred.slang, shadow_map.slang, raytrace.rchit.slang and alpha_test.slang each declared their
+// own [vk::binding(TEXTURES_BINDING, 0)] / [vk::binding(SAMPLER_BINDING, 0)] textures[]/textureSamplers[] pair, and
+// rasterizer.slang, deferred.slang, raytrace.rchit.slang and path_tracing.slang each hand-rolled the same
+// resolve_texture_slot(...) + Sample()/SampleLevel() pair for the alpha (map_d), normal, metallic-roughness and
+// emissive slots. common/material_textures.slang is now the sole owner of both: this pins that no consumer
+// redeclares the bindings, and that no consumer still spells the four-slot sample pattern inline instead of calling
+// material_textures.slang's helpers. The base-colour (ObjMaterial::textureID) slot is deliberately not checked
+// here - it stays inline at each call site next to the shading control flow that differs per shader.
+TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const char *kTexturesBinding = "[vk::binding(TEXTURES_BINDING, 0)]";
+    static const char *kSamplersBinding = "[vk::binding(SAMPLER_BINDING, 0)]";
+
+    const fs::path owner_path = slang_root / "common/material_textures.slang";
+    const auto owner_text_opt = readFileText(owner_path);
+    ASSERT_TRUE(owner_text_opt.has_value()) << "could not open " << owner_path.string();
+    EXPECT_NE(owner_text_opt->find(kTexturesBinding), std::string::npos)
+      << owner_path.string() << " no longer declares the textures[] binding";
+    EXPECT_NE(owner_text_opt->find(kSamplersBinding), std::string::npos)
+      << owner_path.string() << " no longer declares the textureSamplers[] binding";
+
+    // The five prior per-file binding owners, plus path_tracing.slang (never declared its own copy - it always
+    // reached textures/textureSamplers through alpha_test.slang, and now also imports material_textures.slang
+    // directly for its own explicit-LOD samples): the explicit consumer list, same shape as
+    // kSharedDescriptorSetBindings above and for the same reason - a directory walk would also have to explain away
+    // this test file's and material_textures.slang's own legitimate mentions of these identifiers.
+    static const std::vector<fs::path> kConsumers = {
+        slang_root / "rasterizer/rasterizer.slang",
+        slang_root / "deferred/deferred.slang",
+        slang_root / "rasterizer/shadows/shadow_map.slang",
+        slang_root / "raytracing/raytrace.rchit.slang",
+        slang_root / "common/alpha_test.slang",
+        slang_root / "path_tracing/path_tracing.slang",
+    };
+
+    // The four texture-slot fields whose resolve_texture_slot(obj, material.<field>) + Sample()/SampleLevel() pair
+    // must now live only in material_textures.slang. resolve_texture_slot(obj, material) (no field - the
+    // base-colour overload) is deliberately excluded; it stays inline at every shading path's own call site.
+    static const std::vector<std::string> kSlotFields = {
+        "material.alphaTextureID",
+        "material.normalTextureID",
+        "material.metallicRoughnessTextureID",
+        "material.emissiveTextureID",
+    };
+
+    std::vector<std::string> violations;
+    for (const auto &path : kConsumers) {
         const auto text_opt = readFileText(path);
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
+        const std::string relative = fs::relative(path, repo_root).generic_string();
 
-        EXPECT_NE(text.find("normal_uv("), std::string::npos)
-          << path.string() << " no longer calls the normal slot's own UV-transform accessor. " << kFailureMessage;
-        EXPECT_NE(text.find("metallic_roughness_uv("), std::string::npos)
-          << path.string() << " no longer calls the metallic-roughness slot's own UV-transform accessor. "
-          << kFailureMessage;
-        EXPECT_NE(text.find("emissive_uv("), std::string::npos)
-          << path.string() << " no longer calls the emissive slot's own UV-transform accessor. " << kFailureMessage;
-
-        // The normal/metallic-roughness/emissive samples must not fall back to
-        // the bare transform_uv(uv, material) overload, which resolves to the
-        // base-colour rows - count that transform_uv(...) is called exactly
-        // the expected number of times (the base-colour sample(s) every
-        // shading path has); every other slot must go through its own named
-        // accessor instead.
-        std::size_t bareTransformUvCalls = 0;
-        std::size_t pos = 0;
-        while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
-            ++bareTransformUvCalls;
-            pos += std::strlen("transform_uv(");
+        if (text.find(kTexturesBinding) != std::string::npos) {
+            violations.push_back(relative
+                                  + " redeclares the textures[] binding - common/material_textures.slang is the "
+                                    "sole owner");
         }
-        EXPECT_EQ(bareTransformUvCalls, expected_bare_transform_uv_calls)
-          << path.string() << " must call the bare transform_uv(uv, material) overload exactly "
-          << expected_bare_transform_uv_calls
-          << " time(s) (the base-colour sample(s)); every non-base sample must go through its own slot's named "
-             "accessor. "
-          << kFailureMessage;
+        if (text.find(kSamplersBinding) != std::string::npos) {
+            violations.push_back(relative
+                                  + " redeclares the textureSamplers[] binding - common/material_textures.slang is "
+                                    "the sole owner");
+        }
+        for (const auto &field : kSlotFields) {
+            if (text.find("resolve_texture_slot(obj, " + field + ")") != std::string::npos) {
+                violations.push_back(relative + " still hand-rolls resolve_texture_slot(obj, " + field
+                                      + ") inline - call common/material_textures.slang's helper instead");
+            }
+        }
     }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " texture-slot sampling ownership violation(s):" << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
 
 // normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang are the sole named accessors for
@@ -3513,30 +3593,29 @@ struct SharedDescriptorBinding
 // TEXTURES_BINDING / SAMPLER_BINDING / SHADOW_MAP_BINDING) plus the
 // ray-tracing set-1 declarations that share the same shared descriptor set
 // resources (TLAS_BINDING / OUT_IMAGE_BINDING / ACCUMULATION_IMAGE_BINDING),
-// across the eight files that declare them. common/alpha_test.slang is not
-// listed: it already used the named constants before this gate existed.
-// Deliberately NOT the full set of every [vk::binding(...)] in these files -
-// shadow_map.slang's own [vk::binding(1, 1)] lightSpaceMatrices and
-// deferred.slang's four set-1 subpass-input bindings are pipeline-local sets
-// with no named constant in scene_types.slang, so listing them here would be
-// a permanent, unfixable violation rather than a real regression.
+// across the files that declare them. common/alpha_test.slang is not listed:
+// it already used the named constants before this gate existed.
+// textures/textureSamplers now declare once in common/material_textures.slang
+// (TextureSlotSamplingHasOneOwner below pins that no consumer redeclares
+// them) rather than once per consumer, so rasterizer.slang, deferred.slang,
+// shadow_map.slang and raytrace.rchit.slang no longer have their own
+// textures/textureSamplers rows here. Deliberately NOT the full set of every
+// [vk::binding(...)] in these files - shadow_map.slang's own
+// [vk::binding(1, 1)] lightSpaceMatrices and deferred.slang's four set-1
+// subpass-input bindings are pipeline-local sets with no named constant in
+// scene_types.slang, so listing them here would be a permanent, unfixable
+// violation rather than a real regression.
 const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     {"common/material_fetch.slang", "objectDescription"},
+    {"common/material_textures.slang", "textures"},
+    {"common/material_textures.slang", "textureSamplers"},
     {"common/cascaded_shadow.slang", "directionalShadowMaps"},
     {"rasterizer/rasterizer.slang", "globalUBO"},
     {"rasterizer/rasterizer.slang", "sceneUBO"},
-    {"rasterizer/rasterizer.slang", "textures"},
-    {"rasterizer/rasterizer.slang", "textureSamplers"},
     {"deferred/deferred.slang", "globalUBO"},
-    {"deferred/deferred.slang", "textures"},
-    {"deferred/deferred.slang", "textureSamplers"},
     {"deferred/deferred.slang", "globalUBO_lighting"},
     {"deferred/deferred.slang", "sceneUBO_lighting"},
-    {"rasterizer/shadows/shadow_map.slang", "textures"},
-    {"rasterizer/shadows/shadow_map.slang", "textureSamplers"},
     {"raytracing/raytrace.rchit.slang", "sceneUBO"},
-    {"raytracing/raytrace.rchit.slang", "textureSamplers"},
-    {"raytracing/raytrace.rchit.slang", "textures"},
     {"raytracing/raytrace.rchit.slang", "TLAS"},
     {"raytracing/raytrace.rgen.slang", "globalUBO"},
     {"raytracing/raytrace.rgen.slang", "TLAS"},

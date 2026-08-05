@@ -108,6 +108,22 @@ system rather than textual `#include`:
   module, can still call them - same reasoning as `base_color.slang` below.
   Shared only within the spirv target, across every C++ shading path (raster,
   deferred, shadow map, ray tracing, path tracing).
+- `common/material_textures.slang` — the one owning declaration of the
+  `textures[]`/`textureSamplers[]` arrays (`TEXTURES_BINDING`/
+  `SAMPLER_BINDING`), plus explicit-LOD (`SampleLevel`) and implicit-LOD
+  (`Sample`) helpers for the alpha (map_d), normal, metallic-roughness and
+  emissive texture slots. Both LOD shapes live in one module: an
+  implicit-LOD helper unused by a given entry point is dead-code-eliminated
+  before Slang's capability checking runs, so a compute/ray-tracing importer
+  that only calls the explicit-LOD half never picks up a fragment-only
+  capability. The base-colour slot is not covered here - its sampling stays
+  inline at each call site, next to the shading control flow (albedo
+  assembly, discard, G-buffer packing) that differs per shader. Shared only
+  within the spirv target, across `rasterizer.slang`, `deferred.slang`,
+  `rasterizer/shadows/shadow_map.slang`, `raytrace.rchit.slang` and
+  `alpha_test.slang` (and, transitively through `alpha_test.slang`,
+  `path_tracing.slang`, which also imports it directly for its own
+  base-colour sample).
 - `common/cascaded_shadow.slang` — PCF cascaded shadow-map sampling
   (`calc_cascaded_shadow`). Shared only within the spirv target, by the
   raster and deferred lighting shading paths (`rasterizer.slang`,
@@ -221,6 +237,7 @@ mark a module under `common/` that nothing currently imports at all).
 | `common/fullscreen.slang` | both |
 | `common/material_fetch.slang` | spirv |
 | `common/material_rules.slang` | spirv |
+| `common/material_textures.slang` | spirv |
 | `common/noise.slang` | both |
 | `common/normal_map.slang` | spirv |
 | `common/push_constants.slang` | spirv |

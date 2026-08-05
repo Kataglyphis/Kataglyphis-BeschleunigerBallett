@@ -5,6 +5,7 @@ import normal_map;
 import alpha_test;
 import material_fetch;
 import material_rules;
+import material_textures;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
 // Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU
@@ -30,7 +31,9 @@ struct PushConstantPathTracing
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 // objectDescription (OBJECT_DESCRIPTION_BINDING) comes from material_fetch.slang.
 // textures/textureSamplers (TEXTURES_BINDING, SAMPLER_BINDING) come from
-// alpha_test.slang, shared with raytrace.rahit.slang's alpha test.
+// material_textures.slang, imported directly here (Slang does not
+// re-export a plain `import` transitively) and also by alpha_test.slang,
+// shared with raytrace.rahit.slang's alpha test.
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 [vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;
@@ -227,9 +230,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 // directly, not the inverse-transpose worldToObject the normal
                 // above uses.
                 float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
-                int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
                 // Explicit LOD: see the base-colour sample below for why.
-                float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], normal_uv(texCoords, material), 0.0).xyz;
+                float3 normalSample = sample_normal_lod0(obj, material, texCoords);
                 shadingNormal = apply_normal_map(hitWorldNormal, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
             }
 
@@ -276,9 +278,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 // path has no roughness term.
                 if (material.metallicRoughnessTextureID >= 0)
                 {
-                    int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
                     // Explicit LOD: see the base-colour sample above for why.
-                    float4 mrSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material), 0.0);
+                    float4 mrSample = sample_metallic_roughness_lod0(obj, material, texCoords);
                     hitColor *= (1.0 - material_metallic_roughness(material, mrSample).x);
                 }
             }
@@ -306,9 +307,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 float3 emissiveSample = float3(1.0);
                 if (material.emissiveTextureID >= 0)
                 {
-                    int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
                     // Explicit LOD: see the base-colour sample above for why.
-                    emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], emissive_uv(texCoords, material), 0.0).xyz;
+                    emissiveSample = sample_emissive_lod0(obj, material, texCoords);
                 }
                 radiance += throughput * material_emission(material, emissiveSample);
             }

@@ -6,6 +6,7 @@ import emission;
 import normal_map;
 import material_fetch;
 import material_rules;
+import material_textures;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
 // SPIR-V only.
@@ -16,9 +17,6 @@ import material_rules;
 // BRDF math (import brdf) is used for the Epic/Unreal4 shading model.
 
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-
-[vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
-[vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 
@@ -118,9 +116,8 @@ void rchit_main(
         // inverse-transpose WorldToObject() the normal uses.
         float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
         float3 worldTangent = normalize((float3)mul(ObjectToWorld(), float4(tangentHit.xyz, 0.0)));
-        int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
         // Explicit LOD: see the base-colour sample above for why.
-        float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], normal_uv(texCoords, material), 0.0).xyz;
+        float3 normalSample = sample_normal_lod0(obj, material, texCoords);
         N = apply_normal_map(N, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
@@ -147,9 +144,8 @@ void rchit_main(
     float roughness = material_roughness(material);
     if (material.metallicRoughnessTextureID >= 0)
     {
-        int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
         // Explicit LOD: see the base-colour sample above for why.
-        float4 mrSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material), 0.0);
+        float4 mrSample = sample_metallic_roughness_lod0(obj, material, texCoords);
         float2 metallicRoughness = material_metallic_roughness(material, mrSample);
         metallic = metallicRoughness.x;
         roughness = metallicRoughness.y;
@@ -177,9 +173,8 @@ void rchit_main(
     float3 emissiveSample = float3(1.0);
     if (material.emissiveTextureID >= 0)
     {
-        int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
         // Explicit LOD: see the base-colour sample above for why.
-        emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], emissive_uv(texCoords, material), 0.0).xyz;
+        emissiveSample = sample_emissive_lod0(obj, material, texCoords);
     }
     payload.hit_value += material_emission(material, emissiveSample);
 }
