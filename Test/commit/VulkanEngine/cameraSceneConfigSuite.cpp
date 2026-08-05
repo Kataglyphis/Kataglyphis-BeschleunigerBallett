@@ -17,6 +17,8 @@
 #include <string_view>
 #include <vector>
 
+#include "RepoFiles.hpp"
+
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.model_file_kind;
@@ -279,6 +281,43 @@ TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBac
     const std::vector<std::string> models_with_backslash{"Models\\Dinosaurs\\dinosaurs.obj"};
     EXPECT_EQ(
       sceneConfig::defaultSelectedModelIndex(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
+}
+
+TEST(SceneConfigUnit, ScanningARegularFileReportsAnIncompleteWalk)
+{
+    const std::filesystem::path repo_root = Kataglyphis::TestSupport::repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "Could not locate repo root from the test working directory";
+
+    const auto result = sceneConfig::scanModelsUnder(repo_root / "AGENTS.md");
+    EXPECT_FALSE(result.complete);
+    EXPECT_TRUE(result.paths.empty());
+    EXPECT_TRUE(result.displayNames.empty());
+}
+
+TEST(SceneConfigUnit, ScanningAMissingDirectoryReportsAnIncompleteWalk)
+{
+    const std::filesystem::path repo_root = Kataglyphis::TestSupport::repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "Could not locate repo root from the test working directory";
+
+    const auto result = sceneConfig::scanModelsUnder(repo_root / "NoSuchDirectory");
+    EXPECT_FALSE(result.complete);
+    EXPECT_TRUE(result.paths.empty());
+    EXPECT_TRUE(result.displayNames.empty());
+}
+
+TEST(SceneConfigUnit, ScanningTheRepoResourcesFindsTheDefaultDebugModel)
+{
+    const std::filesystem::path repo_root = Kataglyphis::TestSupport::repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "Could not locate repo root from the test working directory";
+
+    if (!std::filesystem::exists(repo_root / "Resources" / "Models")) {
+        GTEST_SKIP() << "Resources/Models is absent";
+    }
+
+    const auto result = sceneConfig::scanModelsUnder(repo_root / "Resources");
+    EXPECT_TRUE(result.complete);
+    ASSERT_EQ(result.paths.size(), result.displayNames.size());
+    EXPECT_GE(sceneConfig::defaultSelectedModelIndex(result.paths, sceneConfig::defaultModelRelativePath()), 0);
 }
 
 TEST(CameraSceneConfigUnit, ModelMatrixIsIdentityInEveryConfiguration)

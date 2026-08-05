@@ -11383,33 +11383,6 @@ tasks 3 and 5 change no `Src/` output at all. No task in this batch touches a
 `.slang` file, so no shader recompile and no WGSL regeneration is needed and
 the staleness gates cannot fire.
 
-- [ ] **(M) Make `sceneConfig::scanAvailableModels()` latch on a *successful* walk, not a reachable directory, behind a seam a test can fail** — a failed `recursive_directory_iterator` construction currently caches "no models" for the rest of the process.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp` — `scanAvailableModels()` in the anonymous namespace: the `s_models_scanned = true` assignment, its comment, and the `recursive_directory_iterator it(models_dir, skip_permission_denied, ec)` construction two lines below it
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.ixx` — the exported surface (`getAvailableModelPaths`, `getAvailableModelDisplayNames`, `defaultSelectedModelIndex`)
-  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` — the existing `defaultSelectedModelIndex` tests and the `repoRoot()` usage pattern
-  - `Test/fuzz/scene_config_fuzz_test.cpp` — `SceneConfigFuzz.ListingModelsIsStable`, which exercises the cached path and must keep passing
-
-  **Steps:**
-  1. Add an exported struct and free function to `SceneConfig.ixx`:
-     `struct ModelScanResult { std::vector<std::string> paths; std::vector<std::string> displayNames; bool complete; };`
-     and `auto scanModelsUnder(const std::filesystem::path &resourcesRoot) -> ModelScanResult;`. Document that `complete` is false iff the walk could not be started or was aborted by an error, and that a false `complete` means the caller must be free to retry.
-  2. Move the body of `scanAvailableModels()` — everything from the `models_dir` computation through the iteration loop — into `scanModelsUnder`, taking the resources root as a parameter instead of calling `findResourcesBasePath()`. Set `complete = false` and return early when `!exists(models_dir, ec) || ec`, and set `complete = false` when the `recursive_directory_iterator` constructor sets `ec` or when the loop exits with `ec` set. Per-entry failures (`is_regular_file`, `relative`) keep the existing `continue` and do **not** clear `complete` — one unreadable file is not a failed scan.
-  3. Rewrite `scanAvailableModels()` as: call `scanModelsUnder(findResourcesBasePath())`, and only if `result.complete` move the two vectors into the caches and set `s_models_scanned = true`. Replace the existing comment with one that names the actual invariant: the latch means "a complete walk has happened", not "the directory existed".
-  4. Verify `getAvailableModelPaths()` / `getAvailableModelDisplayNames()` still return spans over the caches and that both vectors stay the same length — the two are indexed in lockstep by `GUI.cpp`'s combo.
-
-  **Test:** Add to `cameraSceneConfigSuite.cpp`:
-  - `SceneConfigUnit.ScanningARegularFileReportsAnIncompleteWalk` — call `scanModelsUnder(repoRoot() / "AGENTS.md")` and assert `complete == false` with both vectors empty. Constructing a `recursive_directory_iterator` over a regular file sets its `std::error_code`; this is the fixture-free way to induce the failure batch XIII could not.
-  - `SceneConfigUnit.ScanningAMissingDirectoryReportsAnIncompleteWalk` — same for `repoRoot() / "NoSuchDirectory"`, pinning the pre-existing retry contract.
-  - `SceneConfigUnit.ScanningTheRepoResourcesFindsTheDefaultDebugModel` — call `scanModelsUnder(repoRoot() / "Resources")`, assert `complete == true`, `paths.size() == displayNames.size()`, and that `defaultSelectedModelIndex(result.paths, defaultModelRelativePath())` is `>= 0`. Skip with `GTEST_SKIP()` if `Resources/Models` is absent, matching how the other repo-reading tests in this suite guard themselves.
-
-  **Build:** `clangcl-debug` with `-FreshContainer` (`SceneConfig.ixx` gains exports):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneConfig*:CameraSceneConfig*` and the fuzz executable's `SceneConfigFuzz.*` from the repo root.
-
-  **Context:** Carried over from batch XIII's not-in-batch list, now sized because the fixture problem has an answer (see the batch preamble). Keep the extraction mechanical — this task's value is entirely in the latch condition and the error contract, so do not also change what counts as a supported model, how display names are computed, or the caches' types. The `complete` flag is deliberately a plain `bool` rather than a `std::expected`: the caller has nothing to do with *which* error occurred, only whether to retry.
-
 - [ ] **(M) Bring `docs/cpp-renderer-improvements.md` up to date — 44 commits of drift — and pin the test count it quotes** — the doc `AGENTS.md` sends every renderer change to has no entry for anything that shipped since `fc637887`, and its opening paragraph claims a suite size that is off by 573.
 
   **Files to read:**
