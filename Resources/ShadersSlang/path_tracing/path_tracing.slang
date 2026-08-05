@@ -3,6 +3,7 @@ import base_color;
 import emission;
 import normal_map;
 import alpha_test;
+import material_rules;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
 // Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU
@@ -276,19 +277,18 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 // strictly on the texture (not the metallic FACTOR alone) to
                 // keep every pre-existing scene bit-unchanged, matching the
                 // other three shading paths' "no MR texture -> today's
-                // factors" contract. Same B-channel = metallic convention as
-                // common/material_fetch.slang's material_metallic_roughness(),
-                // duplicated rather than called because this compute kernel
-                // declares its own objectDescription binding and cannot
-                // `import material_fetch` (duplicate binding; see
-                // common/normal_map.slang's doc comment for the same
-                // constraint).
+                // factors" contract. Uses common/material_rules.slang's
+                // material_metallic_roughness() - the same binding-free
+                // module the other three shading paths call - so this kernel
+                // no longer has to duplicate the B-channel = metallic
+                // swizzle; only the metallic half (.x) is used, since this
+                // path has no roughness term.
                 if (material.metallicRoughnessTextureID >= 0)
                 {
                     int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
                     // Explicit LOD: see the base-colour sample above for why.
-                    float metallicSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material), 0.0).b;
-                    hitColor *= (1.0 - material.metallic * metallicSample);
+                    float4 mrSample = textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material), 0.0);
+                    hitColor *= (1.0 - material_metallic_roughness(material, mrSample).x);
                 }
             }
 

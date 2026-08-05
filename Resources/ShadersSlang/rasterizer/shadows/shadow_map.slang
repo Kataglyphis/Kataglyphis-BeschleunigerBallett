@@ -1,5 +1,6 @@
 import scene_types;
 import material_fetch;
+import material_rules;
 import base_color;
 
 // Cascaded shadow map shaders. Sole source for this shader. Emits SPIR-V

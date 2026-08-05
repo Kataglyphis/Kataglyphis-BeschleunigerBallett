@@ -13,7 +13,8 @@
 // Deliberately its own module (not folded into material_fetch.slang): the
 // ray tracing / path tracing entry points cannot `import material_fetch`
 // (duplicate objectDescription binding), but every shading path can import
-// this no-binding module - same reasoning as base_color.slang/emission.slang.
+// this no-binding module - same reasoning as
+// base_color.slang/emission.slang/material_rules.slang.
 float3 apply_normal_map(float3 geometricNormal, float4 tangent, float3 sampledNormal, float scale = 1.0)
 {
     float3 n = normalize(geometricNormal);

@@ -5,6 +5,7 @@ import base_color;
 import emission;
 import normal_map;
 import material_fetch;
+import material_rules;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
 // SPIR-V only.

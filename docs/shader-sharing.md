@@ -66,7 +66,7 @@ system rather than textual `#include`:
 
 - **Shared math** lives in Slang modules under `Resources/ShadersSlang/common/`
   (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`, plus
-  `material_fetch.slang` and `cascaded_shadow.slang`).
+  `material_fetch.slang`, `material_rules.slang` and `cascaded_shadow.slang`).
 - **Entry points** are Slang shaders that `import` the math modules and
   compile to whichever target(s) their renderer needs. Mangling is a
   non-issue because Slang links modules internally.
@@ -86,11 +86,18 @@ system rather than textual `#include`:
   by both renderers' cloud/procedural passes.
 - `common/fullscreen.slang` — the shared fullscreen-triangle vertex trick
   (`vid/2*4-1`), used by every fullscreen pass on both sides.
-- `common/material_fetch.slang` — glTF material helpers for the raster
-  entry points: `alpha_masked_out` (alphaMode MASK). Not imported by the ray
-  tracing / path tracing entry points, which already declare their own
-  `objectDescription` binding and cannot re-import the same binding from
-  this module.
+- `common/material_fetch.slang` — the `objectDescription` binding and the
+  `fetch_object_description`/`fetch_material` lookups built on it, for the
+  raster entry points. Not imported by the ray tracing / path tracing entry
+  points, which already declare their own `objectDescription` binding and
+  cannot re-import the same binding from this module.
+- `common/material_rules.slang` — the pure, binding-free glTF material rules
+  built on the fetched `ObjMaterial`: `material_roughness`,
+  `material_metallic_roughness` (glTF SS3.9.2 G=roughness/B=metallic channel
+  swizzle) and `alpha_masked_out` (alphaMode MASK). Split out of
+  `material_fetch.slang` so the ray tracing / path tracing entry points,
+  which cannot import that module, can still call them - same reasoning as
+  `base_color.slang` below.
 - `common/base_color.slang` — `base_color` (glTF base colour =
   `baseColorFactor * sampled texture`) and `transform_uv`
   (KHR_texture_transform), split out into its own bindingless module so every

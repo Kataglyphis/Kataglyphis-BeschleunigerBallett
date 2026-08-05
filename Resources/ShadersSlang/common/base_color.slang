@@ -9,7 +9,8 @@ import scene_types;
 // `objectDescription` binding and cannot also `import material_fetch`
 // (which declares the same binding again) without an ambiguous-reference
 // compile error. This module has no bindings, so every shading path can
-// import it.
+// import it - the established pattern common/material_rules.slang also
+// follows for its own no-binding material rules.
 float3 base_color(ObjMaterial material, float3 sampled)
 {
     return sampled * material.diffuse;

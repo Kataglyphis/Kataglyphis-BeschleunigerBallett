@@ -1,6 +1,7 @@
 import scene_types;
 import brdf;
 import material_fetch;
+import material_rules;
 import base_color;
 import emission;
 import normal_map;

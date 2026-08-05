@@ -1,12 +1,14 @@
 import scene_types;
 import base_color;
+import material_rules;
 
 // Shared glTF MASK alpha test for ray queries: raytrace.rahit.slang's
 // any-hit shader and path_tracing.slang's ray-query candidate loop (which
 // has no any-hit stage of its own) both alpha-test a candidate/committed
 // triangle against this predicate, mirroring shadow_map.slang's rasterizer
-// alpha test and material_fetch.slang's alpha_masked_out() product rule
-// (baseColorFactor.a * baseColorTexture.a * COLOR_0.a).
+// alpha test and material_rules.slang's alpha_masked_out() product rule
+// (baseColorFactor.a * baseColorTexture.a * COLOR_0.a), which this module
+// now calls directly rather than mirroring.
 //
 // Declares its own textures/textureSamplers bindings rather than importing
 // material_fetch.slang for them: path_tracing.slang already declares its
@@ -53,5 +55,5 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
         sampledAlpha = alpha * vertexAlpha;
     }
 
-    return (sampledAlpha * material.dissolve) < material.alphaCutoff;
+    return alpha_masked_out(material, sampledAlpha);
 }

@@ -2370,7 +2370,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
 }
 
 // The deferred geometry pass used to invent its own "0.1 alpha cutoff"
-// fallback for OPAQUE materials instead of sharing material_fetch.slang's
+// fallback for OPAQUE materials instead of sharing material_rules.slang's
 // alpha_masked_out() with the forward rasterizer and shadow map shaders -
 // see ObjMaterial.hpp's alphaCutoff contract (negative means never discard).
 // This pins all three raster shaders to the one shared predicate so the
@@ -2424,7 +2424,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
     // shared predicate stops multiplying by material.dissolve, every caller
     // above silently loses the factor half of that product again.
     {
-        const fs::path path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
+        const fs::path path = repo_root / "Resources/ShadersSlang/common/material_rules.slang";
         const auto textOpt = readFileText(path);
         ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
         const std::string &text = *textOpt;
@@ -2436,7 +2436,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         const std::string body = text.substr(fn_start, 400);
         if (body.find("material.dissolve") == std::string::npos) {
             violations.push_back(
-              "material_fetch.slang: alpha_masked_out() no longer multiplies by material.dissolve");
+              "material_rules.slang: alpha_masked_out() no longer multiplies by material.dissolve");
         }
     }
 
@@ -2448,6 +2448,47 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
              for (const auto &entry : violations) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+// common/material_rules.slang exists so the ray tracing / path tracing entry
+// points - which cannot import material_fetch.slang without an
+// ambiguous-reference compile error over its objectDescription binding -
+// can still call the three pure material rules. A `[vk::binding` sneaking
+// back into this module, or either function reappearing in
+// material_fetch.slang, would silently reintroduce that conflict for the
+// next shading path that tries to import it.
+TEST(BuildIntegrity, MaterialRulesModuleStaysBindingFree)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path material_rules_path = repo_root / "Resources/ShadersSlang/common/material_rules.slang";
+    const auto material_rules_text_opt = readFileText(material_rules_path);
+    ASSERT_TRUE(material_rules_text_opt.has_value()) << "missing " << material_rules_path.string();
+    const std::string &material_rules_text = *material_rules_text_opt;
+
+    EXPECT_EQ(material_rules_text.find("[vk::binding"), std::string::npos)
+      << "material_rules.slang declares a binding - it must stay binding-free so every shading path, including "
+         "the ray-query kernels that declare their own objectDescription, can import it";
+    EXPECT_NE(material_rules_text.find("float material_roughness("), std::string::npos)
+      << "material_rules.slang no longer defines material_roughness()";
+    EXPECT_NE(material_rules_text.find("float2 material_metallic_roughness("), std::string::npos)
+      << "material_rules.slang no longer defines material_metallic_roughness()";
+    EXPECT_NE(material_rules_text.find("bool alpha_masked_out("), std::string::npos)
+      << "material_rules.slang no longer defines alpha_masked_out()";
+
+    const fs::path material_fetch_path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
+    const auto material_fetch_text_opt = readFileText(material_fetch_path);
+    ASSERT_TRUE(material_fetch_text_opt.has_value()) << "missing " << material_fetch_path.string();
+    const std::string &material_fetch_text = *material_fetch_text_opt;
+
+    EXPECT_EQ(material_fetch_text.find("float material_roughness("), std::string::npos)
+      << "material_fetch.slang re-defines material_roughness() - it should live only in material_rules.slang";
+    EXPECT_EQ(material_fetch_text.find("float2 material_metallic_roughness("), std::string::npos)
+      << "material_fetch.slang re-defines material_metallic_roughness() - it should live only in "
+         "material_rules.slang";
+    EXPECT_EQ(material_fetch_text.find("bool alpha_masked_out("), std::string::npos)
+      << "material_fetch.slang re-defines alpha_masked_out() - it should live only in material_rules.slang";
 }
 
 // path_tracing.slang's ray queries used to trace with RAY_FLAG_FORCE_OPAQUE,
@@ -2963,33 +3004,31 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
 // ObjMaterial::metallicRoughnessTextureID (glTF pbrMetallicRoughness.metallicRoughnessTexture) is dedup'd into the
 // same texture-slot budget as textureID/emissiveTextureID/normalTextureID, but only actually varies the metallic/
 // roughness terms if every shading path samples it and runs the result through the shared
-// common/material_fetch.slang channel swizzle (glTF 2.0 SS3.9.2: G = roughness, B = metallic) rather than four
+// common/material_rules.slang channel swizzle (glTF 2.0 SS3.9.2: G = roughness, B = metallic) rather than four
 // hand-rolled copies - this scans the shader sources as text (the source-text gate pattern used throughout this
-// file) and fails if material_fetch.slang stops exposing the swizzle, or if rasterizer/deferred/raytrace.rchit stop
-// calling it. path_tracing.slang is a documented exception: it is a Lambertian-only kernel with no roughness/BRDF
-// term and cannot `import material_fetch` (duplicate objectDescription binding, same constraint documented on
-// common/normal_map.slang) - it is checked only for referencing the texture ID and the metallic (B) channel, and
-// must NOT duplicate the roughness (G) channel read, which would make material_fetch.slang no longer the sole place
-// the two-channel swizzle appears.
+// file) and fails if material_rules.slang stops exposing the swizzle, or if rasterizer/deferred/raytrace.rchit/
+// path_tracing stop calling it. path_tracing.slang is a Lambertian-only kernel with no roughness/BRDF term, so it
+// is checked only for referencing the texture ID and calling material_metallic_roughness() (never a bare
+// mrSample.b/mrSample.g read), same as the other three.
 TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *kFailureMessage =
-      "material_metallic_roughness() in common/material_fetch.slang is the sole place the glTF G=roughness/B=metallic "
+      "material_metallic_roughness() in common/material_rules.slang is the sole place the glTF G=roughness/B=metallic "
       "channel swizzle happens; a shading path that hand-rolls it instead risks silently diverging from the others";
 
-    const fs::path material_fetch_path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
-    const auto material_fetch_text_opt = readFileText(material_fetch_path);
-    ASSERT_TRUE(material_fetch_text_opt.has_value()) << "could not open " << material_fetch_path.string();
-    const std::string &material_fetch_text = *material_fetch_text_opt;
-    EXPECT_NE(material_fetch_text.find("material.metallic * mrSample.b"), std::string::npos)
-      << "material_fetch.slang's material_metallic_roughness() no longer multiplies the sampled B channel into the "
+    const fs::path material_rules_path = repo_root / "Resources/ShadersSlang/common/material_rules.slang";
+    const auto material_rules_text_opt = readFileText(material_rules_path);
+    ASSERT_TRUE(material_rules_text_opt.has_value()) << "could not open " << material_rules_path.string();
+    const std::string &material_rules_text = *material_rules_text_opt;
+    EXPECT_NE(material_rules_text.find("material.metallic * mrSample.b"), std::string::npos)
+      << "material_rules.slang's material_metallic_roughness() no longer multiplies the sampled B channel into the "
          "metallic factor. "
       << kFailureMessage;
-    EXPECT_NE(material_fetch_text.find("material_roughness(material) * mrSample.g"), std::string::npos)
-      << "material_fetch.slang's material_metallic_roughness() no longer multiplies the sampled G channel into the "
+    EXPECT_NE(material_rules_text.find("material_roughness(material) * mrSample.g"), std::string::npos)
+      << "material_rules.slang's material_metallic_roughness() no longer multiplies the sampled G channel into the "
          "roughness factor. "
       << kFailureMessage;
 
@@ -2997,6 +3036,7 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
         repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
     };
     for (const fs::path &path : brdf_shading_paths) {
         const auto text_opt = readFileText(path);
@@ -3015,21 +3055,6 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
                                "material_metallic_roughness(). "
           << kFailureMessage;
     }
-
-    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
-    const auto path_tracing_text_opt = readFileText(path_tracing_path);
-    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
-    const std::string &path_tracing_text = *path_tracing_text_opt;
-    EXPECT_NE(path_tracing_text.find("metallicRoughnessTextureID"), std::string::npos)
-      << path_tracing_path.string() << " no longer branches on ObjMaterial::metallicRoughnessTextureID. "
-      << kFailureMessage;
-    EXPECT_NE(path_tracing_text.find(".b;"), std::string::npos)
-      << path_tracing_path.string()
-      << " no longer reads the metallic-roughness texture's B (metallic) channel. " << kFailureMessage;
-    EXPECT_EQ(path_tracing_text.find("mrSample"), std::string::npos)
-      << path_tracing_path.string() << " must not duplicate material_fetch.slang's mrSample-named G/B swizzle "
-                                        "(it cannot import material_fetch - see its own doc comment); "
-      << kFailureMessage;
 }
 
 // KHR_materials_unlit must return the base colour unlit in all four shading
@@ -3459,7 +3484,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 
 // Completed item 8 removed the hard-coded `roughness = 0.9` from forward
 // shading; raytrace.rchit.slang kept its own copy until this test's commit
-// moved the shininess -> roughness mapping into common/material_fetch.slang's
+// moved the shininess -> roughness mapping into common/material_rules.slang's
 // material_roughness(). Guards against a numeric literal being reintroduced
 // by any shading path, and against a shading path silently dropping the
 // shared helper call.

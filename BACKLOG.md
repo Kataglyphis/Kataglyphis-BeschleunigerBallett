@@ -10301,3 +10301,388 @@ Rust submodule and touch disjoint files (`gltf_loader.rs`/`forward.rs` versus
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 ### Docs
+
+## 2026-08-05 batch VI — planner (three pure material rules that sit behind a binding declaration, so the two shaders that cannot import them re-derive them by hand — one of them under a gate whose comment writes the duplication up as a permanent exception; a glTF `shininess` derived from a roughness that is only ever read in the one case where it is pinned to 1.0; `Ns`, which the converter drops and the engine's own shader derives roughness from — the last row of the divergence matrix batch V built; and a WGSL staleness gate that treats every file under `common/` as an input to every shader, so any material edit marks `ssao.wgsl` stale)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch V's five tasks all shipped (`135aebb8`,
+`8a728c26`, `70658a67`, `fcac6d49`, `3af452d8`). Everything below was read out
+of the tree at `3af452d8`.
+
+**First, `material_fetch.slang` holds three functions that touch no binding,
+and the binding it does declare is what stops two shaders from calling them.**
+The module opens with `[vk::binding(2, 0)] StructuredBuffer<ObjectDescription>
+objectDescription;` for `fetch_object_description`/`fetch_material`. Everything
+after it is pure arithmetic over an `ObjMaterial` value: `material_roughness()`
+(the authored-factor-or-Beckmann-from-`shininess` rule),
+`material_metallic_roughness()` (glTF's G=roughness/B=metallic swizzle) and
+`alpha_masked_out()` (the MASK product rule). `path_tracing.slang` and
+`alpha_test.slang` declare their own `objectDescription` and therefore cannot
+`import material_fetch` without an ambiguous-reference error — so both hand-roll
+what they need: `alpha_test.slang`'s `ray_hit_masked_out` ends in
+`return (sampledAlpha * material.dissolve) < material.alphaCutoff;`, a verbatim
+copy of `alpha_masked_out`'s body, and `path_tracing.slang` writes
+`hitColor *= (1.0 - material.metallic * metallicSample);` where the shared
+swizzle would give it the same number.
+
+The project already solved this exact problem twice and named the pattern:
+`base_color.slang` and `emission.slang` and `normal_map.slang` each carry a doc
+comment saying, in so many words, "deliberately its own module, not folded into
+`material_fetch.slang`, because the ray-tracing entry points cannot import that
+one — this module has no bindings, so every shading path can import it." Three
+modules exist for that reason and the three remaining pure rules were left
+behind. What makes it worth doing now rather than noting again is
+`MetallicRoughnessTextureIsSampledByEveryShadingPath`: its comment
+does not describe the duplication as debt, it *ratifies* it —
+"path_tracing.slang is a documented exception … it is checked only for
+referencing the texture ID and the metallic (B) channel, and must NOT duplicate
+the roughness (G) channel read". A gate that forbids half of a duplication and
+mandates the other half is the point at which the workaround has become the
+design.
+
+**Second, `fromGltfMaterial` keeps two roughness locals, and the one it feeds
+to `shininess` can only ever be 1.0 where anything reads it.** `roughness`
+starts at `1.0F`, `authoredRoughness` at the `-1.0F` sentinel, and both are
+assigned from `pbr.roughness_factor` inside the same
+`has_pbr_metallic_roughness` guard. `shininess` is then
+`glm::mix(128.0F, 1.0F, glm::clamp(roughness, 0.0F, 1.0F))`. But
+`material_roughness()` reads `material.shininess` only when
+`material.roughness < 0.0` — that is, only when the material had no
+`pbrMetallicRoughness` block at all, which is exactly the case where the local
+`roughness` was never assigned and is still `1.0`, so `shininess` is `1.0`.
+Every other value the `mix` can produce is computed, stored in the GPU material
+buffer and read by nothing. `neutralMaterial()` — the stand-in for primitives
+with no material — already hard-codes `.shininess = 1.0F` for the same reason,
+without the arithmetic. `docs/model-loading.md`'s `shininess` row half-says this
+already ("only ever set to a derived `mix(128, 1, roughnessFactor)` value, kept
+as the OBJ-only fallback"), which is true and still leaves the reader to work
+out that the derived value cannot vary at the point of use.
+
+**Third, `Ns` is the last row of the divergence matrix, and it is a real
+"same asset, two looks".** `3af452d8` built the matrix and its final row records
+that a `.mtl` without `Pr` renders one way through `ObjLoader` (the shader
+derives roughness from `Ns` via `sqrt(2/(Ns+2))`) and another way through
+`obj_to_gltf` (a flat `roughnessFactor: 1.0` regardless of `Ns`). The
+converter's module doc states the rationale — "`Ks`/`Ns` have no faithful PBR
+equivalent and are dropped rather than guessed into metallic/roughness" — and
+that is defensible in the abstract and wrong for *this* repo, because this repo
+already has a canonical `Ns`→roughness mapping, in
+`material_fetch.slang`'s `material_roughness()`, applied to every OBJ material
+the C++ engine loads. The converter guessing the same value the engine already
+guesses is not an invention; it is the difference between a conversion that
+round-trips and one that does not. `Ks` genuinely has no equivalent and should
+stay dropped.
+
+**Fourth, the WGSL staleness gate treats `common/` as one input.**
+`newest_shared_import` walks `Resources/ShadersSlang/common/` and returns the
+newest mtime found anywhere in it; both
+`CheckedInWgslIsNotOlderThanItsSlangSource` and
+`CompiledShadersAreNotOlderThanSharedIncludes` then compare *every* output
+against that single timestamp. Slang has no preprocessor, so the intent is
+right — editing an imported module does invalidate its dependants — but the
+implementation has no notion of which shader imports what. Editing
+`material_fetch.slang` (which the last four batches did repeatedly) marks
+`ssao.wgsl`, `bloom.wgsl`, `tonemap.wgsl`, `gpu_cull.wgsl` and
+`occlusion_bbox.wgsl` stale, none of which import it, or anything that imports
+it. The import graph is right there in the sources as `import <name>;` lines and
+the resolution rule is one directory deep.
+
+This does not fix the *other* false positive on the same gate, and the task
+should not claim it does: when a shader genuinely does import the edited module
+but its emitted WGSL is byte-identical, `slangc` plus `Copy-Item` leave the
+destination's mtime untouched and the gate still reports it stale. That one
+needs a content stamp written by the compile scripts, which live upstream in
+ContainerHub — out of scope here, and worth stating in the test's comment so
+the next reader does not re-derive it.
+
+**Verification context.** Host GPU goldens remain blocked over RDP (the `- [b]`
+near the end of this file) and `path_tracing` mode device-losts on the host
+RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). All five tasks
+are accepted CPU-only: tasks 1, 2 and 3 are parse-time state plus source-text
+gates in `commitTestSuite.exe`, task 4 is in the Rust submodule, task 5 is docs
+plus a gate. **Do not claim a rendered result you cannot obtain** — say which
+suites you actually ran.
+
+**Rust verification limits (task 4).** `cargo test`/`cargo build` do not link on
+this host: the VC++ Build Tools install is incomplete and Git Bash's `link.exe`
+shadows MSVC's. Verify with `cargo check`, `cargo clippy` and
+`cargo fmt --check` from `ExternalLib/Kataglyphis-RustProjectTemplate`, say so
+explicitly in the commit message, and let the always-on Linux lane
+(`Scripts/Linux/run-cargo-tests.sh`) be what actually runs the tests you add.
+
+**Ordering.** Tasks 1, 2 and 3 all edit
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` — land them one at a time,
+in that order; the second and third rebase trivially. Tasks 2 and 5 both edit
+`docs/model-loading.md` (different rows), so serialize those two as well. Task 4
+is the only one inside the Rust submodule and is independent of everything else
+except that it deletes the divergence-matrix row task 5 does not touch.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Collapse `fromGltfMaterial`'s two roughness locals and pin the glTF `shininess` to the value that is actually read** — the `mix(128, 1, roughnessFactor)` result is stored per material and read by nothing, because the one branch that reads `shininess` is the one where `roughnessFactor` was never assigned.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `fromGltfMaterial`
+    (~lines 176–276): the `roughness`/`authoredRoughness` pair, the
+    `has_pbr_metallic_roughness` guard that assigns both, the `shininess`
+    line, and the function's doc comment which describes `shininess` as "the
+    OBJ-only fallback path"
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `neutralMaterial()`
+    (~line 110), which already hard-codes `.shininess = 1.0F`
+  - `Resources/ShadersSlang/common/material_fetch.slang` — `material_roughness()`,
+    the only consumer, and its `material.roughness >= 0.0` branch
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` —
+    `RoughnessFactorReachesTheMaterialUnchanged` and
+    `MaterialWithoutPbrMetallicRoughnessHasNoAuthoredRoughness` (~1406–1480),
+    the two tests that pin the sentinel behaviour and the pattern to copy
+  - `docs/model-loading.md` — the `shininess` row of the material table
+
+  **Steps:**
+  1. Before changing anything, grep `Src/`, `Resources/ShadersSlang/` and
+     `Test/` for `shininess` / `.shininess` and write the reader list into the
+     commit message. The change below is only safe because `material_roughness()`
+     is the sole shader reader; if the grep turns up another, stop and reduce
+     the task to step 2 alone.
+  2. Delete the `float roughness = 1.0F;` local. `authoredRoughness` (already
+     clamped to `[0,1]`) is the only roughness the function needs.
+  3. Replace the `shininess` computation with a named constant — a `constexpr
+     float` at namespace scope beside `neutralMaterial()`, `1.0F`, used by both
+     — and comment it with the reason: `material_roughness()` consults
+     `shininess` only through the `material.roughness < 0` sentinel branch,
+     which a glTF material reaches only when it has no `pbrMetallicRoughness`
+     block, and in that case the old expression evaluated to `mix(128, 1, 1.0)`
+     = `1.0` anyway. Materials that *do* have the block are unaffected because
+     nothing reads their `shininess`.
+  4. Rewrite `fromGltfMaterial`'s doc comment: `roughness_factor` carries
+     through to `ObjMaterial::roughness`, and `shininess` is the pinned
+     no-`pbrMetallicRoughness` fallback rather than "derived from
+     roughness_factor".
+  5. Update `docs/model-loading.md`'s `shininess` row glTF cell to match — the
+     cell currently describes the `mix(128, 1, roughnessFactor)` derivation.
+
+  **Test:** Add `GltfParseUnit.GltfShininessIsThePinnedFallbackValue` to
+  `gltfParseSuite.cpp`, built like `RoughnessFactorReachesTheMaterialUnchanged`
+  (inline `.gltf` string, temp file, `parseCpu`): two materials, one with
+  `"roughnessFactor": 0.1` and one with no `pbrMetallicRoughness` block at all,
+  and assert **both** come back with `shininess == 1.0F` while their `roughness`
+  values differ (`0.1` vs. the negative sentinel) — which states the invariant
+  the change relies on rather than the arithmetic it removes. Add
+  `BuildIntegrity.MaterialShininessIsReadOnlyThroughMaterialRoughness`: scan
+  every `.slang` under `Resources/ShadersSlang/` and fail on any
+  `material.shininess` occurrence outside `common/material_fetch.slang` (or
+  `common/material_rules.slang`, if the binding-free-rules task landed first),
+  so a future shading path cannot start reading the pinned field without
+  noticing.
+
+  **Build:** `clangcl-debug` (no header change, so no `-FreshContainer`):
+  ```pwsh
+  pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
+  .\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParseUnit.*:BuildIntegrity.*
+  ```
+
+  **Context:** The point is not the two saved instructions; it is that a field
+  in the per-material GPU buffer currently carries a number whose value is a
+  fiction, and the doc row describing it makes the fiction sound load-bearing.
+  Pinning it and gating the reader makes the next person's question ("what does
+  a glTF material's shininess mean?") answerable from the source. This is
+  CPU-only — no golden can move, and none is available to prove it anyway.
+
+- [ ] **(M) (refactor) Make the two shader-staleness gates use each shader's real import closure instead of "newest file anywhere under `common/`"** — editing one material module currently marks every checked-in WGSL stale, including five that import nothing related.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `newest_shared_import`
+    (~78–98) and its two callers:
+    `CompiledShadersAreNotOlderThanSharedIncludes` (~1237) and
+    `CheckedInWgslIsNotOlderThanItsSlangSource` (~2021–2077). Also
+    `strip_line_comment` (already in the file) and the `.spv`→`.slang` mapping
+    helper at ~60–76
+  - `Resources/ShadersSlang/shader-manifest.json` — the `wgslMap` array the WGSL
+    gate iterates
+  - `Resources/ShadersSlang/ssao/ssao.slang`, `rasterizer/rasterizer.slang`,
+    `common/material_fetch.slang` — the three sources the new test asserts
+    against; note `ssao.slang` imports only `fullscreen`
+  - `docs/shader-build-pipeline.md` — the staleness rules section, which
+    documents what this gate promises
+
+  **Steps:**
+  1. Add a resolver next to `newest_shared_import`:
+     `std::set<fs::path> import_closure(const fs::path &slang_root, const fs::path &source)`.
+     Read `source`, run each line through `strip_line_comment`, match
+     `import <identifier>;`, and resolve `<identifier>` to
+     `slang_root/common/<identifier>.slang` first, then
+     `source.parent_path()/<identifier>.slang`. Recurse with a visited set so a
+     cycle cannot hang the test, and silently skip names that resolve to
+     nothing (be tolerant: an unresolvable import is the compiler's problem,
+     not this gate's). Do not include `source` itself in the result.
+  2. Add `bool newest_import_for(const fs::path &slang_root, const fs::path
+     &source, fs::file_time_type &out)` on top of it: the newest mtime across
+     the closure, `false` when the closure is empty.
+  3. Rewrite `CheckedInWgslIsNotOlderThanItsSlangSource` to call it per mapping
+     rather than hoisting one timestamp above the loop. Keep the existing
+     skip/continue behaviour (missing destination = submodule not checked out)
+     and keep the failure message naming which import was newer — it should now
+     name the actual file, not "a shared Slang import under common/".
+  4. Do the same in `CompiledShadersAreNotOlderThanSharedIncludes`, using the
+     existing `.spv`→`.slang` mapping to get each artifact's source. Its
+     top-level `GTEST_SKIP` on "no shared imports under common/" becomes a
+     per-entry skip.
+  5. Delete `newest_shared_import` once both callers are converted.
+  6. Extend the comment on the WGSL gate with the failure mode this does **not**
+     fix: a shader that genuinely imports the edited module but whose emitted
+     WGSL is byte-identical is not re-copied, so its mtime stays behind and the
+     gate still reports it stale. Name the real fix (a content stamp written by
+     the compile scripts, which live upstream in ContainerHub) and leave it out
+     of scope. Update `docs/shader-build-pipeline.md`'s staleness section to
+     describe the per-shader rule.
+
+  **Test:** Add `BuildIntegrity.ImportClosureFollowsOnlyRealImports` in the same
+  file: assert `import_closure` of `ssao/ssao.slang` contains
+  `common/fullscreen.slang` and does **not** contain
+  `common/material_fetch.slang`; assert the closure of
+  `rasterizer/rasterizer.slang` contains `common/material_fetch.slang` and
+  `common/scene_types.slang` — the second reached only transitively, which is
+  what proves the recursion. Use `fs::relative(..., slang_root).generic_string()`
+  for the comparisons so the assertions read as paths, not absolute strings.
+
+  **Build:** `clangcl-debug`:
+  ```pwsh
+  pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
+  .\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*
+  ```
+  Run the filter from the **repo root** — these gates locate the tree via
+  `repoRoot()`.
+
+  **Context:** This gate has cost real time across the last several batches: any
+  edit under `common/` (which is most material work) turns it red for shaders
+  that could not possibly be affected, and the standard response — regenerate
+  everything and re-copy — is both slow and, per the note in step 6, not always
+  effective. A gate that reports precisely is a gate people keep believing. Do
+  not weaken it into a warning; make it accurate.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Derive `roughnessFactor` from `Ns` in the OBJ→glTF converter when `Pr` is absent** — the same `.mtl` renders at a shininess-derived roughness through `ObjLoader` and at a flat `1.0` through the converter; this is the last open row of the divergence matrix.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs` — the module doc comment
+    (lines ~9–17, which currently states that `Ns` is deliberately dropped),
+    `ObjMaterial`'s `metallic`/`roughness` `Option<f32>` fields and their
+    `Default`, `parse_mtl`'s `"Pm"`/`"Pr"` arms (~224–237) as the template for a
+    new arm, and `to_gltf`'s `roughness_factor` match (~721–724) with its
+    "keep the literal string so absent converts byte-identically" comment
+  - `Resources/ShadersSlang/common/material_fetch.slang` —
+    `material_roughness()`: `clamp(sqrt(2.0 / (shininess + 2.0)), 0.045, 1.0)`
+    is the mapping to reproduce, including the `0.045` floor
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `material.shininess =
+    mp->shininess;` and the `Pr > 0.0` guard beside it, for how the C++ twin
+    treats "unauthored"
+  - `docs/shader-sharing.md` — the last row of the "Known glTF loader
+    divergences" matrix, which this task closes
+  - `crates/webgpu_renderer/tests/obj_to_gltf.rs` — the integration-test
+    pattern (parse a `.mtl` string, convert, load the result back with the
+    `gltf` crate)
+
+  **Steps:**
+  1. Add `pub shininess: Option<f32>` to the converter's `ObjMaterial`,
+     defaulting to `None`, documented the way `metallic`/`roughness` are:
+     `None` means the directive was absent, which this hand-rolled parser can
+     distinguish and tinyobjloader cannot.
+  2. Add an `"Ns" if !values.is_empty() =>` arm to `parse_mtl`, copied from the
+     `"Pr"` arm.
+  3. In `to_gltf`, extend the `roughness_factor` match: an authored `Pr` still
+     wins; `None` with a finite, non-negative `Ns` emits
+     `(2.0 / (ns + 2.0)).sqrt().clamp(0.045, 1.0)`; `None` with no usable `Ns`
+     keeps the literal `"1.0"` string, so a `.mtl` with neither directive still
+     converts byte-identically. Guard the negative/non-finite `Ns` case
+     explicitly — `sqrt` of a negative is `NaN` and `NaN` is not valid JSON;
+     `finite_or` is the existing helper for that shape.
+  4. Rewrite the module doc comment: `Ns` now maps to `roughnessFactor` through
+     the engine's own `material_roughness()` mapping, so a converted asset
+     matches what the C++ renderer shows for the source `.mtl`; `Ks` still has
+     no equivalent and is still dropped. Say which C++ function is the
+     reference so the two cannot drift silently.
+  5. Delete the now-closed row from `docs/shader-sharing.md`'s divergence
+     matrix, or rewrite it as a parity row naming both sides' mapping — follow
+     whichever convention the `KHR_materials_unlit` row (a parity row) uses.
+
+  **Test:** Add to `crates/webgpu_renderer/tests/obj_to_gltf.rs`: (a) a `.mtl`
+  with `Ns 96` and no `Pr` converts to a `roughnessFactor` within `1e-5` of
+  `sqrt(2/98) ≈ 0.14286`; (b) a `.mtl` with both `Ns 96` and `Pr 0.3` emits
+  `0.3` — the authored value wins; (c) a `.mtl` with neither still emits
+  exactly `1.0`; (d) `Ns -1` and `Ns` non-numeric both fall back to `1.0`
+  rather than emitting `NaN` — load the output back with the `gltf` crate, as
+  the existing tests do, so an invalid document fails loudly.
+
+  **Build:** the Rust crate does not link on this host (incomplete VC++ Build
+  Tools; Git Bash's `link.exe` shadows MSVC's). From
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  ```pwsh
+  cargo check -p kataglyphis_webgpu_renderer
+  cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings
+  cargo fmt --check
+  ```
+  State in the commit message that the tests were not executed locally and that
+  the Linux lane (`Scripts/Linux/run-cargo-tests.sh`, always-on) is what runs
+  them. No C++ build is needed.
+
+  **Context:** The converter's current stance — "drop rather than guess" — is
+  the right default for a general OBJ→glTF tool and the wrong one here, because
+  the guess already exists in this project, in the shader every OBJ material
+  goes through. Emitting the same number is what makes `obj_to_gltf` a lossless
+  path *for this pair of renderers*, which is the only thing it is for. Keep the
+  `0.045` floor: dropping it lets `Ns` values above ~988 produce a roughness the
+  C++ BRDF never sees.
+
+### Docs
+
+- [ ] **(S) Fix the `srgb` row of `docs/model-loading.md`'s material table and gate it against the table's own `.mtl` directives** — the row still lists `map_Kd` and `norm`/`map_Bump` only, three commits after `map_Ke` became a third sRGB-uploaded OBJ slot.
+
+  **Files to read:**
+  - `docs/model-loading.md` — the material table's `srgb` row (~147) and the
+    `textureID` / `emissiveTextureID` / `normalTextureID` /
+    `metallicRoughnessTextureID` rows whose `.mtl` cells name the directives
+    that row is supposed to enumerate
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` —
+    `loadTexturesAndMaterials`'s three `resolveSlot(..., srgb)` call sites: `map_Kd`
+    `true`, `norm`/`map_Bump` `false`, `map_Ke` `true`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `ModelLoadingDocDocumentsEveryObjMaterialMember`, the existing gate over
+    this table and the shape to copy (locate it by name; it is the precedent
+    for parsing the table out of the markdown)
+
+  **Steps:**
+  1. Fix the `srgb` row's `.mtl` cell: `true` for `map_Kd` and `map_Ke`
+     (authored colour), `false` for `norm`/`map_Bump` (tangent-space vectors).
+     Keep the glTF cell as it is — it already covers all four slots.
+  2. While in the row, check the glTF cell against
+     `GltfLoader::parseCpu`'s `assignTextureSlot` calls and correct it if it
+     drifted too; say in the commit message which cells you verified rather
+     than which you edited.
+  3. Add the gate. Extend the existing table parser: collect every
+     backtick-quoted `.mtl` directive appearing in the `.mtl` column of any row
+     whose member name ends in `TextureID` (plus `textureID`), and require each
+     one to appear somewhere in the `srgb` row's `.mtl` cell. That is a
+     mechanical consequence of the table's own content — every OBJ texture slot
+     has a colour space — so it needs no second hand-maintained list.
+
+  **Test:** `BuildIntegrity.ModelLoadingDocSrgbRowCoversEveryObjTextureDirective`
+  in `buildIntegritySuite.cpp`, next to
+  `ModelLoadingDocDocumentsEveryObjMaterialMember` and sharing its table parser.
+  Fail with the missing directive named, and word the message as the fix
+  ("add `map_Ke` to the srgb row's .mtl column"), not as a diagnosis. Verify it
+  actually fails by reverting step 1 locally before you commit.
+
+  **Build:** `clangcl-debug`:
+  ```pwsh
+  pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
+  .\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.ModelLoadingDoc*
+  ```
+  Run from the repo root — the gate locates the doc via `repoRoot()`.
+
+  **Context:** `docs/model-loading.md`'s material table is the one place the two
+  loaders are described side by side, and it is load-bearing precisely because
+  the loaders keep gaining slots — five appends in two weeks. The member-level
+  gate already stops a *member* from being added without a row; nothing stops a
+  row's contents from going stale as the slots multiply, which is what happened
+  here. Gate the part of the table that is derivable from the rest of the table,
+  and leave the prose cells to review.
