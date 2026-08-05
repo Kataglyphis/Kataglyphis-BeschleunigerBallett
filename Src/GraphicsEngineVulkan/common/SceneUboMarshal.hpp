@@ -11,6 +11,7 @@
 #include "common/LightDirection.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/SceneUBO.hpp"
+#include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
 namespace Kataglyphis {
 
@@ -69,6 +70,20 @@ constexpr auto clampCloudMeshScale(glm::vec3 meshScale, float densityMultiplier)
         std::max(densityMultiplier, kMinCloudDensityMultiplier) };
 }
 
+// Clamps the two cloud march-step counts into CloudDispatch.hpp's bounds
+// before they reach SceneUBO, so the UBO can never carry an out-of-range
+// count regardless of who wrote the GUI vars (a test, a config load) - the
+// same job clampCloudMeshScale already does for the mesh scale.
+constexpr auto clampCloudMarchSteps(int numMarchSteps) -> int
+{
+    return std::clamp(numMarchSteps, kMinCloudMarchSteps, kMaxCloudMarchSteps);
+}
+
+constexpr auto clampCloudLightMarchSteps(int numMarchStepsToLight) -> int
+{
+    return std::clamp(numMarchStepsToLight, kMinCloudLightMarchSteps, kMaxCloudLightMarchSteps);
+}
+
 // Packs every GUI cloud slider into SceneUBO's four cloud vec4s. The unpack
 // side is clouds_main's cloud-parameter unpack block in clouds.slang
 // (BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack pins the two against
@@ -91,11 +106,11 @@ inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
   float cirrusEffect,
   bool powderEffect)
 {
-    ubo.cloudLightMarch = glm::vec4(static_cast<float>(numMarchStepsToLight), 0.0F, 0.0F, 0.0F);
+    ubo.cloudLightMarch = glm::vec4(static_cast<float>(clampCloudLightMarchSteps(numMarchStepsToLight)), 0.0F, 0.0F, 0.0F);
     ubo.cloudMeshScale = clampCloudMeshScale(meshScale, densityMultiplier);
     ubo.cloudMeshOffset = glm::vec4(meshOffset.x, meshOffset.y, meshOffset.z, coverageThreshold);
     ubo.cloudParameters = glm::vec4(
-      pillowness, cirrusEffect, powderEffect ? 1.0F : 0.0F, static_cast<float>(numMarchSteps));
+      pillowness, cirrusEffect, powderEffect ? 1.0F : 0.0F, static_cast<float>(clampCloudMarchSteps(numMarchSteps)));
 }
 
 // Packs the camera position/direction into their two SceneUBO vec4s. Both

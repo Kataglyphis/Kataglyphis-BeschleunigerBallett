@@ -19,13 +19,19 @@
 #include "renderer/SceneUBO.hpp"
 
 using Kataglyphis::aspectRatioOf;
+using Kataglyphis::clampCloudLightMarchSteps;
+using Kataglyphis::clampCloudMarchSteps;
 using Kataglyphis::clampCloudMeshScale;
 using Kataglyphis::clampPcfRadius;
 using Kataglyphis::fillSceneUboCamera;
 using Kataglyphis::fillSceneUboCascades;
 using Kataglyphis::fillSceneUboClouds;
 using Kataglyphis::fillSceneUboDirectionalLight;
+using Kataglyphis::kMaxCloudLightMarchSteps;
+using Kataglyphis::kMaxCloudMarchSteps;
 using Kataglyphis::kMinCloudDensityMultiplier;
+using Kataglyphis::kMinCloudLightMarchSteps;
+using Kataglyphis::kMinCloudMarchSteps;
 using Kataglyphis::kMinCloudMeshExtent;
 using Kataglyphis::makeVulkanProjection;
 using Kataglyphis::VulkanRendererInternals::SceneUBO;
@@ -236,6 +242,52 @@ TEST(SceneUboMarshalUnit, CloudSlidersLandInTheDocumentedComponents)
     EXPECT_GE(degenerate.cloudMeshScale.w, kMinCloudDensityMultiplier);
     EXPECT_FLOAT_EQ(degenerate.cloudParameters.z, 0.0F)
       << "powderEffect == false must produce exactly 0.0F - clouds.slang tests > 0.5";
+}
+
+TEST(SceneUboMarshalUnit, CloudMarchStepsNeverLeaveTheShaderClampsRange)
+{
+    EXPECT_EQ(clampCloudMarchSteps(kMinCloudMarchSteps - 1), kMinCloudMarchSteps)
+      << "clouds.slang's dt divides by num_march_steps; a below-floor count must not reach the UBO";
+    EXPECT_EQ(clampCloudMarchSteps(0), kMinCloudMarchSteps);
+    EXPECT_EQ(clampCloudMarchSteps(kMinCloudMarchSteps), kMinCloudMarchSteps);
+    EXPECT_EQ(clampCloudMarchSteps(kMaxCloudMarchSteps), kMaxCloudMarchSteps);
+    EXPECT_EQ(clampCloudMarchSteps(kMaxCloudMarchSteps + 1), kMaxCloudMarchSteps);
+
+    EXPECT_EQ(clampCloudLightMarchSteps(kMinCloudLightMarchSteps - 1), kMinCloudLightMarchSteps)
+      << "clouds.slang's dtL divides by num_march_steps_to_light; a below-floor count must not reach the UBO";
+    EXPECT_EQ(clampCloudLightMarchSteps(0), kMinCloudLightMarchSteps);
+    EXPECT_EQ(clampCloudLightMarchSteps(kMinCloudLightMarchSteps), kMinCloudLightMarchSteps);
+    EXPECT_EQ(clampCloudLightMarchSteps(kMaxCloudLightMarchSteps), kMaxCloudLightMarchSteps);
+    EXPECT_EQ(clampCloudLightMarchSteps(kMaxCloudLightMarchSteps + 1), kMaxCloudLightMarchSteps);
+
+    SceneUBO ubo{};
+    fillSceneUboClouds(ubo,
+      /*meshScale=*/glm::vec3(1.0F),
+      /*densityMultiplier=*/1.0F,
+      /*meshOffset=*/glm::vec3(0.0F),
+      /*coverageThreshold=*/0.5F,
+      /*numMarchSteps=*/kMinCloudMarchSteps - 1,
+      /*numMarchStepsToLight=*/kMaxCloudLightMarchSteps + 1,
+      /*pillowness=*/0.0F,
+      /*cirrusEffect=*/0.0F,
+      /*powderEffect=*/false);
+    EXPECT_FLOAT_EQ(ubo.cloudParameters.w, static_cast<float>(kMinCloudMarchSteps))
+      << "fillSceneUboClouds must clamp before packing, regardless of what the GUI vars hold";
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.x, static_cast<float>(kMaxCloudLightMarchSteps));
+
+    SceneUBO inRange{};
+    fillSceneUboClouds(inRange,
+      /*meshScale=*/glm::vec3(1.0F),
+      /*densityMultiplier=*/1.0F,
+      /*meshOffset=*/glm::vec3(0.0F),
+      /*coverageThreshold=*/0.5F,
+      /*numMarchSteps=*/32,
+      /*numMarchStepsToLight=*/16,
+      /*pillowness=*/0.0F,
+      /*cirrusEffect=*/0.0F,
+      /*powderEffect=*/false);
+    EXPECT_FLOAT_EQ(inRange.cloudParameters.w, 32.0F) << "an in-range count must round-trip unchanged";
+    EXPECT_FLOAT_EQ(inRange.cloudLightMarch.x, 16.0F);
 }
 
 TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)

@@ -6466,6 +6466,66 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
+// Parses the min bound out of clouds.slang's
+// `cloud.num_march_steps = int(max(scene.cloudParameters.w, MIN));`. Returns
+// nullopt if the assignment is not found, matching parse_numthreads's
+// convention so a rewritten expression fails loudly rather than matching
+// zero times.
+std::optional<float> parse_cloud_march_steps_min(const std::string &contents)
+{
+    static const std::regex kPattern(
+      R"(num_march_steps\s*=\s*int\(\s*max\(\s*scene\.cloudParameters\.w\s*,\s*([0-9.]+)\s*\)\s*\))");
+    std::smatch match;
+    if (!std::regex_search(contents, match, kPattern)) { return std::nullopt; }
+    return std::stof(match[1].str());
+}
+
+// Parses the [min, max] bounds out of clouds.slang's
+// `cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, MIN, MAX));`.
+std::optional<std::pair<float, float>> parse_cloud_light_march_steps_range(const std::string &contents)
+{
+    static const std::regex kPattern(R"(num_march_steps_to_light\s*=\s*int\(\s*clamp\(\s*scene\.cloudLightMarch\.x\s*,)"
+                                      R"(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)\s*\))");
+    std::smatch match;
+    if (!std::regex_search(contents, match, kPattern)) { return std::nullopt; }
+    return std::make_pair(std::stof(match[1].str()), std::stof(match[2].str()));
+}
+
+// clouds.slang clamps both march-step counts defensively even though the
+// host (SceneUboMarshal.hpp's fillSceneUboClouds) already clamps them before
+// packing - a shader must not trust a UBO. The two clamps have no
+// compiler-enforced link to CloudDispatch.hpp's
+// kMin/kMaxCloudMarchSteps/kMin/kMaxCloudLightMarchSteps, which the GUI
+// slider and the host packer are also built from; this pins the shader
+// literals against those constants so the three places agree. Mirrors
+// CloudDispatchGridsMatchTheShaderWorkgroupSizes's "parse the shader text,
+// compare against the compiled host value" shape.
+TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
+{
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto contents = readFileText(clouds_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
+
+    const auto march_steps_min = parse_cloud_march_steps_min(*contents);
+    ASSERT_TRUE(march_steps_min.has_value())
+      << clouds_path.string() << ": no `num_march_steps = int(max(scene.cloudParameters.w, ...))` found";
+    EXPECT_FLOAT_EQ(*march_steps_min, static_cast<float>(Kataglyphis::kMinCloudMarchSteps))
+      << clouds_path.string() << "'s num_march_steps floor does not match CloudDispatch.hpp's kMinCloudMarchSteps ("
+      << Kataglyphis::kMinCloudMarchSteps << ')';
+
+    const auto light_march_steps_range = parse_cloud_light_march_steps_range(*contents);
+    ASSERT_TRUE(light_march_steps_range.has_value()) << clouds_path.string()
+      << ": no `num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, ...))` found";
+    EXPECT_FLOAT_EQ(light_march_steps_range->first, static_cast<float>(Kataglyphis::kMinCloudLightMarchSteps))
+      << clouds_path.string()
+      << "'s num_march_steps_to_light lower bound does not match CloudDispatch.hpp's kMinCloudLightMarchSteps ("
+      << Kataglyphis::kMinCloudLightMarchSteps << ')';
+    EXPECT_FLOAT_EQ(light_march_steps_range->second, static_cast<float>(Kataglyphis::kMaxCloudLightMarchSteps))
+      << clouds_path.string()
+      << "'s num_march_steps_to_light upper bound does not match CloudDispatch.hpp's kMaxCloudLightMarchSteps ("
+      << Kataglyphis::kMaxCloudLightMarchSteps << ')';
+}
+
 // Parses the operand list of noise.slang's `noiseVolume[tid] = float4( ... );`
 // assignment, splitting on top-level commas (respecting nested parens, so an
 // operand like `worley(uvw, 4.0)` counts as one argument, not two). Returns

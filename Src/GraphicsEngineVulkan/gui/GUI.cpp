@@ -4,6 +4,7 @@
 #include "common/SceneUboMarshal.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
 #include <array>
 #include <cstdint>
@@ -205,8 +206,10 @@ void GUI::render()
         if (ImGui::TreeNode("Cloud Settings")) {
             ImGui::Checkbox("Enable Clouds", &guiSceneSharedVars.clouds_enabled);
             if (guiSceneSharedVars.clouds_enabled) {
-                ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps, 1, 128);
-                ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light, 1, 128);
+                ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps,
+                  Kataglyphis::kMinCloudMarchSteps, Kataglyphis::kMaxCloudMarchSteps);
+                ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light,
+                  Kataglyphis::kMinCloudLightMarchSteps, Kataglyphis::kMaxCloudLightMarchSteps);
                 // cloud.scale (clouds.slang) - the density multiplier applied to the noise sample.
                 ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density_multiplier, Kataglyphis::kMinCloudDensityMultiplier, 1.0F);
                 // cloud.threshold (clouds.slang) - the noise cut-off below which a sample counts as clear sky.

@@ -133,6 +133,12 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     float3 eyePosition = scene.cam_pos.xyz;
 
     Clouds cloud;
+    // A shader must not trust a UBO, so these clamps stay even though the host
+    // (SceneUboMarshal.hpp's fillSceneUboClouds) already clamps both counts
+    // before packing them. The four literals here are owned by
+    // CloudDispatch.hpp's kMinCloudMarchSteps/kMaxCloudMarchSteps/
+    // kMinCloudLightMarchSteps/kMaxCloudLightMarchSteps and pinned against
+    // them by BuildIntegrity.CloudMarchStepBoundsMatchTheShaderClamps.
     cloud.num_march_steps = int(max(scene.cloudParameters.w, 4.0));
     cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, 1.0, 128.0));
     cloud.scale = scene.cloudMeshScale.w;
