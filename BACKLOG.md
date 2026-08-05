@@ -11383,30 +11383,6 @@ tasks 3 and 5 change no `Src/` output at all. No task in this batch touches a
 `.slang` file, so no shader recompile and no WGSL regeneration is needed and
 the staleness gates cannot fire.
 
-- [ ] **(S) Benchmark the two flat-normal functions and `transformAABB`, and re-capture the baseline rows the new gate now demands** — `computeTangents` is the only one of the three vertex-pass functions with perf coverage, and it only got it because a quadratic bug needed acceptance evidence after the fact.
-
-  **Files to read:**
-  - `Test/perf/perfSuite.cpp` — `BM_ComputeTangents` (the per-primitive `firstIndex` walk to mirror), `BM_FrustumCull` / `makeRandomAABBs` / `representativeFrustumPlanes` (the fixed-seed generator and camera constants to reuse)
-  - `Src/GraphicsEngineVulkan/scene/Vertex.ixx` — the contracts for `computeFlatNormals`, `fillMissingFlatNormals`, `computeTangents`
-  - `Src/GraphicsEngineVulkan/scene/Frustum.ixx` / `Frustum.cpp` — `transformAABB`, and `MeshDrawRecorder.ixx`'s `walkSceneMeshes` for where it is called from
-  - `Test/perf/baselines/win-9070xt-32core.json` — the 20 existing rows and the `context` block
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow`, which asserts set equality in both directions and will go red the moment a benchmark is registered without a row
-  - `Scripts/Compare-PerfBaseline.ps1` — its header states the refresh procedure
-
-  **Steps:**
-  1. Add `BM_ComputeFlatNormals` and `BM_FillMissingFlatNormals` next to `BM_ComputeTangents`, reusing its quad-strip fixture and its `->Arg(1)->Arg(64)->Arg(512)` shape so the three are directly comparable. For `BM_FillMissingFlatNormals`, zero the normals of a deterministic subset (say every third vertex) before the loop so the function's "only fill near-zero corners" branch is actually exercised — a fixture where every normal is already valid measures the wrong path.
-  2. Add `BM_TransformAABB` over `makeRandomAABBs(state.range(0))` with a non-trivial model matrix (translate × rotate × non-uniform scale — the mirrored/non-uniform case is the one whose eight-corner walk exists for), `->Arg(64)->Arg(512)` to match `BM_FrustumCull`'s arguments so the cull and the transform can be read side by side.
-  3. Build `clangcl-profile` and run `perfTestSuite.exe` twice; keep the run only if the two agree and the numbers are monotonic in the argument. Append the six new rows to `win-9070xt-32core.json` — **append only**, exactly as `33f6e016` did: leave the existing 20 rows and the `context` block untouched, and say so in the commit message.
-  4. Re-run `BuildIntegrity.EveryRegisteredBenchmarkHasAPerfBaselineRow` and confirm it is green in both directions.
-
-  **Test:** The gate above *is* the test and it is currently green — the task's own success criterion is that it stays green after six new registrations, which it can only do if the baseline was updated. Additionally run `Scripts/Compare-PerfBaseline.ps1` against the fresh run and confirm it reports zero unmatched benchmarks (its never-fatal-on-unmatched rule means a non-empty unmatched list is the signal, not the exit code).
-
-  **Build:** `clangcl-profile` — the only configuration where benchmarks mean anything:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile`
-  then run `.\build-clangcl-profile\perfTestSuite.exe --benchmark_out=... --benchmark_out_format=json` from the repo root, and `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*Benchmark*` for the gate.
-
-  **Context:** This is measurement, not optimisation, and the entry should not turn into one. `transformAABB` runs `models × meshes × 2 passes` times per frame (sponza is 373 meshes), each call eight `mat4 × vec4` products plus sixteen component-wise min/max — whether that is worth caching per mesh is a question this benchmark exists to answer, and nobody should cache anything before the number is on paper. The flat-normal pair is the cheaper half of the task and the more historically-motivated: `computeTangents`' accumulator bug was quadratic in primitive count, both siblings walk the same `firstIndex` shape, and neither has ever been measured.
-
 ### Not in this batch, recorded so it is not lost
 
 - **`Camera::set_fov` / `set_near_plane` / `set_far_plane` have no production

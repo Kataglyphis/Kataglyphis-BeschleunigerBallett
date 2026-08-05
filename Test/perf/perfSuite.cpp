@@ -403,6 +403,141 @@ void BM_ComputeTangents(benchmark::State &state)
 }
 BENCHMARK(BM_ComputeTangents)->Arg(1)->Arg(64)->Arg(512);
 
+// ------------------------------------------------------- flat-normal pair --
+// vertex::computeFlatNormals / fillMissingFlatNormals run over the same
+// per-primitive indices[firstIndex..] shape as computeTangents (same loaders,
+// same call sites), but had zero perf coverage until now - computeTangents
+// only got its benchmark because its accumulator bug was quadratic in
+// primitive count and needed acceptance evidence after the fact. Reuses
+// BM_ComputeTangents's quad-strip fixture so all three are directly
+// comparable at the same argument values.
+
+void BM_ComputeFlatNormals(benchmark::State &state)
+{
+    const auto primitiveCount = static_cast<std::size_t>(state.range(0));
+    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
+
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    std::vector<std::size_t> firstIndices;
+    std::vector<std::size_t> vertexCountSoFar;
+    std::vector<std::size_t> indexCountSoFar;
+    vertices.reserve(primitiveCount * 4);
+    indices.reserve(primitiveCount * 6);
+    firstIndices.reserve(primitiveCount);
+    vertexCountSoFar.reserve(primitiveCount);
+    indexCountSoFar.reserve(primitiveCount);
+
+    for (std::size_t p = 0; p < primitiveCount; ++p) {
+        const auto base = static_cast<unsigned int>(vertices.size());
+        const float ox = static_cast<float>(p) * 2.0F;
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
+
+        firstIndices.push_back(indices.size());
+        indices.push_back(base + 0);
+        indices.push_back(base + 1);
+        indices.push_back(base + 2);
+        indices.push_back(base + 0);
+        indices.push_back(base + 2);
+        indices.push_back(base + 3);
+
+        vertexCountSoFar.push_back(vertices.size());
+        indexCountSoFar.push_back(indices.size());
+    }
+
+    for (auto _ : state) {
+        for (std::size_t p = 0; p < primitiveCount; ++p) {
+            vertex::computeFlatNormals(std::span<Vertex>(vertices.data(), vertexCountSoFar[p]),
+              std::span<const unsigned int>(indices.data(), indexCountSoFar[p]),
+              firstIndices[p]);
+        }
+        benchmark::DoNotOptimize(vertices.data());
+    }
+}
+BENCHMARK(BM_ComputeFlatNormals)->Arg(1)->Arg(64)->Arg(512);
+
+// Same fixture as BM_ComputeFlatNormals, but every third vertex's normal is
+// zeroed before the loop so the function's "only fill near-zero corners"
+// branch is actually exercised - a fixture where every normal is already
+// valid would measure the early-out path instead.
+void BM_FillMissingFlatNormals(benchmark::State &state)
+{
+    const auto primitiveCount = static_cast<std::size_t>(state.range(0));
+    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
+
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    std::vector<std::size_t> firstIndices;
+    std::vector<std::size_t> vertexCountSoFar;
+    std::vector<std::size_t> indexCountSoFar;
+    vertices.reserve(primitiveCount * 4);
+    indices.reserve(primitiveCount * 6);
+    firstIndices.reserve(primitiveCount);
+    vertexCountSoFar.reserve(primitiveCount);
+    indexCountSoFar.reserve(primitiveCount);
+
+    for (std::size_t p = 0; p < primitiveCount; ++p) {
+        const auto base = static_cast<unsigned int>(vertices.size());
+        const float ox = static_cast<float>(p) * 2.0F;
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
+
+        firstIndices.push_back(indices.size());
+        indices.push_back(base + 0);
+        indices.push_back(base + 1);
+        indices.push_back(base + 2);
+        indices.push_back(base + 0);
+        indices.push_back(base + 2);
+        indices.push_back(base + 3);
+
+        vertexCountSoFar.push_back(vertices.size());
+        indexCountSoFar.push_back(indices.size());
+    }
+    // Zero every third vertex's normal so fillMissingFlatNormals actually has
+    // corners to fill instead of taking the near-zero-length early-out.
+    for (std::size_t i = 0; i < vertices.size(); i += 3) { vertices[i].normal = glm::vec3(0.0F); }
+
+    for (auto _ : state) {
+        for (std::size_t p = 0; p < primitiveCount; ++p) {
+            vertex::fillMissingFlatNormals(std::span<Vertex>(vertices.data(), vertexCountSoFar[p]),
+              std::span<const unsigned int>(indices.data(), indexCountSoFar[p]),
+              firstIndices[p]);
+        }
+        benchmark::DoNotOptimize(vertices.data());
+    }
+}
+BENCHMARK(BM_FillMissingFlatNormals)->Arg(1)->Arg(64)->Arg(512);
+
+// ------------------------------------------------------------ transformAABB --
+// Runs `models × meshes × 2 passes` times per frame (MeshDrawRecorder's
+// walkSceneMeshes calls it once per mesh for the camera pass and once per
+// mesh for the shadow pass; sponza is 373 meshes) with zero perf coverage
+// until now. A non-trivial model matrix (translate x rotate x non-uniform
+// scale) exercises the general eight-corner walk this function exists for -
+// a pure-translation matrix would let the compiler take shortcuts a mirrored/
+// non-uniformly-scaled model never gets in practice. Arguments match
+// BM_FrustumCull's so the cull and the transform can be read side by side.
+
+void BM_TransformAABB(benchmark::State &state)
+{
+    const auto boxes = makeRandomAABBs(static_cast<std::size_t>(state.range(0)));
+
+    glm::mat4 model(1.0F);
+    model = glm::translate(model, glm::vec3(12.0F, -4.0F, 7.0F));
+    model = glm::rotate(model, glm::radians(37.0F), glm::normalize(glm::vec3(0.3F, 1.0F, 0.2F)));
+    model = glm::scale(model, glm::vec3(1.5F, 0.5F, 2.25F));
+
+    for (auto _ : state) {
+        for (const auto &box : boxes) { benchmark::DoNotOptimize(Kataglyphis::transformAABB(model, box)); }
+    }
+}
+BENCHMARK(BM_TransformAABB)->Arg(64)->Arg(512);
+
 }// namespace
 
 BENCHMARK_MAIN();
