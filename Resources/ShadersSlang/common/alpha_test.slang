@@ -1,5 +1,6 @@
 import scene_types;
 import base_color;
+import material_fetch;
 import material_rules;
 import material_textures;
 
@@ -13,21 +14,18 @@ import material_textures;
 //
 // Imports its textures/textureSamplers bindings from material_textures.slang
 // rather than declaring its own copy (material_fetch.slang declares only
-// objectDescription, not textures, so that module still cannot supply them):
-// ray_hit_masked_out() takes its ObjectDescription as a parameter rather
-// than fetching it itself, so this module has no need to import
-// material_fetch.slang at all. Both raytrace.rahit.slang and
-// path_tracing.slang import material_fetch and alpha_test together without
-// conflict.
+// objectDescription, not textures, so that module still cannot supply them),
+// and fetches its ObjMaterial via material_fetch.slang's fetch_material()
+// rather than re-deriving it from the raw material buffer addresses inline.
+// Both raytrace.rahit.slang and path_tracing.slang import material_fetch
+// and alpha_test together without conflict.
 
 // True when a ray hit's triangle should be treated as transparent: a glTF
 // MASK material whose sampled alpha falls below its cutoff. Non-MASK
 // materials (alphaCutoff < 0) always return false.
 bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
 {
-    MaterialIDs* materialIDs = (MaterialIDs*)obj.material_index_address;
-    Materials* materials = (Materials*)obj.material_address;
-    ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
+    ObjMaterial material = fetch_material(obj, primitiveID);
 
     if (material.alphaCutoff < 0.0) { return false; }
 

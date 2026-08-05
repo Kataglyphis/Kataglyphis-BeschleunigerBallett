@@ -11045,55 +11045,6 @@ reason too. Only task 5 changes a C++23 module interface
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Have `alpha_test.slang` call `fetch_material()`, and delete `material_fetch.slang`'s disproved "cannot import this module" paragraph** — the last two survivors of batch IX's stale-rationale sweep.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/common/alpha_test.slang` — `ray_hit_masked_out`'s
-    first three lines (`MaterialIDs*` / `Materials*` /
-    `materials->m[materialIDs->i[primitiveID]]`) and the module comment above,
-    which already records that both importers "import material_fetch and
-    alpha_test together without conflict".
-  - `Resources/ShadersSlang/common/material_fetch.slang` — `fetch_material`,
-    whose body those three lines reproduce exactly, and the header comment
-    ending "...which declare their own objectDescription binding and cannot
-    also import this module — can still use them".
-  - `Resources/ShadersSlang/raytracing/raytrace.rahit.slang`,
-    `path_tracing/path_tracing.slang` — the only two importers of
-    `alpha_test.slang`; both already import `material_fetch`.
-
-  **Steps:**
-  1. Add `import material_fetch;` to `alpha_test.slang` and replace the
-     inline three-line lookup in `ray_hit_masked_out` with
-     `ObjMaterial material = fetch_material(obj, primitiveID);`.
-  2. Rewrite `alpha_test.slang`'s "Declares its own textures/textureSamplers
-     bindings rather than importing them from material_fetch.slang..."
-     paragraph to say what is now true. If task 3 already moved those arrays
-     out, this paragraph mostly goes away — resolve the two edits, do not stack
-     two contradictory comments.
-  3. Rewrite `material_fetch.slang`'s header comment: `raytrace.rchit.slang`,
-     `raytrace.rahit.slang` and `path_tracing.slang` all import this module as
-     of `13f377b6`, so the reason given for splitting the rules into
-     `material_rules.slang` / `base_color.slang` / `emission.slang` /
-     `normal_map.slang` must be restated as what it actually is (those modules
-     declare no bindings and are therefore importable by shaders that own their
-     own descriptor declarations) rather than as a claim about entry points
-     that cannot import this one.
-  4. Recompile and run the byte-identical SPIR-V check from the batch preamble.
-
-  **Test:** Extend the existing gate that pins the shared-module rationale, or
-  add `BuildIntegrity.NoModuleReDeclaresFetchMaterialsBody`: assert no file
-  under `Resources/ShadersSlang/` other than `common/material_fetch.slang`
-  contains the `materials->m[materialIDs->i[` lookup. One assertion, explicit
-  allow-list of one file.
-
-  **Build:** `clangcl-debug`, same invocation as task 1.
-
-  **Context:** Batch IX's task 1 (`13f377b6`) rewrote this rationale in five
-  `common/` modules and routed `path_tracing.slang` and `raytrace.rchit.slang`
-  through `material_fetch`; it did not reach `material_fetch.slang`'s own
-  header or `alpha_test.slang`'s copy of `fetch_material`'s body. This closes
-  that sweep. Land it after task 3 — both edit `alpha_test.slang`.
-
 - [ ] **(S) Extract the TLAS instance base-offset accumulator next to `assignTextureOffsets`, and unit-test it** — the number tasks 1 and 2 make the shaders read is produced by an untested inline loop in `createTLAS`, while its mirror-image contract half was extracted and tested long ago.
 
   **Files to read:**

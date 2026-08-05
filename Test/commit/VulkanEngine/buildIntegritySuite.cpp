@@ -3923,7 +3923,6 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
     static const std::string kObjectDescriptionDecl = "StructuredBuffer<ObjectDescription> objectDescription";
     static const std::string kMaterialIndexAddress = "material_index_address";
     static const std::string kMaterialFetchRelative = "common/material_fetch.slang";
-    static const std::string kAlphaTestRelative = "common/alpha_test.slang";
     static const std::string kSceneTypesRelative = "common/scene_types.slang";
 
     std::vector<std::string> binding_violations;
@@ -3946,8 +3945,7 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
         if (content->find(kObjectDescriptionDecl) != std::string::npos && relative_path != kMaterialFetchRelative) {
             binding_violations.push_back(relative_path);
         }
-        if (content->find(kMaterialIndexAddress) != std::string::npos && relative_path != kMaterialFetchRelative
-            && relative_path != kAlphaTestRelative) {
+        if (content->find(kMaterialIndexAddress) != std::string::npos && relative_path != kMaterialFetchRelative) {
             lookup_violations.push_back(relative_path);
         }
     }
@@ -3967,7 +3965,7 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
 
     EXPECT_TRUE(lookup_violations.empty())
       << lookup_violations.size() << " file(s) hand-roll the material_index_address lookup outside "
-      << kMaterialFetchRelative << " and " << kAlphaTestRelative << ": "
+      << kMaterialFetchRelative << ": "
       << [&lookup_violations] {
              std::string joined;
              for (const auto &entry : lookup_violations) { joined += "\n  " + entry; }
