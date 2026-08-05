@@ -11507,59 +11507,6 @@ task 4 is where most of that ratio comes from.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Complete the "KEY Bindings" panel and gate it against the bindings the code actually implements** — the panel lists WASD and QE; the engine also quits on ESC and turns the camera on right-mouse-drag, neither of which appears anywhere in the UI.
-
-  **Files to read:**
-  - `Src/shared/frontend/CommonGuiPanels.ixx:32-37` — `renderCommonKeyBindings`,
-    the whole panel: one `TextUnformatted` naming six keys.
-  - `Src/shared/frontend/CameraController.ixx:54-59` — the six movement/turn
-    keys (`GLFW_KEY_W/A/S/D/Q/E`).
-  - `Src/shared/frontend/WindowInputCallbacks.ixx:56` —
-    `GLFW_KEY_ESCAPE` closes the window; `:118-134` —
-    `should_capture_cursor`/`should_release_cursor`/`cursor_input_mode_for`,
-    the right-mouse look mode (`GLFW_MOUSE_BUTTON_RIGHT`) that captures the
-    cursor while held.
-  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:367-386` — the tests that
-    already pin the right-button and cursor-mode behaviour, i.e. the
-    behaviour the panel is silent about.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11379-11412` —
-    `EveryTunableGuiSceneVarHasAControl`, the "source names a thing, the UI
-    must mention it" gate shape to copy.
-
-  **Steps:**
-  1. Rewrite the panel text to cover every binding: `W`/`A`/`S`/`D` move,
-     `Q`/`E` rotate, **right mouse button (hold) to look**, **ESC to quit**.
-     Keep it one `TextUnformatted` with `\n`s — the gate in step 2 searches
-     the literal.
-  2. Add `BuildIntegrity.KeyBindingsPanelListsEveryBinding` to
-     `buildIntegritySuite.cpp`: read `Src/shared/frontend/CameraController.ixx`
-     and collect every `GLFW_KEY_<X>` it tests, read
-     `Src/shared/frontend/WindowInputCallbacks.ixx` and collect every
-     `GLFW_KEY_<X>` / `GLFW_MOUSE_BUTTON_<X>` it acts on, then assert the
-     panel literal in `CommonGuiPanels.ixx` mentions each one. Map symbol to
-     prose with a small in-test table (`GLFW_KEY_W` -> `"W"`,
-     `GLFW_KEY_ESCAPE` -> `"ESC"`, `GLFW_MOUSE_BUTTON_RIGHT` -> `"right
-     mouse"`), and fail with the unmapped symbol's name when a new binding
-     appears with no table entry — a new binding must force a decision, not
-     be silently ignored.
-  3. Exempt nothing silently: if a symbol is deliberately not user-facing,
-     it goes in a named exemption list in the test with a reason comment.
-
-  **Test:** the gate above is the test. Verify it fails as intended by
-  temporarily deleting `ESC` from the panel string before committing.
-
-  **Build:** `clangcl-debug` with **`-FreshContainer`** (module-interface
-  change: `CommonGuiPanels.ixx`). Run
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-  from the repo root.
-
-  **Context:** The right-mouse look mode shipped this cycle (`6c4191ab`, the
-  cursor-capture fix) and the panel was not touched; ESC has never been
-  listed. This is the cheapest class of user-facing defect in the tree — the
-  UI documents the controls, and the documentation is a string literal
-  nothing checks. Same reasoning as `MaxTextureCountInDocsMatchesTheHeader`:
-  a hand-maintained claim next to the code that could derive it.
-
 ### Test and gate infrastructure
 
 - [ ] **(S) (refactor) Derive `EveryTunableGuiSceneVarHasAControl`'s member list from the header instead of hand-typing it, and cover `GUIRendererSharedVars` too** — the gate as written catches a control being deleted and cannot catch the thing it was created for: a new field with no control.
