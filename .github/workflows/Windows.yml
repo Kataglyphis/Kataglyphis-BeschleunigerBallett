@@ -313,7 +313,14 @@ jobs:
       # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
       # and the shader-file reader target found a real terminate-on-throw bug
       # from a seed on its first run.
+      #
+      # timeout-minutes because this step is where a hang actually happened:
+      # the "con" seed spent 68 minutes inside readTextFile on 2026-08-05 (see
+      # FileReader.ixx) and the run had to be killed by hand rather than going
+      # red. Seven targets need about a minute in total; 20 leaves room for a
+      # cold container start and still fails the same day.
       - name: Run fuzz target seeds inside the container
+        timeout-minutes: 20
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
