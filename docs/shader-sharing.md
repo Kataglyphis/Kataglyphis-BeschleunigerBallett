@@ -87,14 +87,14 @@ system rather than textual `#include`:
 - `common/fullscreen.slang` — the shared fullscreen-triangle vertex trick
   (`vid/2*4-1`), used by every fullscreen pass on both sides.
 - `common/material_fetch.slang` — glTF material helpers for the raster
-  entry points: `transform_uv` (KHR_texture_transform) and
-  `alpha_masked_out` (alphaMode MASK). Not imported by the ray tracing /
-  path tracing entry points, which already declare their own
+  entry points: `alpha_masked_out` (alphaMode MASK). Not imported by the ray
+  tracing / path tracing entry points, which already declare their own
   `objectDescription` binding and cannot re-import the same binding from
   this module.
 - `common/base_color.slang` — `base_color` (glTF base colour =
-  `baseColorFactor * sampled texture`), split out into its own bindingless
-  module so every shading path can import it. It is what keeps
+  `baseColorFactor * sampled texture`) and `transform_uv`
+  (KHR_texture_transform), split out into its own bindingless module so every
+  shading path can import it. It is what keeps
   `rasterizer/rasterizer.slang`, `deferred/deferred.slang`,
   `raytracing/raytrace.rchit.slang`, and `path_tracing/path_tracing.slang`
   in agreement with `forward/forward.slang`'s reference
@@ -167,10 +167,9 @@ revisions of this document as "in progress" is complete.
 - **Base-colour UV set beyond TEXCOORD_0** — `scene/GltfLoader.cpp`'s
   `fromGltfMaterial` (C++) supports only TEXCOORD_0 and now warns when a
   material's base-colour texture or `KHR_texture_transform` names anything
-  else (including a rotation, which is also unapplied); the WebGPU
-  `asset/gltf_loader.rs`'s `uv_set_bit` (Rust) supports TEXCOORD_0/1 and warns
-  only past that. The Rust masked-shadow pass (`forward.slang`'s
-  `vs_shadow_masked`/`fs_shadow_masked`) honours the per-slot UV mask for the
+  else; the WebGPU `asset/gltf_loader.rs`'s `uv_set_bit` (Rust) supports
+  TEXCOORD_0/1 and warns only past that. The Rust masked-shadow pass
+  (`forward.slang`'s `vs_shadow_masked`/`fs_shadow_masked`) honours the per-slot UV mask for the
   base-colour slot the same way the forward pass does, so a MASK material
   whose base-colour texture declares TEXCOORD_1 casts a shadow silhouette
   that matches its forward-pass alpha test; the C++ shadow pass has no

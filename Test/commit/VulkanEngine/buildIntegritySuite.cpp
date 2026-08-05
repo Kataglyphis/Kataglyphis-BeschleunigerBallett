@@ -5463,6 +5463,69 @@ TEST(BuildIntegrity, ModelLoadingDocCitesSymbolsNotLineNumbers)
          }();
 }
 
+// docs/model-loading.md's "Material fields and where they come from" table
+// claims to cover every ObjMaterial member; nothing enforced that claim, so a
+// member has now been appended without a row twice. Held here as the same
+// hand-maintained-list-plus-gate shape ObjMaterial_natural (above) already
+// uses, so the two lists fail together when a member is appended without
+// either being updated.
+TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "model-loading.md";
+    const auto doc_content = readFileText(doc_path);
+    ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
+
+    static constexpr std::array<const char *, 20> kObjMaterialMembers{ "diffuse", "emission", "shininess",
+        "dissolve", "textureID", "alphaCutoff", "uv_transform_row0", "uv_transform_row1", "metallic", "roughness",
+        "emissiveTextureID", "normalTextureID", "normalScale", "metallicRoughnessTextureID",
+        "normal_uv_transform_row0", "normal_uv_transform_row1", "metallic_roughness_uv_transform_row0",
+        "metallic_roughness_uv_transform_row1", "emissive_uv_transform_row0", "emissive_uv_transform_row1" };
+
+    const auto table_start = doc_content->find("Material fields and where they come from");
+    ASSERT_NE(table_start, std::string::npos)
+      << doc_path.string() << " is missing its \"Material fields and where they come from\" section";
+    const std::string table_text = doc_content->substr(table_start);
+
+    // A "_row0" / "_row1" pair is documented as one table row, and the table
+    // is free to spell the second half out in full ("`foo_row1`") or as the
+    // shorthand it actually uses for three of the four pairs ("`_row1`", right
+    // next to "`foo_row0`" on the same line) - both are "documented", so a
+    // "_row1" member is satisfied by either spelling on the row0 member's line.
+    std::vector<std::string> missing;
+    for (const char *member : kObjMaterialMembers) {
+        const std::string full = std::string("`") + member + "`";
+        if (table_text.find(full) != std::string::npos) { continue; }
+
+        const std::string_view member_view{ member };
+        constexpr std::string_view kRow1Suffix = "_row1";
+        if (member_view.size() > kRow1Suffix.size()
+            && member_view.substr(member_view.size() - kRow1Suffix.size()) == kRow1Suffix) {
+            const std::string row0_name = std::string(member_view.substr(0, member_view.size() - kRow1Suffix.size()))
+              + "_row0";
+            const auto row0_pos = table_text.find(std::string("`") + row0_name + "`");
+            if (row0_pos != std::string::npos) {
+                const auto line_end = table_text.find('\n', row0_pos);
+                const auto line = table_text.substr(
+                  row0_pos, line_end == std::string::npos ? std::string::npos : line_end - row0_pos);
+                if (line.find("`_row1`") != std::string::npos) { continue; }
+            }
+        }
+
+        missing.emplace_back(member);
+    }
+
+    EXPECT_TRUE(missing.empty()) << doc_path.string()
+                                  << "'s material table is missing a row for the following ObjMaterial member(s):"
+                                  << [&missing] {
+                                         std::string joined;
+                                         for (const auto &entry : missing) { joined += "\n  " + entry; }
+                                         return joined;
+                                     }();
+}
+
 // Parses docs/code-quality.md's `<!-- format-drift-denominator: N -->` marker
 // line. Returns std::nullopt if the marker line, or its value, is missing -
 // a deleted or malformed marker must fail the calling test, not skip it.
