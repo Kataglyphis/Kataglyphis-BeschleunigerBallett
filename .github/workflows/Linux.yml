@@ -92,6 +92,39 @@ env:
 # flags happens once rather than eleven times.
 jobs:
   # ---------------------------------------------------------------------------
+  # Lint gates, entirely ContainerHub's: shellcheck over this repo's bash and
+  # actionlint over its workflows, both using the pinned, SHA-verified binaries
+  # ContainerHub bootstraps rather than a second set installed here.
+  #
+  # Cheap and first-to-finish (~2 min, no image pull, no build), and it covers a
+  # class the rest of this lane cannot: `yaml.safe_load` proves a workflow is
+  # valid YAML, not valid Actions, and bash only reports a quoting or
+  # undefined-function bug when the line finally executes - which for a
+  # gcc-lane script can be an hour in.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: shell + workflow lint
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # ContainerHub is a TOP-LEVEL submodule and the only one these gates
+          # read, so this deliberately does not recurse - the full recursive
+          # tree costs minutes for no benefit here.
+          submodules: true
+          fetch-depth: 1
+
+      - name: Lint shell scripts (ContainerHub shellcheck gate)
+        run: >-
+          bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh
+          Scripts/Linux/*.sh Scripts/Linux/lib/*.sh
+
+      - name: Lint workflows (ContainerHub actionlint gate)
+        run: >-
+          bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-workflows.sh
+          "${{ github.workspace }}"
+
+  # ---------------------------------------------------------------------------
   # clang: the plain Debug build and the unit/integration suite.
   # ---------------------------------------------------------------------------
   clang-tests:
