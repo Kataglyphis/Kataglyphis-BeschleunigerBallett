@@ -36,7 +36,22 @@ info "=== Wasm Size Budget Test ==="
 info "Budget: ${BUDGET_BYTES} bytes ($(( BUDGET_BYTES / 1024 / 1024 )) MiB)"
 
 info "Ensuring wasm32-unknown-unknown target is installed"
-rustup target add wasm32-unknown-unknown
+# Not `rustup target add` directly: the CI image has no rustup, so that exited
+# 127 and `set -e` failed this step before it measured anything (2026-08-06).
+#
+# A toolchain that cannot target wasm at all is an ENVIRONMENT gap, not a size
+# regression, and this gate exists to catch size regressions. Failing the lane
+# for it would say "the demo got too big" when the truth is "nothing was
+# weighed" - the same trap the pixel-comparison step fell into. So skip, but
+# say so as a GitHub ::warning:: that names the cause: a skipped budget must
+# never read as a budget that passed. The deployed demo falls back to the
+# committed snapshot in docs/source/_webgpu_demo, exactly as it does when the
+# docs step's best-effort rebuild is skipped.
+if ! ensure_wasm32_target; then
+  echo "::warning::Wasm size budget SKIPPED - this toolchain cannot build wasm32-unknown-unknown (no rustup, no wasm32 std in the image). Nothing was weighed; the committed demo snapshot is unchanged. Fix ContainerHub's install-rust.sh to restore the target."
+  info "=== Wasm Size Budget Test: SKIPPED (no wasm32 toolchain) ==="
+  exit 0
+fi
 
 info "Building kataglyphis_webgpu_renderer for wasm32-unknown-unknown (release)"
 ( cd "${RUST_PROJECT_DIR}" && CARGO_TARGET_DIR="target" \

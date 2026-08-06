@@ -42,7 +42,7 @@ build_webgpu_wasm_demo() {
     local wb_ver
     wb_ver="$(grep -A1 '^name = "wasm-bindgen"$' "${rpt}/Cargo.lock" | grep '^version' | head -1 | sed -E 's/version = "(.*)"/\1/')"
     [ -n "${wb_ver}" ] || return 1
-    rustup target add wasm32-unknown-unknown &&
+    ensure_wasm32_target &&
     { { command -v wasm-bindgen >/dev/null 2>&1 \
         && [ "$(wasm-bindgen --version 2>/dev/null | awk '{print $2}')" = "${wb_ver}" ]; } \
         || cargo install --locked wasm-bindgen-cli --version "${wb_ver}"; } &&
