@@ -29,6 +29,11 @@
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui_scene_shared_vars;
 
+// shadowResolutionForIndex moved into Kataglyphis:: (see GUISceneSharedVars.ixx
+// for why); this file calls it unqualified from global scope, unlike the engine
+// callers, which are already inside that namespace.
+using Kataglyphis::shadowResolutionForIndex;
+
 namespace {
 
 // Byte size of GUISceneSharedVars as of the last time makeNonDefaultVars()

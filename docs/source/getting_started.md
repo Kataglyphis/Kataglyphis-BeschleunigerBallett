@@ -34,7 +34,8 @@ For Visual Studio style generators on Windows, add `-C Debug` or `-C Release` to
 A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
 and fails `cmake --list-presets` with `Unrecognized "version" field` — read
 the file itself, or the Windows configurations table in
-[AGENTS.md](../../AGENTS.md#windows-configurations-build-windowsps1), instead.
+[AGENTS.md](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/blob/develop/AGENTS.md#windows-configurations-build-windowsps1),
+instead.
 On Windows, prefer `Scripts/Windows/Build-Windows-Container.ps1`, which builds
 inside a container that already has a new enough CMake.
 

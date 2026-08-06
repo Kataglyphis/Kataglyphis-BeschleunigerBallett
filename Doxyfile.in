@@ -1069,7 +1069,20 @@ EXCLUDE_SYMLINKS       = NO
 # Note that the wildcards are matched against the file with absolute path, so to
 # exclude all test directories for example use the pattern */ test/*
 
-EXCLUDE_PATTERNS       =
+# Implementation units are excluded: this engine is a C++20 modules codebase,
+# so nearly every entity is DECLARED in an .ixx module interface and DEFINED in
+# the .cpp beside it. Doxygen indexes both, which gives Breathe two entries per
+# entity and no way to tell them apart - it then reports, for every one of
+# them, "doxygenfunction: Unable to resolve function ... with arguments (...)".
+# With Sphinx run under -W that failed the whole docs build: 53 warnings on
+# 2026-08-06, ~40 of them exactly this, for sceneConfig::* and vertex::* alone.
+# Excluding *.cpp took it to 15 (measured, same tree, one variable).
+#
+# The interface is the right place to document a module anyway - it is what
+# consumers import. What this gives up is documentation for entities that exist
+# ONLY in a .cpp (file-local helpers and #defines such as App.cpp's), which are
+# implementation detail and not part of any published API.
+EXCLUDE_PATTERNS       = *.cpp
 
 # The EXCLUDE_SYMBOLS tag can be used to specify one or more symbol names
 # (namespaces, classes, functions, etc.) that should be excluded from the
@@ -2395,7 +2408,7 @@ ENABLE_PREPROCESSING   = YES
 # The default value is: NO.
 # This tag requires that the tag ENABLE_PREPROCESSING is set to YES.
 
-MACRO_EXPANSION        = NO
+MACRO_EXPANSION        = YES
 
 # If the EXPAND_ONLY_PREDEF and MACRO_EXPANSION tags are both set to YES then
 # the macro expansion is limited to the macros specified with the PREDEFINED and
@@ -2403,7 +2416,7 @@ MACRO_EXPANSION        = NO
 # The default value is: NO.
 # This tag requires that the tag ENABLE_PREPROCESSING is set to YES.
 
-EXPAND_ONLY_PREDEF     = NO
+EXPAND_ONLY_PREDEF     = YES
 
 # If the SEARCH_INCLUDES tag is set to YES, the include files in the
 # INCLUDE_PATH will be searched if a #include is found.
@@ -2436,7 +2449,17 @@ INCLUDE_FILE_PATTERNS  =
 # recursively expanded use the := operator instead of the = operator.
 # This tag requires that the tag ENABLE_PREPROCESSING is set to YES.
 
-PREDEFINED             =
+# Vulkan's calling-convention macros are erased before Breathe/Sphinx ever
+# see a signature. VulkanDebug.ixx declares
+#   VKAPI_ATTR VkBool32 VKAPI_CALL messageCallback(...)
+# and Sphinx's C++ parser cannot parse a declaration that starts with an
+# unknown macro: it reported "Candidate function could not be parsed" for
+# Kataglyphis::debug::messageCallback and, under -W, failed the docs build.
+# These macros are platform calling-convention noise, not part of the
+# documented signature, so expanding them to nothing is what the docs
+# should show anyway. MACRO_EXPANSION+EXPAND_ONLY_PREDEF above keep the
+# expansion limited to exactly these.
+PREDEFINED             = VKAPI_ATTR= VKAPI_CALL= VKAPI_PTR=
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then this
 # tag can be used to specify a list of macro names that should be expanded. The

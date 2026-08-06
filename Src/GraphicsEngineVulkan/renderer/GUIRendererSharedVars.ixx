@@ -46,9 +46,17 @@ struct GpuTimings
 {
     // false when the graphics queue family reports timestampValidBits == 0.
     bool supported = false;
-    // Smoothed milliseconds per pass; < 0 means no sample yet or the pass is
-    // currently disabled/not recorded. Every element starts at the -1.0F
-    // "no sample" sentinel, for any GPU_TIMED_PASS_COUNT.
+    /// Smoothed milliseconds per pass; < 0 means no sample yet or the pass is
+    /// currently disabled/not recorded. Every element starts at the -1.0F
+    /// "no sample" sentinel, for any GPU_TIMED_PASS_COUNT.
+    ///
+    /// \hideinitializer
+    /// The initializer is an immediately-invoked lambda - valid C++ that
+    /// Sphinx's C++ expression parser cannot read ("Error in postfix
+    /// expression, expected primary expression or type"), which under -W
+    /// failed the whole docs build. Hiding the initializer from Doxygen keeps
+    /// the member documented and its meaning stated above in prose, without
+    /// handing the doc toolchain an expression it has no grammar for.
     std::array<float, GPU_TIMED_PASS_COUNT> pass_ms = [] {
         std::array<float, GPU_TIMED_PASS_COUNT> a{};
         a.fill(-1.0F);

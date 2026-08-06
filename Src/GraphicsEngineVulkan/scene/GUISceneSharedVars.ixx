@@ -22,12 +22,30 @@ export inline constexpr float kMaxShadowDistance = 500.0F;
 
 // Clamps out-of-range indices into [0, kShadowMapResolutionCount - 1] rather
 // than silently falling through to 512 the way the old if/else chain did.
-export constexpr uint32_t shadowResolutionForIndex(int index)
+//
+// In `Kataglyphis`, where the rest of the engine's API lives, and NOT at global
+// scope - this was the only exported free function in the codebase that sat
+// outside a namespace, and that is not merely a style point. Doxygen 1.15
+// indexes an exported entity under both its .ixx file compound and its C++20
+// module compound; it deduplicates namespace members, but for a global-scope
+// free function Breathe is left with two IDENTICAL candidates and refuses to
+// resolve either ("Unable to resolve function shadowResolutionForIndex with
+// arguments (int) - Potential matches:" listing the same signature twice).
+// Under Sphinx's -W that failed the entire docs build. Measured 2026-08-06,
+// same tree, one variable: global scope 1 warning, namespaced 0.
+//
+// Callers inside Kataglyphis:: (VulkanRenderer's members) need no change -
+// unqualified lookup finds it in the enclosing namespace.
+export namespace Kataglyphis {
+
+constexpr uint32_t shadowResolutionForIndex(int index)
 {
     if (index < 0) index = 0;
     if (index >= kShadowMapResolutionCount) index = kShadowMapResolutionCount - 1;
     return kShadowMapResolutions[index];
 }
+
+}// namespace Kataglyphis
 
 export struct GUISceneSharedVars
 {

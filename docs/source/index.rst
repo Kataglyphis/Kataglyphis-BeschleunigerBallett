@@ -60,6 +60,17 @@ Build and maintenance guide for Kataglyphis-BeschleunigerBallett.
    wsl2_vulkan
    webgpu_demo.md
 
+.. The Exhale-generated API tree. The card above links to it, but a card is
+   not a toctree, so without this entry Sphinx reports "document isn't
+   included in any toctree" for api/library_root - and with warnings as
+   errors that fails the docs build. Hidden because the card is the intended
+   entry point; this only gives the generated pages a parent.
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+
+   api/library_root
+
 Indices and tables
 ==================
 
