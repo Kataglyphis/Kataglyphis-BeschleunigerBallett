@@ -96,7 +96,26 @@ struct ShadowSetBinding
     uint32_t firstSet;
     uint32_t setCount;
 
-    friend bool operator==(const ShadowSetBinding &, const ShadowSetBinding &) = default;
+    // A defaulted MEMBER operator==, deliberately not the hidden-friend form
+    //     friend bool operator==(const ShadowSetBinding &, const ShadowSetBinding &) = default;
+    // which this was until 2026-08-06. That form makes GCC 16.1.0 die with
+    // "internal compiler error: Segmentation fault" pointing at this line -
+    // not while compiling the module, but while IMPORTING it (the failing TU
+    // is cascadedShadowMapSuite.cpp, which does `import
+    // kataglyphis.vulkan.cascaded_shadow_map`). It broke the whole gcc lane;
+    // the lane was green on 2026-07-23 and this struct arrived on 2026-08-03.
+    // clang-cl and clang compile either form happily, which is why only the
+    // GNU preset noticed.
+    //
+    // A GCC bug, not a rule about how to write this - and worth reporting
+    // upstream. It reduces no further: the same pattern in a standalone module
+    // compiles fine under the same compiler, so it needs this module's full
+    // context. Do NOT "tidy" it back to a hidden friend without rebuilding
+    // preset linux-debug-GNU first.
+    //
+    // Semantically equivalent here: both give member-wise == on the two
+    // uint32_t fields, and C++20's rewritten candidates cover `b == a` too.
+    bool operator==(const ShadowSetBinding &) const = default;
 };
 ShadowSetBinding shadowSetBinding(bool hasSharedSet);
 
