@@ -58,51 +58,52 @@ env:
   # box; see ContainerHub docs/rancher-desktop-linux-containers.md.
   CONTAINER_IMAGE: "ghcr.io/kataglyphis/kataglyphis_beschleuniger:${{ inputs.runner == 'ubuntu-24.04-arm' && 'latest-cross-arm64' || 'latest-cross-amd64' }}"
 
+# WHY THIS IS FANNED OUT (2026-08-06)
+#
+# This was ONE job running everything in sequence: 2h13m for a complete run, of
+# which ~94 minutes was five full engine builds one after another. They were
+# sequential for a MECHANICAL reason, not a logical one - every step
+# reconfigured the same `build` directory in turn (clang debug -> coverage ->
+# profiling -> gcc -> gcc profiling), so no two could overlap. Giving each its
+# own job gives each its own workspace and the contention disappears; the lane
+# now costs about as long as its slowest single build.
+#
+# Compiler caching was measured FIRST and rejected, so nobody re-proposes it:
+# this is a C++20 modules codebase, ccache cannot cache module compilations at
+# all (79% of calls uncacheable, 0 hits) and sccache - which does accept them -
+# hit 57% on a byte-identical tree yet saved 22 seconds of 5m30s, because the
+# hits land on cheap TUs while the expensive work (module BMI generation,
+# clang-scan-deps) is uncacheable either way.
+#
+# The jobs are deliberately INDEPENDENT - no `needs:` - because each has to
+# build what it tests anyway (build-coverage-llvm.sh runs compileTestSuite,
+# run_static_analysis_format.sh needs compile_commands.json), and shipping a
+# multi-GB build tree between jobs as an artifact costs more than rebuilding it
+# in parallel.
+#
+# What is NOT dropped, and why: TSan and the gcc lane each cost ~25 minutes and
+# each caught a real defect on 2026-08-06 - a struct-padding comparison bug that
+# the plain and ASan runs both passed, and a GCC 16.1.0 ICE no clang lane can
+# see. Demoting them to nightly is the obvious way to make this number smaller
+# and it would have cost both findings.
+#
+# The four-step host prologue every job now repeats lives in ContainerHub's
+# prepare-linux-ci-host action, so a change to the pull retry or the checkout
+# flags happens once rather than eleven times.
 jobs:
-  build_and_test:
+  # ---------------------------------------------------------------------------
+  # clang: the plain Debug build and the unit/integration suite.
+  # ---------------------------------------------------------------------------
+  clang-tests:
+    name: clang debug + tests
     runs-on: ${{ inputs.runner }}
-    # Run this job inside the GHCR container:
-
     steps:
-      - name: Free Disk Space on Host
-        uses: jlumbroso/free-disk-space@main
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: false
-          swap-storage: true
-
-      - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Login to GitHub Container Registry
-        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Pull container image
-        run: |
-          for i in 1 2 3; do
-            echo "Attempt $i to pull container (${{ inputs.runner }})..."
-            if timeout 900 docker pull "${{ env.CONTAINER_IMAGE }}"; then
-              echo "Successfully pulled container"
-              exit 0
-            fi
-            echo "Pull failed, waiting before retry..."
-            sleep 30
-          done
-          echo "Failed to pull container after 3 attempts"
-          exit 1
-
-      #################################################################################################################
-      ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
-      #################################################################################################################
-      #################################################################################################################
-      ############################################### clang: build/test ################################################
-      #################################################################################################################
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
@@ -125,6 +126,22 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
           log-file: output.log
 
+  # ---------------------------------------------------------------------------
+  # AddressSanitizer + UBSan, and the fuzz seed corpora - which need THIS build:
+  # the fuzz targets require project-wide ASan or abseil's container layout
+  # mismatches and they SEGV at startup (Test/fuzz/CMakeLists.txt).
+  # ---------------------------------------------------------------------------
+  asan:
+    name: AddressSanitizer + fuzz seeds
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
@@ -137,25 +154,12 @@ jobs:
             --build-dir "build-asan-clang"
           log-file: output-asan.log
 
-      # Fuzz targets run from the ASAN build, NOT the plain Debug one.
+      # Every target declared in Test/fuzz/CMakeLists.txt runs here.
+      # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi gates this list against
+      # those declarations by parsing the loop line below - keep the target list
+      # on ONE line, and never spell that anchor text in a comment, or the
+      # parser matches the comment instead and reports zero targets.
       #
-      # They used to run from ${{ env.BUILD_DIR }}, where only the fuzz target
-      # itself carried -fsanitize=address while the abseil FuzzTest links
-      # against did not. Abseil's container layout is ASan-dependent, so that
-      # is an ODR violation, and it crashed on startup - reproduced locally in
-      # this same image: raw_hash_set.h "Try enabling sanitizers." assertion
-      # with per-target ASan, all tests passing with ASan applied to every TU.
-      # It broke the lane from 2026-05-17 until 2026-07-20.
-      #
-      # Every target declared in Test/fuzz/CMakeLists.txt runs here - see that
-      # file for what each one covers (shader_file_reader_fuzz_test and
-      # texture_loading_fuzz_test both link VulkanEngineCore, the same
-      # headless-global-constructor hazard scene_config_fuzz_test's comment
-      # describes). Test/commit/VulkanEngine/buildIntegritySuite.cpp's
-      # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi gates this list
-      # against the CMakeLists.txt declarations, and the existence check below
-      # turns a renamed or unbuilt target into a loud failure instead of a
-      # step that silently runs fewer fuzzers than it claims to.
       # Each target runs INSIDE the image it was built in, like every other
       # test step in this lane. It used to run them straight on the runner
       # host - the only step here that did - which is a different libstdc++
@@ -171,6 +175,7 @@ jobs:
       # the loop: with `set -e` semantics the first bad target hid the verdict
       # on every target after it, so each round trip revealed exactly one
       # broken fuzzer out of seven.
+      #
       # A hanging fuzz target must fail the step, not sit until the 6-hour job
       # cap: on 2026-08-05 the Windows twin of this step spent 68 minutes
       # inside one seed ("con", the Windows console device, which readTextFile
@@ -215,6 +220,20 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
           log-file: output-asan.log
 
+  # ---------------------------------------------------------------------------
+  # ThreadSanitizer.
+  # ---------------------------------------------------------------------------
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
       # ThreadSanitizer: the presets existed but nothing ever ran them, so
       # data races could only be found by hand. Non-GPU tests only - the
       # Integration suites need an adapter the CI container does not have.
@@ -241,6 +260,32 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
           log-file: output-tsan.log
 
+  # ---------------------------------------------------------------------------
+  # Coverage. Builds its own tree: build-coverage-llvm.sh runs
+  # ${BUILD_DIR}/compileTestSuite and reads the .profraw it leaves behind, so it
+  # cannot start from an empty workspace.
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: coverage + codecov
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
+      - name: Build for coverage
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          script: >-
+            bash ./Scripts/Linux/cmake-configure-build.sh
+            --preset "linux-debug-clang"
+            --build-dir "${{ env.BUILD_DIR }}"
+          log-file: output.log
+
       - name: Build Code Coverage
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
@@ -261,10 +306,33 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
-      # runs for ever so disable
-      #- name: Run clang tidy
-      #  continue-on-error: true
-      #  run: clang-tidy -p=./${{ env.BUILD_DIR }}/compile_commands.json  $(find Src -name '*.cpp' -o -name '*.cc')
+  # ---------------------------------------------------------------------------
+  # Static analysis. Both analyses stay continue-on-error, as in the single job.
+  # ---------------------------------------------------------------------------
+  static-analysis:
+    name: clang static analysis
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
+      # run_static_analysis_format.sh refuses to start without
+      # ${BUILD_DIR}/compile_commands.json ("Run CMake configure first"), which
+      # in the old single job happened to exist only because an earlier step had
+      # already built into the same directory.
+      - name: Configure/build for analysis
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          script: >-
+            bash ./Scripts/Linux/cmake-configure-build.sh
+            --preset "linux-debug-clang"
+            --build-dir "${{ env.BUILD_DIR }}"
+          log-file: output.log
 
       # The ONLY step that still needs CXXFLAGS/LDFLAGS in the environment: it
       # runs `clang++ --analyze` DIRECTLY (run_static_analysis_format.sh), with
@@ -297,9 +365,20 @@ jobs:
             --preset "linux-debug-clang"
           log-file: output.log
 
-      #################################################################################################################
-      ############################# Now run on performance benchmarking/profiling #####################################
-      #################################################################################################################
+  # ---------------------------------------------------------------------------
+  # clang profiling build + the perf suite.
+  # ---------------------------------------------------------------------------
+  profiling:
+    name: clang profiling + benchmarks
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
       - name: Configure/build CMake for Profiling (select preset by compiler)
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
@@ -318,35 +397,75 @@ jobs:
           script: bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-      # The Rust bridge and the wasm demo are both compiled from this crate
-      # elsewhere in this lane, but neither run its ~150 tests - this is the
-      # only place in this repo that does. GPU-touching tests self-skip
-      # without an adapter (see Scripts/Linux/run-cargo-tests.sh). ARM does
-      # not pay for a second run of the same crate's CPU-only tests.
+  # ---------------------------------------------------------------------------
+  # The Rust bridge and the wasm demo are both compiled from this crate
+  # elsewhere in this lane, but neither runs its ~150 tests - this is the only
+  # place in this repo that does. GPU-touching tests self-skip without an
+  # adapter (see Scripts/Linux/run-cargo-tests.sh). ARM does not pay for a
+  # second run of the same crate's CPU-only tests.
+  # ---------------------------------------------------------------------------
+  rust:
+    name: Rust renderer tests
+    if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
       - name: Run Rust renderer tests
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./Scripts/Linux/run-cargo-tests.sh
           log-file: output.log
 
-      #################################################################################################################
-      ######################################## Build docs #############################################################
-      #################################################################################################################
+  # ---------------------------------------------------------------------------
+  # Docs + wasm demo + deploy.
+  #
+  # It builds ONLY the doc_doxygen target: Sphinx/Breathe consume the Doxygen
+  # XML the C++ build emits, but cmake/Doxygen.cmake declares doc_doxygen as a
+  # custom target with no compiled dependencies, so that XML costs a configure
+  # plus a doxygen run rather than a ~20-minute engine build.
+  # ---------------------------------------------------------------------------
+  docs:
+    name: docs + wasm demo
+    if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
+      - name: Generate Doxygen XML
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          script: >-
+            bash ./Scripts/Linux/cmake-configure-build.sh
+            --preset "linux-debug-clang"
+            --build-dir "${{ env.BUILD_DIR }}"
+            --build-target doc_doxygen
+          log-file: output.log
 
       - name: Build web page
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./Scripts/Linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: Enforce wasm demo size budget
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         # Deliberately fatal, unlike the best-effort rebuild in "Build web
         # page" above: a wasm bloat regression must block the deploy step
         # below, not surface as a slow page load after it is already live.
+        # (It skips itself, loudly, when the image cannot build wasm at all -
+        # see Scripts/Linux/wasm-size-budget.sh.)
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
@@ -354,7 +473,6 @@ jobs:
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         # A flaky FTP upload of the docs must not red the whole build+test lane:
         # the code already compiled and passed both the clang/ASan and gcc test
         # runs before this deploy step. Mirrors the RPT fix (continue-on-error on
@@ -366,9 +484,20 @@ jobs:
           password: ${{ secrets.PW }}
           local-dir: "./docs/build/html/"
 
-      #################################################################################################################
-      ############################################### gcc: build/test #################################################
-      #################################################################################################################
+  # ---------------------------------------------------------------------------
+  # gcc: build, tests and coverage. Caught a GCC 16.1.0 ICE on 2026-08-06 that
+  # neither clang lane can see, which is why it runs on every push.
+  # ---------------------------------------------------------------------------
+  gcc:
+    name: gcc + tests + coverage
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests (gcc)
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
@@ -397,12 +526,31 @@ jobs:
           echo "Compiled with GCC so no fuzz testing!"
         working-directory: ${{ github.workspace }}
 
+      # gcovr walks the build tree for the .gcda files the ctest run above left
+      # behind, so it has to stay in the same job as those tests.
       - name: Build Code Coverage (gcc)
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./Scripts/Linux/build-coverage-gcovr.sh
           log-file: output.log
+
+  # ---------------------------------------------------------------------------
+  # gcc profiling + benchmarks. Split out of the gcc job because it wipes and
+  # reconfigures the same build directory (--clean-build-dir true): inside one
+  # job it could only ever run after the tests, and that made gcc the longest
+  # pole in the fan-out.
+  # ---------------------------------------------------------------------------
+  gcc-profiling:
+    name: gcc profiling + benchmarks
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (gcc)
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
@@ -419,9 +567,19 @@ jobs:
         run: ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
         working-directory: ${{ github.workspace }}
 
-      #################################################################################################################
-      ######################################## Release: build + package ################################################
-      #################################################################################################################
+  # ---------------------------------------------------------------------------
+  # Release build + packages.
+  # ---------------------------------------------------------------------------
+  release:
+    name: release + package
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
