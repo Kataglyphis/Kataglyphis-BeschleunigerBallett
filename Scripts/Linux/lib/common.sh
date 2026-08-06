@@ -131,36 +131,3 @@ source_hub_module() {
   fi
   return 1
 }
-# Make the wasm32-unknown-unknown target usable, without assuming rustup.
-#
-# The CI image installs Rust WITHOUT rustup: cargo and rustc are the distro
-# toolchain (/bin/cargo, sysroot /usr/lib/rust-1.x) and /usr/local/cargo/bin
-# only symlinks them, so `rustup target add` exits 127 - "command not found".
-# Under `set -e` that killed the wasm size-budget step before it measured a
-# single byte (2026-08-06), and it silently short-circuited the docs demo
-# rebuild's `&&` chain for good measure. The image used to have rustup - the
-# demo was rebuilt by CI on 2026-07-23 - so this is an image regression to fix
-# in ContainerHub's install-rust.sh; until then neither caller should die of it.
-#
-# Returns 0 when a wasm32 build can proceed, 1 when the toolchain simply cannot
-# target wasm. Callers decide what that means for them.
-ensure_wasm32_target() {
-  if has_tool rustup; then
-    rustup target add wasm32-unknown-unknown
-    return $?
-  fi
-
-  # No rustup: ask rustc directly whether std for the target is installed.
-  # --print target-libdir names the directory even when it does not exist, so
-  # the existence check is the actual probe.
-  local libdir
-  if libdir="$(rustc --print target-libdir --target wasm32-unknown-unknown 2>/dev/null)" \
-     && [ -d "${libdir}" ]; then
-    info "rustup not present; wasm32-unknown-unknown std already installed (${libdir})"
-    return 0
-  fi
-
-  warn "rustup is not installed AND this toolchain has no wasm32-unknown-unknown std"
-  warn "(rustc sysroot: $(rustc --print sysroot 2>/dev/null || echo unknown)) - cannot build wasm here"
-  return 1
-}

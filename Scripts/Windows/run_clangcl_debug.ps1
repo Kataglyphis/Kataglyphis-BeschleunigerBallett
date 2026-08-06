@@ -17,6 +17,15 @@ param (
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+# PATH/tool resolution and the CTest metadata rewrite are generic and live in
+# ContainerHub (WindowsScripts.Shared / WindowsCMake.Common) - they were copied
+# here, which meant a fix had to be made twice. Update-CTestMetadataPaths in
+# particular is about C:/workspace, the container image's own WORKDIR, so it
+# belongs with the image rather than with any one consumer.
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+Import-BuildModule @('WindowsScripts.Shared', 'WindowsCMake.Common')
+Set-StrictMode -Version Latest
+
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
@@ -27,120 +36,6 @@ $FuzzDir = $DebugDir
 # module (the twin of app-runner.sh); this script keeps its own flow because it
 # orchestrates tests and fuzz executables before the launch.
 Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsTesting.Common')
-
-function Add-DirectoryToPath {
-    param([string]$Directory)
-
-    if ([string]::IsNullOrWhiteSpace($Directory) -or -not (Test-Path $Directory)) {
-        return
-    }
-
-    $resolvedDirectory = (Resolve-Path $Directory).Path
-    $currentEntries = @($env:PATH -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $remainingEntries = @($currentEntries | Where-Object { $_ -ne $resolvedDirectory })
-    $env:PATH = (@($resolvedDirectory) + $remainingEntries) -join ';'
-}
-
-function Add-DirectoriesToPath {
-    param([string[]]$Directories)
-
-    foreach ($directory in $Directories) {
-        Add-DirectoryToPath $directory
-    }
-}
-
-function Get-PreferredToolPath {
-    param(
-        [Parameter(Mandatory)]
-        [string]$CommandName,
-        [string[]]$CandidatePaths = @()
-    )
-
-    foreach ($candidate in $CandidatePaths) {
-        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
-            return (Resolve-Path $candidate).Path
-        }
-    }
-
-    $command = Get-Command $CommandName -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
-    }
-
-    return $null
-}
-
-function Resolve-PreferredTool {
-    param(
-        [Parameter(Mandatory)]
-        [string]$CommandName,
-        [string[]]$CandidatePaths = @()
-    )
-
-    $toolPath = Get-PreferredToolPath -CommandName $CommandName -CandidatePaths $CandidatePaths
-    if ($toolPath) {
-        Add-DirectoryToPath (Split-Path $toolPath -Parent)
-    }
-
-    return $toolPath
-}
-
-function Get-CMakeShareDir {
-    param([string]$CMakeExePath)
-
-    if ([string]::IsNullOrWhiteSpace($CMakeExePath)) {
-        return $null
-    }
-
-    $cmakeBinDir = Split-Path $CMakeExePath -Parent
-    $cmakeRoot = Split-Path $cmakeBinDir -Parent
-    $shareRoot = Join-Path $cmakeRoot 'share'
-    if (-not (Test-Path $shareRoot)) {
-        return $null
-    }
-
-    $shareDir = Get-ChildItem -Path $shareRoot -Directory -Filter 'cmake-*' -ErrorAction SilentlyContinue |
-        Sort-Object Name -Descending |
-        Select-Object -First 1
-
-    if (-not $shareDir) {
-        return $null
-    }
-
-    return $shareDir.FullName.Replace('\', '/')
-}
-
-function Update-CTestMetadataPaths {
-    param(
-        [Parameter(Mandatory)]
-        [string]$BuildRoot,
-        [Parameter(Mandatory)]
-        [string]$WorkspaceRoot,
-        [string]$CMakeShareDir
-    )
-
-    if (-not (Test-Path $BuildRoot)) {
-        return
-    }
-
-    $workspacePathUnix = $WorkspaceRoot.Replace('\', '/')
-    $files = Get-ChildItem -Path $BuildRoot -Recurse -File -Include 'CTestTestfile.cmake', 'DartConfiguration.tcl', '*_include.cmake', '*_discovery.cmake', '*_tests.cmake' -ErrorAction SilentlyContinue
-    $asciiEncoding = [System.Text.Encoding]::ASCII
-
-    foreach ($file in $files) {
-        $originalContent = [System.IO.File]::ReadAllText($file.FullName)
-        $updatedContent = $originalContent.Replace('C:/workspace', $workspacePathUnix)
-
-        if (-not [string]::IsNullOrWhiteSpace($CMakeShareDir)) {
-            $updatedContent = [regex]::Replace($updatedContent, 'C:/Program Files/CMake/share/cmake-[0-9.]+', $CMakeShareDir)
-            $updatedContent = [regex]::Replace($updatedContent, 'C:/Strawberry/c/share/cmake-[0-9.]+', $CMakeShareDir)
-        }
-
-        if ($updatedContent -cne $originalContent) {
-            [System.IO.File]::WriteAllText($file.FullName, $updatedContent, $asciiEncoding)
-        }
-    }
-}
 
 $cmakeExePath = Resolve-PreferredTool -CommandName 'cmake.exe' -CandidatePaths @(
     'C:\Program Files\CMake\bin\cmake.exe'

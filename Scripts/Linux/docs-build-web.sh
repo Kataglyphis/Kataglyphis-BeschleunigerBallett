@@ -10,6 +10,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# ensure_wasm32_target lives in ContainerHub: making the wasm32 target usable
+# without assuming rustup is not this project's problem, it is a property of
+# the images.
+source_hub_module lib rust-toolchain.sh   || err "ContainerHub lib/rust-toolchain.sh not found. Initialize the submodule first."
+
 
 DOCS_BUILD_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh"
 if [[ ! -f "${DOCS_BUILD_LIB}" ]]; then
