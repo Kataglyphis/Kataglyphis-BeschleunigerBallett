@@ -95,7 +95,7 @@ jobs:
       # runs out of room. Print free space per drive and where Docker stores its
       # layers, at the exact point right before the pull, so we can see whether
       # ANY drive can hold ~54 GB (and if so, whether it is the data-root drive).
-      # Pure diagnostic: it does not fail the job.
+      # It gates the pull on that number; it is not merely informational.
       - name: Disk space report before pull (winamd64 needs ~54 GB to import)
         shell: pwsh
         run: |
@@ -106,19 +106,71 @@ jobs:
             @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB,1)}},
             @{n='SizeGB';e={[math]::Round($_.Size/1GB,1)}},
             FileSystemLabel -AutoSize | Out-String | Write-Host
-          $root = docker info --format '{{.DockerRootDir}}' 2>$null
-          Write-Host "Docker data-root: $root"
+
+          # Ask the daemon where it imports layers. This used to be a one-shot
+          # `docker info --format ... 2>$null`, which on runner image
+          # win25-vs2026/20260728.188 returned an EMPTY string and a non-zero
+          # exit code (it printed C:\ProgramData\docker on 20260714.173, the
+          # last green run). Two separate faults followed from that one line,
+          # and run 31030812962 died of the second:
+          #   - the real error went to stderr, which 2>$null threw away, so the
+          #     log showed only "Docker data-root: " and no reason;
+          #   - the GitHub pwsh wrapper appends `exit $LASTEXITCODE`, so the
+          #     failed query became the STEP's exit code - the space guard
+          #     below never fired (C: had 71.3 GB, comfortably over the bar)
+          #     yet the job still failed with a bare "exit code 1".
+          # So: keep stderr, retry while the daemon settles (the disk-cleanup
+          # step two above runs `docker system prune`, which can leave it
+          # briefly unavailable), fall back to the plain-text form whose
+          # "Docker Root Dir:" line has outlived several --format rewrites,
+          # and start the service if the runner left it stopped.
+          $root = $null
+          foreach ($attempt in 1..12) {
+            $out  = & docker info --format '{{.DockerRootDir}}' 2>&1
+            $code = $LASTEXITCODE
+            $text = ($out | Out-String).Trim()
+            if ($code -eq 0 -and $text) { $root = $text; break }
+            Write-Host "attempt ${attempt}: 'docker info --format' exited ${code}: ${text}"
+
+            $plain = & docker info 2>&1
+            $line  = $plain | Select-String -Pattern '^\s*Docker Root Dir:\s*(\S.*)$' | Select-Object -First 1
+            if ($line) {
+              $root = $line.Matches[0].Groups[1].Value.Trim()
+              Write-Host "attempt ${attempt}: recovered the data-root from plain 'docker info'"
+              break
+            }
+
+            $svc = Get-Service -Name docker -ErrorAction SilentlyContinue
+            if ($svc) {
+              Write-Host "attempt ${attempt}: docker service status = $($svc.Status)"
+              if ($svc.Status -ne 'Running') { Start-Service docker -ErrorAction SilentlyContinue }
+            } else {
+              Write-Host "attempt ${attempt}: no 'docker' service registered on this runner"
+            }
+            Start-Sleep -Seconds 10
+          }
+          # Whatever the loop above did to $LASTEXITCODE stops here: only the
+          # explicit `exit 1` below may fail this step.
+          $global:LASTEXITCODE = 0
+
           $maxDrive  = ($vols | Select-Object -First 1).DriveLetter
           $maxFreeGB = [math]::Round(($vols | Select-Object -First 1).SizeRemaining/1GB, 1)
           Write-Host "Largest free drive: ${maxDrive}: has $maxFreeGB GB free; winamd64 import needs ~54 GB."
-          # Free space on the drive Docker actually imports layers into (data-root).
-          $rootDriveFreeGB = $null
-          if ($root -and $root.Length -ge 1) {
-            $rootLetter = $root.Substring(0,1)
-            $rootVol = $vols | Where-Object { $_.DriveLetter -eq $rootLetter } | Select-Object -First 1
-            if ($rootVol) { $rootDriveFreeGB = [math]::Round($rootVol.SizeRemaining/1GB,1) }
-            Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
+          if (-not $root) {
+            # Docker on Windows defaults to <SystemDrive>\ProgramData\docker,
+            # which is where it was on every run that ever got this far. Gate on
+            # that rather than skipping the check: an unreadable data-root is no
+            # reason to let a doomed ~40-minute pull start.
+            $root = Join-Path $env:SystemDrive 'ProgramData\docker'
+            Write-Host "::warning::Could not read Docker's data-root from the daemon; assuming $root for the space check."
           }
+          Write-Host "Docker data-root: $root"
+          # Free space on the drive Docker actually imports layers into (data-root).
+          $rootLetter = $root.Substring(0,1)
+          $rootVol = $vols | Where-Object { $_.DriveLetter -eq $rootLetter } | Select-Object -First 1
+          $rootDriveFreeGB = $null
+          if ($rootVol) { $rootDriveFreeGB = [math]::Round($rootVol.SizeRemaining/1GB,1) }
+          Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
           # Fail FAST with the numbers instead of grinding ~40 min on a doomed
           # pull. hcsshim::ImportLayer needs headroom beyond the final image size:
           # measured 2026-07-21, a data-root drive with 59.3 GB free still failed
@@ -214,22 +266,61 @@ jobs:
       # hoping they skip, and the CPU-only ones run here.
       #
       # New suites now run automatically; nothing to add here.
+      # The GPU-only suite list is built HOST-side and the container is handed
+      # one flat command line, which is how the last green Windows run
+      # (2026-07-21) did it: it composed `$cmd` on the runner and passed that
+      # single string to `powershell.exe -Command`. When the step moved to the
+      # composite action the whole multi-line script started being passed to
+      # `pwsh -Command` instead, and no Windows run reached this step again
+      # until 2026-08-05 - where the container produced ZERO output and exited
+      # 1 after 12 s, far too fast for a 650-test suite and with none of
+      # gtest's banner. The action's other user here, the build step, passes
+      # `file:` (an argv list), not a multi-line `-Command` payload; the
+      # timing/pixel steps below use folded single-line commands. This step is
+      # now the same shape as those.
+      #
+      # The array below stays multi-line and stays in THIS file on purpose:
+      # BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites parses it across
+      # lines out of the workflow, from its opening line to its joining line,
+      # so collapsing it to one line would fail that test with "parsed zero
+      # suites". For the same reason this comment does not spell either of
+      # those two anchor strings out - the parser takes the first line that
+      # matches.
+      - name: Determine the GPU-only suite filter
+        shell: pwsh
+        run: |
+          $gpuOnlySuites = @(
+            'GoldenRender.*'
+            'Integration.*'
+          ) -join ':'
+          Write-Host "Excluding GPU-only suites: $gpuOnlySuites"
+          "GPU_ONLY_SUITES=$gpuOnlySuites" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Run CPU-only tests inside the container
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
-          command: |
-            $gpuOnlySuites = @(
-              'GoldenRender.*'
-              'Integration.*'
-            ) -join ':'
-            & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="-$gpuOnlySuites"
+          # Test-Path first: a missing or unbuilt executable must say so, not
+          # surface as a bare "exit code 1" with an empty log the way the
+          # 2026-08-05 run did.
+          command: >-
+            $exe = 'C:\ws\build-clangcl-debug\commitTestSuite.exe';
+            if (-not (Test-Path $exe)) { Write-Host ('::error::missing ' + $exe); exit 1 };
+            Write-Host ('running ' + $exe + ' (' + (Get-Item $exe).Length + ' bytes)');
+            & $exe --gtest_filter='-${{ env.GPU_ONLY_SUITES }}';
             exit $LASTEXITCODE
 
       # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
       # and the shader-file reader target found a real terminate-on-throw bug
       # from a seed on its first run.
+      #
+      # timeout-minutes because this step is where a hang actually happened:
+      # the "con" seed spent 68 minutes inside readTextFile on 2026-08-05 (see
+      # FileReader.ixx) and the run had to be killed by hand rather than going
+      # red. Seven targets need about a minute in total; 20 leaves room for a
+      # cold container start and still fails the same day.
       - name: Run fuzz target seeds inside the container
+        timeout-minutes: 20
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
@@ -240,15 +331,28 @@ jobs:
           # actually run before - every earlier attempt died at the docker run in
           # the build step - so the bug sat latent until the container finally
           # built successfully.
-          command: |
-            $ErrorActionPreference='Stop';
-            foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
-              $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe')
-              if (-not (Test-Path $exe)) { Write-Host ('missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); exit 1 }
-              Write-Host ('--- ' + $t)
-              & $exe
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
+          # Folded to ONE line for the same reason as the CPU-test step above:
+          # a multi-line payload to `pwsh -Command` is not a shape this action
+          # has ever been observed to run. Every line here is indented
+          # identically - a more-indented line in a YAML folded scalar keeps
+          # its newlines instead of being joined, which would quietly put the
+          # multi-line shape back.
+          #
+          # The loop's target list stays on a single line below because
+          # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi and
+          # EveryFuzzTargetIsInTheWindowsCiFuzzList parse that one line out of
+          # this file. Do not spell the loop's opening text in a comment
+          # either: both parsers take the FIRST line that matches it, so a
+          # comment quoting it wins over the real list and they fail with
+          # "parsed zero fuzz targets".
+          #
+          # It collects every failure instead of stopping at the first, as the
+          # Linux lane's loop now does: seven targets and a ~2.5 h round trip
+          # means aborting early costs a whole run per broken fuzzer.
+          command: >-
+            $failed = @();
+            foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) { $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe'); if (-not (Test-Path $exe)) { Write-Host ('::error::missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); $failed += $t; continue }; Write-Host ('--- ' + $t); & $exe; if ($LASTEXITCODE -ne 0) { Write-Host ('::error::fuzz target ' + $t + ' failed'); $failed += $t } else { Write-Host ('--- ' + $t + ' OK') } };
+            if ($failed.Count -gt 0) { Write-Host ('::error::fuzz targets failed: ' + ($failed -join ' ')); exit 1 };
             exit 0
 
       # GPU timing comparison — runs the Compare-RendererTimings.ps1 script
@@ -340,6 +444,13 @@ jobs:
           $r = Invoke-Pester -Path Scripts/Windows/tests -PassThru -Quiet
           Write-Host "TOTAL=$($r.TotalCount) PASSED=$($r.PassedCount) FAILED=$($r.FailedCount)"
           if ($r.FailedCount -gt 0) {
-            $r.TestResult | Where-Object { -not $_.Passed } | ForEach-Object { Write-Host "FAIL: $($_.Describe) / $($_.Name)" }
+            # The name alone is not enough to act on - which assertion, with
+            # which values? Print Pester's FailureMessage and StackTrace too,
+            # or the next failure costs another 3-minute round trip to find out.
+            $r.TestResult | Where-Object { -not $_.Passed } | ForEach-Object {
+              Write-Host "FAIL: $($_.Describe) / $($_.Name)"
+              if ($_.FailureMessage) { Write-Host "      $($_.FailureMessage)" }
+              if ($_.StackTrace)     { Write-Host "      $($_.StackTrace)" }
+            }
             exit 1
           }
