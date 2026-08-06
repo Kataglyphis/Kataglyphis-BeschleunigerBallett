@@ -61,21 +61,15 @@ jobs:
       # path past 260 chars, and core.longpaths does not reliably bypass that for
       # these child clones. So clone the WHOLE tree - every submodule, recursively,
       # nothing skipped - into a SHORT path (D:\ws) where the same chain stays well
-      # under the limit, then build from there. This mirrors the working local bash
-      # workflow; the only fix it needs is a short checkout dir.
+      # under the limit, then build from there.
+      #
+      # The mechanics (and the git@github.com -> token HTTPS rewrite a hosted
+      # runner needs, having no SSH key) are generic and live in ContainerHub.
       - name: Clone full tree with submodules into a short path (D:\ws)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config --global core.longpaths true
-          # .gitmodules pins git@github.com: (SSH) URLs and the runner has no SSH
-          # key; rewrite to token HTTPS as actions/checkout would.
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-          rm -rf /d/ws
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" /d/ws
-          git -C /d/ws checkout --force "${{ github.sha }}"
-          git -C /d/ws submodule update --init --recursive
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/clone-into-short-path@main
+        with:
+          target: /d/ws
+          token: ${{ github.token }}
       
       # my windows container is quite big ... so remove runner packages for enough
       # dis space
@@ -89,101 +83,24 @@ jobs:
           username: Kataglyphis
           password: ${{ secrets.GHCR_PAT }}
 
-      # DIAGNOSTIC (2026-07-21): the winamd64 image is ~54.4 GB, and docker pull
-      # has been dying with hcsshim::ImportLayer "not enough space on the disk
-      # (0x70)" - it imports the layers into Docker's data-root and the runner
-      # runs out of room. Print free space per drive and where Docker stores its
-      # layers, at the exact point right before the pull, so we can see whether
-      # ANY drive can hold ~54 GB (and if so, whether it is the data-root drive).
-      # It gates the pull on that number; it is not merely informational.
+      # The winamd64 image is ~54 GB and `docker pull` was dying with
+      # hcsshim::ImportLayer "not enough space on the disk (0x70)": it imports
+      # the layers into Docker's data-root and the runner runs out of room.
+      # This gates the pull on that number rather than letting a doomed
+      # ~40-minute pull start.
+      #
+      # 70 GB, not 54: measured 2026-07-21, a data-root drive with 59.3 GB free
+      # still failed to import the 54 GB image, so the import needs real
+      # headroom over the image size. If C: cannot reach it, slim the image
+      # (build.ps1 -Stages base,toolchain, no -Gpu) - D: is not an option, it
+      # cannot host Windows-container compute.
+      #
+      # The probe itself - which is subtler than it looks, see the action - is
+      # generic and lives in ContainerHub.
       - name: Disk space report before pull (winamd64 needs ~54 GB to import)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $vols = Get-Volume | Where-Object DriveLetter | Sort-Object SizeRemaining -Descending
-          Write-Host '=== Free space per drive, right before docker pull ==='
-          $vols | Format-Table DriveLetter,
-            @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB,1)}},
-            @{n='SizeGB';e={[math]::Round($_.Size/1GB,1)}},
-            FileSystemLabel -AutoSize | Out-String | Write-Host
-
-          # Ask the daemon where it imports layers. This used to be a one-shot
-          # `docker info --format ... 2>$null`, which on runner image
-          # win25-vs2026/20260728.188 returned an EMPTY string and a non-zero
-          # exit code (it printed C:\ProgramData\docker on 20260714.173, the
-          # last green run). Two separate faults followed from that one line,
-          # and run 31030812962 died of the second:
-          #   - the real error went to stderr, which 2>$null threw away, so the
-          #     log showed only "Docker data-root: " and no reason;
-          #   - the GitHub pwsh wrapper appends `exit $LASTEXITCODE`, so the
-          #     failed query became the STEP's exit code - the space guard
-          #     below never fired (C: had 71.3 GB, comfortably over the bar)
-          #     yet the job still failed with a bare "exit code 1".
-          # So: keep stderr, retry while the daemon settles (the disk-cleanup
-          # step two above runs `docker system prune`, which can leave it
-          # briefly unavailable), fall back to the plain-text form whose
-          # "Docker Root Dir:" line has outlived several --format rewrites,
-          # and start the service if the runner left it stopped.
-          $root = $null
-          foreach ($attempt in 1..12) {
-            $out  = & docker info --format '{{.DockerRootDir}}' 2>&1
-            $code = $LASTEXITCODE
-            $text = ($out | Out-String).Trim()
-            if ($code -eq 0 -and $text) { $root = $text; break }
-            Write-Host "attempt ${attempt}: 'docker info --format' exited ${code}: ${text}"
-
-            $plain = & docker info 2>&1
-            $line  = $plain | Select-String -Pattern '^\s*Docker Root Dir:\s*(\S.*)$' | Select-Object -First 1
-            if ($line) {
-              $root = $line.Matches[0].Groups[1].Value.Trim()
-              Write-Host "attempt ${attempt}: recovered the data-root from plain 'docker info'"
-              break
-            }
-
-            $svc = Get-Service -Name docker -ErrorAction SilentlyContinue
-            if ($svc) {
-              Write-Host "attempt ${attempt}: docker service status = $($svc.Status)"
-              if ($svc.Status -ne 'Running') { Start-Service docker -ErrorAction SilentlyContinue }
-            } else {
-              Write-Host "attempt ${attempt}: no 'docker' service registered on this runner"
-            }
-            Start-Sleep -Seconds 10
-          }
-          # Whatever the loop above did to $LASTEXITCODE stops here: only the
-          # explicit `exit 1` below may fail this step.
-          $global:LASTEXITCODE = 0
-
-          $maxDrive  = ($vols | Select-Object -First 1).DriveLetter
-          $maxFreeGB = [math]::Round(($vols | Select-Object -First 1).SizeRemaining/1GB, 1)
-          Write-Host "Largest free drive: ${maxDrive}: has $maxFreeGB GB free; winamd64 import needs ~54 GB."
-          if (-not $root) {
-            # Docker on Windows defaults to <SystemDrive>\ProgramData\docker,
-            # which is where it was on every run that ever got this far. Gate on
-            # that rather than skipping the check: an unreadable data-root is no
-            # reason to let a doomed ~40-minute pull start.
-            $root = Join-Path $env:SystemDrive 'ProgramData\docker'
-            Write-Host "::warning::Could not read Docker's data-root from the daemon; assuming $root for the space check."
-          }
-          Write-Host "Docker data-root: $root"
-          # Free space on the drive Docker actually imports layers into (data-root).
-          $rootLetter = $root.Substring(0,1)
-          $rootVol = $vols | Where-Object { $_.DriveLetter -eq $rootLetter } | Select-Object -First 1
-          $rootDriveFreeGB = $null
-          if ($rootVol) { $rootDriveFreeGB = [math]::Round($rootVol.SizeRemaining/1GB,1) }
-          Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
-          # Fail FAST with the numbers instead of grinding ~40 min on a doomed
-          # pull. hcsshim::ImportLayer needs headroom beyond the final image size:
-          # measured 2026-07-21, a data-root drive with 59.3 GB free still failed
-          # to import the 54 GB image. The aggressive cleanup step should now free
-          # C: well past that (the whole hostedtoolcache + dotnet are gone); 70 GB
-          # gives the 54 GB import ~16 GB of headroom, which is the bet this run
-          # tests. If C: still cannot reach it, the image must be slimmed
-          # (build.ps1 -Stages base,toolchain, no -Gpu) - D: is not an option, it
-          # cannot host Windows-container compute.
-          if ($rootDriveFreeGB -ne $null -and $rootDriveFreeGB -lt 70) {
-            Write-Host "::error::Docker data-root drive ${rootLetter}: has only $rootDriveFreeGB GB free (<70 GB, the bet for the 54 GB import). Largest drive is ${maxDrive}: with $maxFreeGB GB. Fix: slim the winamd64 image (build.ps1 -Stages base,toolchain, no -Gpu)."
-            exit 1
-          }
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/assert-docker-disk-space@main
+        with:
+          required-free-gb: '70'
 
       # The pull used to be the first line of the build step's inline script;
       # it is its own step now that the docker run itself is a composite action
@@ -457,20 +374,12 @@ jobs:
         with:
           submodules: true
 
+      # Pinned version, not the runner's default: these suites are written in
+      # Pester 3.4's dash-less assertion syntax (`Should Be 0`), which the
+      # Pester 5 on the runner cannot parse. The install/run/report mechanics
+      # are generic and live in ContainerHub.
       - name: Run Pester suites (pinned 3.4.0)
-        run: |
-          Install-Module Pester -RequiredVersion 3.4.0 -Force -SkipPublisherCheck -Scope CurrentUser
-          Import-Module Pester -RequiredVersion 3.4.0
-          $r = Invoke-Pester -Path Scripts/Windows/tests -PassThru -Quiet
-          Write-Host "TOTAL=$($r.TotalCount) PASSED=$($r.PassedCount) FAILED=$($r.FailedCount)"
-          if ($r.FailedCount -gt 0) {
-            # The name alone is not enough to act on - which assertion, with
-            # which values? Print Pester's FailureMessage and StackTrace too,
-            # or the next failure costs another 3-minute round trip to find out.
-            $r.TestResult | Where-Object { -not $_.Passed } | ForEach-Object {
-              Write-Host "FAIL: $($_.Describe) / $($_.Name)"
-              if ($_.FailureMessage) { Write-Host "      $($_.FailureMessage)" }
-              if ($_.StackTrace)     { Write-Host "      $($_.StackTrace)" }
-            }
-            exit 1
-          }
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-pester-suite@main
+        with:
+          path: Scripts/Windows/tests
+          version: '3.4.0'
