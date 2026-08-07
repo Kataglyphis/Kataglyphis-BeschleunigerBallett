@@ -1,33 +1,24 @@
+# This project's build POLICY: which options exist, what they default to, and
+# how the reusable modules are composed.
+#
+# The reusable mechanisms this file used to carry inline were upstreamed to
+# ContainerHub on 2026-08-07 and are included by name off CMAKE_MODULE_PATH
+# (see the top of the root CMakeLists.txt):
+#
+#   SanitizerSupport    myproject_supports_sanitizers, myproject_default_debug_sanitizers
+#   CompilerBuildFlags  myproject_apply_compiler_build_flags + the flag-strip helpers,
+#                       including the clang-cl -fms-compatibility-version pin, which
+#                       now lives next to the image whose VC Tools version it names
+#
+# What stays here is what another project would NOT want copied: exceptions
+# always off, C++23, C++ modules mandatory (a hard FATAL_ERROR, not a fallback),
+# cppcheck and IWYU on by default.
+
 include(CMakeDependentOption)
 include(CheckCXXCompilerFlag)
 
-macro(myproject_supports_sanitizers)
-  set(_MYPROJECT_IS_CLANG_CL OFF)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-    set(_MYPROJECT_IS_CLANG_CL ON)
-  endif()
-
-  if((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND NOT WIN32)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-       AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0
-       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0)
-      message(WARNING "Disabling UBSan for GCC 15 due to compiler ICE with C++ modules.")
-      set(SUPPORTS_UBSAN OFF)
-    else()
-      set(SUPPORTS_UBSAN ON)
-    endif()
-  elseif(_MYPROJECT_IS_CLANG_CL)
-    set(SUPPORTS_UBSAN ON)
-  else()
-    set(SUPPORTS_UBSAN OFF)
-  endif()
-
-  if(MSVC OR ((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND NOT WIN32))
-    set(SUPPORTS_ASAN ON)
-  else()
-    set(SUPPORTS_ASAN OFF)
-  endif()
-endmacro()
+include(SanitizerSupport)
+include(CompilerBuildFlags)
 
 macro(myproject_define_core_options)
   option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
@@ -46,100 +37,13 @@ macro(myproject_define_core_options)
   option(myproject_ENABLE_IWYU "Enable IWYU" ON)
 endmacro()
 
-macro(myproject_strip_flag_from_var variable_name flag)
-  string(REPLACE "${flag}" "" _myproject_updated_value "${${variable_name}}")
-  set(${variable_name} "${_myproject_updated_value}")
-endmacro()
-
-macro(myproject_strip_msvc_debug_runtime_flags)
-  foreach(_myproject_flag_var IN ITEMS CMAKE_CXX_FLAGS_DEBUG CMAKE_C_FLAGS_DEBUG)
-    myproject_strip_flag_from_var(${_myproject_flag_var} "/RTC1")
-    myproject_strip_flag_from_var(${_myproject_flag_var} "-RTC1")
-  endforeach()
-endmacro()
-
-macro(myproject_strip_clang_cl_asan_debug_runtime_flags)
-  foreach(_myproject_flag_var IN ITEMS CMAKE_CXX_FLAGS_DEBUG CMAKE_C_FLAGS_DEBUG)
-    myproject_strip_flag_from_var(${_myproject_flag_var} "/MDd")
-    myproject_strip_flag_from_var(${_myproject_flag_var} "-MDd")
-  endforeach()
-endmacro()
-
-macro(myproject_apply_compiler_build_flags)
-  if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-    myproject_strip_msvc_debug_runtime_flags()
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23preview")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23preview")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++23preview")
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -std=c++23 -ggdb")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -std=c++23 -DNDEBUG")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -std=c++23 -DNDEBUG")
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-    # Pin the MSVC-compatibility version clang-cl embeds into every object file
-    # and C++20 module interface (.pcm). Left to auto-detection, this value has
-    # been observed to differ between clang-cl invocations within the SAME
-    # build (e.g. 19.51.36248 vs 19.51.36252) even though only one VC Tools
-    # version (14.51.36231) is installed, which makes clang-cl reject a
-    # module's .pcm as version-mismatched against whatever a sibling
-    # translation unit picked up moments later - "Microsoft Visual C/C++
-    # Version differs in precompiled file ... configuration mismatch"
-    # (observed 2026-08-01, reproduced across independent container builds).
-    # Pinning removes the ambiguity: every translation unit now requests the
-    # identical, explicit version instead of relying on per-invocation
-    # detection.
-    set(_CLANG_CL_SAFE_WARNINGS
-        "-fms-compatibility-version=19.51.36231 -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option")
-    myproject_strip_msvc_debug_runtime_flags()
-    if(myproject_ENABLE_SANITIZER_ADDRESS)
-      myproject_strip_clang_cl_asan_debug_runtime_flags()
-    endif()
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics")
-  endif()
-endmacro()
-
 function(myproject_enable_local_hardening target)
-  include(cmake/Hardening.cmake)
+  include(Hardening)
   # Current project behavior always keeps the UBSan minimal runtime disabled,
   # even though older logic computed a value first.
   set(_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
   myproject_enable_hardening(${target} OFF ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME})
 endfunction()
-
-macro(myproject_default_debug_sanitizers)
-  set(DEFAULT_ASAN OFF)
-  set(DEFAULT_UBSAN OFF)
-
-  set(_MYPROJECT_HAS_DEBUG_CONFIG OFF)
-  if(CMAKE_CONFIGURATION_TYPES)
-    foreach(_myproject_config IN LISTS CMAKE_CONFIGURATION_TYPES)
-      if(_myproject_config STREQUAL "Debug")
-        set(_MYPROJECT_HAS_DEBUG_CONFIG ON)
-        break()
-      endif()
-    endforeach()
-  elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(_MYPROJECT_HAS_DEBUG_CONFIG ON)
-  endif()
-
-  if(_MYPROJECT_HAS_DEBUG_CONFIG AND SUPPORTS_ASAN)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR MSVC)
-      set(DEFAULT_ASAN ON)
-    endif()
-  endif()
-
-  if(_MYPROJECT_HAS_DEBUG_CONFIG AND SUPPORTS_UBSAN)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
-      set(DEFAULT_UBSAN ON)
-    endif()
-  endif()
-endmacro()
 
 macro(myproject_setup_options)
   option(myproject_ENABLE_HARDENING "Enable hardening" ON)
@@ -240,8 +144,8 @@ macro(myproject_global_options)
   set(myproject_USE_CPP_MODULES ON)
   message(STATUS "C++ modules are enabled for compiler '${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}'.")
 
-  # set build type specific flags
-  myproject_apply_compiler_build_flags()
+  # set build type specific flags (upstream: CompilerBuildFlags)
+  myproject_apply_compiler_build_flags(${myproject_ENABLE_SANITIZER_ADDRESS})
 
   # control where the static and shared libraries are built so that on windows
   # we don't need to tinker with the path to run the executable
@@ -262,7 +166,7 @@ macro(myproject_global_options)
   endif()
 
   if(myproject_ENABLE_IPO)
-    include(cmake/InterproceduralOptimization.cmake)
+    include(InterproceduralOptimization)
     if(NOT (CMAKE_BUILD_TYPE STREQUAL "Debug"))
       myproject_enable_ipo()
     endif()
@@ -271,7 +175,7 @@ macro(myproject_global_options)
   myproject_supports_sanitizers()
 
   if(myproject_ENABLE_HARDENING AND myproject_ENABLE_GLOBAL_HARDENING)
-    include(cmake/Hardening.cmake)
+    include(Hardening)
     set(_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
     message("${myproject_ENABLE_HARDENING} ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME} ${myproject_ENABLE_SANITIZER_UNDEFINED}")
     myproject_enable_hardening(myproject_options ON ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME})
@@ -280,7 +184,7 @@ endmacro()
 
 macro(myproject_local_options)
   if(PROJECT_IS_TOP_LEVEL)
-    include(cmake/StandardProjectSettings.cmake)
+    include(StandardProjectSettings)
   endif()
 
   add_library(myproject_warnings INTERFACE)
@@ -288,7 +192,7 @@ macro(myproject_local_options)
 
   target_compile_features(myproject_options INTERFACE cxx_std_${CMAKE_CXX_STANDARD})
 
-  include(cmake/CompilerWarnings.cmake)
+  include(CompilerWarnings)
   myproject_set_project_warnings(
     myproject_warnings
     ${myproject_WARNINGS_AS_ERRORS}
@@ -325,7 +229,7 @@ macro(myproject_local_options)
     message(WARNING "Disabling exceptions is not supported for this compiler.")
   endif()
 
-  include(cmake/Sanitizers.cmake)
+  include(Sanitizers)
   myproject_enable_sanitizers(
     myproject_options
     ${myproject_ENABLE_SANITIZER_ADDRESS}
@@ -346,7 +250,7 @@ macro(myproject_local_options)
   endif()
 
   if(myproject_ENABLE_CACHE)
-    include(cmake/Cache.cmake)
+    include(Cache)
     myproject_enable_cache()
   endif()
 
@@ -354,7 +258,7 @@ macro(myproject_local_options)
      CMAKE_BUILD_TYPE
      STREQUAL
      "Release")
-    include(cmake/StaticAnalyzers.cmake)
+    include(StaticAnalyzers)
     if(myproject_ENABLE_CLANG_TIDY)
       myproject_enable_clang_tidy(myproject_options ${myproject_WARNINGS_AS_ERRORS})
     endif()
@@ -362,7 +266,7 @@ macro(myproject_local_options)
       myproject_enable_cppcheck(${myproject_WARNINGS_AS_ERRORS} "")
     endif()
     if(myproject_ENABLE_COVERAGE)
-      include(cmake/Tests.cmake)
+      include(Tests)
       myproject_enable_coverage(myproject_options)
     endif()
   endif()
@@ -396,7 +300,7 @@ macro(myproject_local_options)
     endif()
   endif()
 
-  include(cmake/Doxygen.cmake)
+  include(Doxygen)
   enable_doxygen()
 
   if(myproject_ENABLE_STATIC_ANALYZER)
@@ -417,6 +321,6 @@ macro(myproject_local_options)
     endif()
   endif()
 
-  include(cmake/Speedup.cmake)
+  include(Speedup)
 
 endmacro()

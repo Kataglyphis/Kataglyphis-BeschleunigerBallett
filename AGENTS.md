@@ -35,7 +35,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `ExternalLib/Kataglyphis-RustProjectTemplate/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
 | `ExternalLib/Kataglyphis-ContainerHub/` | The submodule that owns every reusable script, module and doc (see the rule below) |
 | `Scripts/Windows/`, `Scripts/Linux/`, `Scripts/AgenticLoop/` | Thin project wrappers over ContainerHub drivers + this project's payload |
-| `cmake/` | `ProjectOptions.cmake` (exceptions, CRT, sanitizer defaults), `Sanitizers.cmake`, packaging |
+| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ContainerHub — see [CMake modules](#cmake-modules-containerhub-first-local-override-wins) |
 
 ---
 
@@ -127,7 +127,7 @@ pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
 ### Sanitizer semantics (do not guess — this is how it actually works)
 
 - Sanitizer flags are applied **only to the Debug configuration**
-  (`$<$<CONFIG:Debug>:...>` in `cmake/Sanitizers.cmake`). Profile/Release builds are
+  (`$<$<CONFIG:Debug>:...>` in `ExternalLib/Kataglyphis-ContainerHub/cmake/Sanitizers.cmake`). Profile/Release builds are
   never sanitized.
 - ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
   see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
@@ -274,10 +274,43 @@ wrapper only supplies this project's payload.
 | `Scripts/Linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
 | `Scripts/Windows/Run-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
 | `Scripts/AgenticLoop/Run-AgenticLoop.{ps1,sh}` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
+| `Scripts/test-all-configs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
+| `Scripts/Windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
+| `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
 
 `run_clangcl_debug.ps1` is the exception: it keeps its own flow because it
 orchestrates CTest and the fuzz executables before launching — but it still
 takes `Resolve-AppExecutablePath` from `WindowsAppRunner.Common`.
+
+### CMake modules (ContainerHub first, local override wins)
+
+The root `CMakeLists.txt` puts **`cmake/` then
+`ExternalLib/Kataglyphis-ContainerHub/cmake/`** on `CMAKE_MODULE_PATH`, and
+every module is included **by name** — `include(Sanitizers)`, never
+`include(cmake/Sanitizers.cmake)`. That indirection is the whole point: a module
+can live in either directory without its callers changing, and a project that
+needs to override an upstream module just drops a same-named file in `cmake/`.
+
+Upstream (13 modules): `Cache`, `CompilerBuildFlags`, `CompilerWarnings`,
+`Doxygen`, `Hardening`, `InterproceduralOptimization`, `KataglyphisCMakeHelpers`,
+`PreventInSourceBuilds`, `SanitizerSupport`, `Sanitizers`, `Speedup`,
+`StandardProjectSettings`, `StaticAnalyzers`, `Tests`.
+
+Local, because each encodes **this project's policy** rather than a reusable
+mechanism:
+
+- `cmake/ProjectOptions.cmake` — the option surface and its defaults, C++23,
+  exceptions always off, C++ modules mandatory (a hard `FATAL_ERROR`, not a
+  fallback). It composes the upstream modules; it does not duplicate them.
+- `cmake/CPackOptions.cmake` — packaging metadata and branding.
+- `cmake/SystemLibDependencies.cmake` — this engine's system dependencies.
+
+**The clang-cl `-fms-compatibility-version` pin moved upstream** into
+`CompilerBuildFlags.cmake` as `MYPROJECT_CLANG_CL_MS_COMPATIBILITY_VERSION`
+(default `19.51.36231`). It names the VC Tools version ContainerHub's Windows
+image ships, so the pin and the toolchain that motivates it now live in the same
+repo — bump them together. Override the cache variable to build against a
+different VC Tools.
 
 ### PowerShell module resolution (ContainerHub first, vendored fallback)
 
@@ -298,7 +331,12 @@ The vendored directory holds only the two genuinely project-specific modules:
 Everything else was upstreamed to ContainerHub on 2026-08-02
 (`WindowsCMake.Common`, `WindowsConfig.Common`, `WindowsFormatting.Common`,
 `WindowsWebDav.Common`, `WindowsMsix.Common`, `WindowsMsix.Signing`;
-`WindowsScripts.Shared` was already upstream-only). Note in particular that
+`WindowsScripts.Shared` was already upstream-only), and their **Pester suites
+followed on 2026-08-07** — a module's tests belong in the repo that owns the
+module, otherwise upstream can change it with no test signal of its own and only
+a consumer's opt-in lane catches the break. They were converted from Pester 3.4
+to Pester 5+ syntax in the move, since that is what ContainerHub's
+`Invoke-Tests.ps1` requires. Note in particular that
 `Get-CompileCommandsDatabase` (the `ninja -t compdb` fallback) lives in upstream
 `WindowsCMake.Common`, **not** in `WindowsClang.Common`. If a module reappears
 upstream it wins automatically; if you improve a fallback module, consider
@@ -371,13 +409,21 @@ render (~32 FPS ImGui overlay).
 - PowerShell module tests: Pester suites under `Scripts/Windows/tests/`
   (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/Windows.yml`
   runs them with a pinned Pester 3.4.0 — gated on `[build-win]` like the rest of
-  Windows CI, so they do NOT run on ordinary pushes).
+  Windows CI, so they do NOT run on ordinary pushes). **Only suites covering
+  project-specific behaviour belong here.** A suite for a module that lives
+  upstream goes upstream with it (2026-08-07); the six that remain cover the two
+  vendored modules, the module-resolution bootstrap, the preset/artifact guards
+  and the renderer comparison tools.
 - `Scripts/test-all-configs.ps1` is a local one-shot gate: the three standard
   Windows container builds plus the Linux TSan build (`-SkipLinux` drops the
   latter). Not wired into CI.
 - ContainerHub's own suites (the modules this repo imports) run via
-  `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/tests/Invoke-Tests.ps1`.
-  Run it after changing anything upstream.
+  `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/tests/Invoke-Tests.ps1`
+  and need **Pester >= 5** (it fails rather than silently skipping without it;
+  `Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
+  -SkipPublisherCheck`). Run it after changing anything upstream — and note that
+  upstream has its own CI for them (`windows-scripts.yml`), so a break there is
+  caught without waiting on this repo's `[build-win]` lane.
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in containers and run
   only on the host — procedure, cwd requirement and the golden-writing
   cautions are in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
@@ -439,6 +485,39 @@ Reading pipeline status from a shell (`gh`):
 `Linux_x86.yml` and `Linux_arm.yml` both call the reusable `Linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
 and synchronization suites are host-only by construction.
+
+### The job bodies are ContainerHub's, resolved at `@main`
+
+The workflows here are mostly wiring: the actual steps come from composite
+actions pulled straight from ContainerHub's default branch —
+`prepare-linux-ci-host`, `run-in-linux-container`, `clone-into-short-path`,
+`cleanup-disk-space`, `assert-docker-disk-space`, `run-in-windows-container`,
+`run-pester-suite`. **There is no pin: a push to ContainerHub `main` changes
+this repo's CI on the next run**, which is why both repos ship together with
+ContainerHub first (see the rule above). When a lane fails inside a step whose
+`uses:` points at ContainerHub, read the action there — it is not defined here.
+
+### Lint gates (shellcheck + actionlint, before anything builds)
+
+The Linux lane's first job is `lint`. It pulls no image and builds nothing
+(~2 min), and it catches a class the rest of the lane cannot: `yaml.safe_load`
+proves a workflow is valid YAML, not valid Actions, and a bash quoting or
+undefined-function bug only surfaces when that line finally runs — an hour into
+a gcc build. Both gates are ContainerHub scripts invoked out of the submodule,
+using its pinned, SHA-verified binaries rather than a second set installed here:
+
+| Gate | Invocation | Covers |
+| --- | --- | --- |
+| shellcheck (`-S error`) | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh Scripts/Linux/*.sh Scripts/Linux/lib/*.sh` | this repo's Linux shell scripts |
+| actionlint | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-workflows.sh "$GITHUB_WORKSPACE"` | `.github/workflows/*.yml` |
+
+Both run locally the same way (the binary bootstrap downloads once and caches).
+`lint-workflows.sh` **must** be given the consumer root: the script lives inside
+the submodule, so the default root resolves to ContainerHub and the gate would
+lint the wrong tree while still reporting green.
+
+Not covered today: `Scripts/AgenticLoop/Run-AgenticLoop.sh` and
+`bump_version.sh` fall outside the shellcheck globs.
 
 The `ubuntu-24.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`Scripts/Linux/run-cargo-tests.sh`, `cargo test -p
@@ -537,6 +616,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `ExternalLib/Kataglyphis-ContainerHub/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
+| `ExternalLib/Kataglyphis-ContainerHub/cmake/README.md` | The shared CMake modules: how to put them on `CMAKE_MODULE_PATH`, what each provides, what stays project-local |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
   `README.md`, `docs/source/getting_started.md`, and this file in the same change.

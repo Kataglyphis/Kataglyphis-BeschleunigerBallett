@@ -10,7 +10,7 @@ set(_KATAGLYPHIS_SOURCE_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/renderer/pushConstants/
     ${CMAKE_CURRENT_SOURCE_DIR}/scene/)
 
-include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
+include(KataglyphisCMakeHelpers)
 include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 

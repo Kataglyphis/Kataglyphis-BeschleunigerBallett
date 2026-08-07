@@ -1,90 +1,33 @@
 # Code Quality Tooling (clang-format, clang-tidy, cmake-format)
 
-Canonical home for formatting and static-analysis commands. `AGENTS.md`
-links here rather than restating them.
+The commands, the scoping rules, the two clang-tidy traps and the cadence are
+generic and live upstream:
+[`ContainerHub / code-quality-tooling.md`](../ExternalLib/Kataglyphis-ContainerHub/docs/code-quality-tooling.md).
+Read that first — this page only carries what is specific to **this** repo.
 
-Config lives at the repo root: `.clang-format`, `.clang-tidy`,
-`.cmake-format.yaml`.
+The configs themselves (`.clang-format`, `.clang-tidy`, `gcovr.cfg`) are owned
+by ContainerHub as well and copied in here; `Scripts/Windows/tests/SharedConfig.Drift.Tests.ps1`
+fails if a local copy drifts. Edit them upstream in `shared/config/`, then run
+`Sync-SharedConfig.ps1 -RepoRoot . -Write`. `.cmake-format.yaml` also lives at
+this repo's root.
 
-## Where the tools are
+## This repo's paths
 
-On this Windows host LLVM is installed but **not on `PATH`**:
-
-```pwsh
-$CF = 'C:\Program Files\LLVM\bin\clang-format.exe'   # 22.1.8
-$CT = 'C:\Program Files\LLVM\bin\clang-tidy.exe'
-```
-
-## clang-format
-
-Works on the host with no build directory — it needs only the source and
-`.clang-format`.
-
-**Scope matters.** `git ls-files '*.cpp'` from the repo root also matches
-vendored third-party code under `ExternalLib/` (198 files, of which ~141
-have drift that is not ours to fix). Always scope to our own sources:
+Host LLVM is 22.1.8 at `C:\Program Files\LLVM\bin\`. The container build
+database rewrite (upstream trap 1) resolves here to:
 
 ```pwsh
-$own = git ls-files 'Src/*.cpp' 'Src/*.hpp' 'Src/*.ixx' 'Test/*.cpp' 'Test/*.hpp'
+$db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
+(Get-Content build-clangcl-debug\compile_commands.json -Raw) `
+  -replace 'C:/ws', 'D:/GitHub/Kataglyphis-BeschleunigerBallett' |
+  Set-Content "$db\compile_commands.json" -NoNewline
+& $CT -p $db --quiet Src/GraphicsEngineVulkan/Main.cpp
 ```
 
-**Check only (CI-style, writes nothing, non-zero exit on drift):**
+The module-skip from upstream trap 2 is implemented in
+`Scripts/Windows/modules/WindowsClang.Common.psm1`.
 
-```pwsh
-$dirty = @()
-foreach ($f in $own) {
-  & $CF --dry-run --Werror $f 2>&1 | Out-Null
-  if ($LASTEXITCODE -ne 0) { $dirty += $f }
-}
-"$($dirty.Count) / $($own.Count) files need formatting"
-```
-
-**Apply in place:**
-
-```pwsh
-foreach ($f in $own) { & $CF -i $f }
-```
-
-**Only what you touched** (the low-risk everyday version — reformatting the
-whole tree at once buries real changes in noise):
-
-```pwsh
-git diff --name-only HEAD -- 'Src/*' 'Test/*' |
-  Where-Object { $_ -match '\.(cpp|hpp|ixx|h)$' } |
-  ForEach-Object { & $CF -i $_ }
-```
-
-Linux equivalent: `Scripts/Linux/run_static_analysis_format.sh` (also runs
-`cmake-format`, provisioning it through `uv` + `requirements.txt` if absent).
-
-## clang-tidy
-
-Needs `compile_commands.json`. Two host-specific traps:
-
-1. **Container paths.** The database in `build-clangcl-debug/` is generated
-   *inside* the build container, where the workspace is `C:/ws`. Running
-   host clang-tidy against it fails with
-   `LLVM ERROR: Cannot chdir into "C:/ws/build-clangcl-debug"`. Rewriting
-   the paths into a scratch copy gets it running:
-
-   ```pwsh
-   $db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
-   (Get-Content build-clangcl-debug\compile_commands.json -Raw) `
-     -replace 'C:/ws', 'D:/GitHub/Kataglyphis-BeschleunigerBallett' |
-     Set-Content "$db\compile_commands.json" -NoNewline
-   & $CT -p $db --quiet Src/GraphicsEngineVulkan/Main.cpp
-   ```
-
-2. **C++23 modules.** Even with paths fixed, TUs that `import` a module fail
-   (`cannot open file '...App.ixx'`) because module BMIs still reference the
-   container layout. `Scripts/Windows/modules/WindowsClang.Common.psm1`
-   deliberately **skips files using module syntax** for this reason. What
-   remains checkable is the non-module surface — still worthwhile
-   (`cppcoreguidelines-special-member-functions`,
-   `modernize-use-trailing-return-type` and friends fire on real code).
-
-The clean alternative is to let the build run it, where paths are
-consistent by construction (see below).
+Linux equivalent: `Scripts/Linux/run_static_analysis_format.sh`.
 
 ## Running them as part of a build
 
@@ -99,23 +42,13 @@ consistent by construction (see below).
 ```
 
 **Caveat worth knowing:** `Scripts/Windows/Build-Windows-Container.ps1`
-hard-codes `-SkipTidy` when it invokes `Build-Windows.ps1`, so
-containerized builds never run clang-tidy — but they always run the
-clang-format check (only `-SkipTidy` is hard-coded; the container script
-has no `-SkipFormat` to forward). Host `Build-Windows.ps1` accepts
-`-SkipFormat`. That is why tidy drift accumulates even when every build is
-green — and format drift accumulates too, for a different reason: the
-clang-format check that does run reports its deviating count but never
-fails the build on it (see "Known state" below).
-
-## Suggested cadence
-
-- **Per change:** format the files you touched (the `git diff` variant).
-- **Weekly / before a PR:** full check across `Src/` + `Test/`; fix what is
-  yours.
-- **Periodically:** a clang-tidy pass over the non-module TUs, and
-  `Scripts/Linux/run_static_analysis_format.sh` on Linux (it adds
-  `scan-build` static analysis on top).
+hard-codes `-SkipTidy` when it invokes `Build-Windows.ps1`, so containerized
+builds never run clang-tidy — but they always run the clang-format check (only
+`-SkipTidy` is hard-coded; the container script has no `-SkipFormat` to
+forward). Host `Build-Windows.ps1` accepts `-SkipFormat`. That is why tidy drift
+accumulates even when every build is green — and format drift accumulates too,
+for the reason upstream calls "the failure mode to watch for": the clang-format
+check that does run reports its deviating count but never fails the build on it.
 
 ## Known state (2026-08-05)
 
@@ -129,8 +62,7 @@ Re-measured 2026-08-05 with `Get-ProjectCppFiles` + `clang-format --dry-run
 -Werror`, the same pair `Invoke-ClangFormatCheck` uses.
 `Invoke-ClangFormatCheck` (see the caveat above) reports this count on every
 container build and **never fails the build** on it — that is why it grew
-from 72 to 142 while every build stayed green. The "tidy drift accumulates even when every build
-is green" sentence above applies to format drift too, not just clang-tidy.
+from 72 to 142 while every build stayed green.
 Reformatting them is a **decision, not a chore**: it touches most of the
 engine in one commit and will collide with in-flight work. Tracked in
 `BACKLOG.md` — do it deliberately, ideally right after a merge point, and

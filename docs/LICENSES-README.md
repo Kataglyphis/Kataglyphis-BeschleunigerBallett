@@ -66,7 +66,7 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 | Projekt | URL | Pin | Lizenz | Geprüfte Quelle |
 |---|---|---|---|---|
 | Kataglyphis-RustProjectTemplate | https://github.com/Kataglyphis/Kataglyphis-RustProjectTemplate | 49e8ee24 (develop) | MIT (`license = "MIT"` in `[workspace.package]`; keine LICENSE-Datei im Submodul) | `ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.toml` |
-| Kataglyphis-ContainerHub | https://github.com/Kataglyphis/Kataglyphis-ContainerHub | 8687f0c7 (main) | unverifiziert — keine LICENSE-Datei im Submodul gefunden | — |
+| Kataglyphis-ContainerHub | https://github.com/Kataglyphis/Kataglyphis-ContainerHub | 6d5b1af5 (main) | MIT — `LICENSE` (Copyright (c) 2024 Jonas Heinle), `SPDX-License-Identifier: MIT` in allen 101 eigenen Quelldateien, OCI-Label `org.opencontainers.image.licenses="MIT"` in allen drei Image-Definitionen | `ExternalLib/Kataglyphis-ContainerHub/LICENSE` + SPDX-Header + OCI-Labels |
 
 ## Rust-Crate-Abhängigkeiten (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
 
@@ -123,7 +123,21 @@ Hinweise zu einzelnen Einträgen:
 
 ## Unverifiziert — zu prüfen
 
-- **Kataglyphis-ContainerHub**: kein LICENSE/COPYING im Submodul vorhanden; Lizenz im Upstream-Repository klären.
+Derzeit keine offenen Punkte.
+
+Am 2026-08-07 erledigt und daher aus dieser Liste entfernt:
+
+- **Kataglyphis-ContainerHub, fehlende LICENSE**: das Submodul führt inzwischen
+  eine `LICENSE`-Datei; der Pin oben ist zudem von `8687f0c7` auf den aktuellen
+  Stand `6d5b1af5` korrigiert.
+- **Kataglyphis-ContainerHub, MIT/Apache-Widerspruch**: aufgelöst zugunsten von
+  **MIT**. Zuvor stand in `LICENSE` MIT, während 101 eigene Quelldateien
+  `SPDX-License-Identifier: Apache-2.0` trugen und zwei der drei Image-Definitionen
+  das OCI-Label `Apache-2.0` setzten. Alle drei Stellen sagen jetzt MIT; die
+  MIT-widersprüchliche Formel „All rights reserved." wurde aus den Headern
+  entfernt. Nicht angefasst: `linux/webserver/dist/assets/NOTICES` und
+  `docs/deps/deps.json` — das sind Fremdlizenzangaben (u. a. Apache 2.0 für
+  LLVM, TVM, OpenCV, Vulkan SDK) und bleiben inhaltlich korrekt.
 
 Am 2026-08-02 erledigt und daher aus dieser Liste entfernt:
 

@@ -209,7 +209,7 @@ that are *not* exercised that way and should be run periodically:
   (debug timings are noise). Run it after any perf-relevant change and
   before a release; it also builds `perfTestSuite.exe`.
 - **`clangcl-tsan` does NOT detect data races** — checked 2026-07-20 by
-  building it and inspecting the result. `cmake/Sanitizers.cmake` warns
+  building it and inspecting the result. `ExternalLib/Kataglyphis-ContainerHub/cmake/Sanitizers.cmake` warns
   "clang-cl ThreadSanitizer is not supported for target
   x86_64-pc-windows-msvc" and drops the request, so the preset produces a
   plain debug build: no `-fsanitize=thread` in `build.ninja`, no `__tsan_*`
@@ -2507,7 +2507,7 @@ batch IV's two "folded" fixes **did land** — `depth_resolve.slang:26` now loop
 doc comment no longer claims "it does not yet skip any draw". Nothing to re-do there.
 
 **One build-system fact that all three tasks depend on, checked this pass:**
-`kataglyphis_collect_module_interfaces` (`cmake/KataglyphisCMakeHelpers.cmake:10-13`)
+`kataglyphis_collect_module_interfaces` (`ExternalLib/Kataglyphis-ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`)
 uses a plain `file(GLOB_RECURSE ... *.ixx)` with **no `CONFIGURE_DEPENDS`** — unlike
 the commit-test glob (`Test/commit/VulkanEngine/CMakeLists.txt:9`), which has it
 precisely because a new file was otherwise silently never compiled. So **adding or
@@ -2724,7 +2724,7 @@ prologue") and never tasked.
 
 **Build-system fact all three tasks depend on** (re-checked this pass, unchanged
 since batch V): `kataglyphis_collect_module_interfaces`
-(`cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
+(`ExternalLib/Kataglyphis-ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
 `CONFIGURE_DEPENDS`, and the recorded module-BMI skew hazard ("Incremental container
 builds can ship ODR-broken binaries") applies to any edited module interface. All
 three tasks below edit a `.ixx`, so all three want `-FreshContainer`.

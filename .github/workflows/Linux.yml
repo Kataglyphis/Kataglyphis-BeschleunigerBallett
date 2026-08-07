@@ -460,7 +460,7 @@ jobs:
   # Docs + wasm demo + deploy.
   #
   # It builds ONLY the doc_doxygen target: Sphinx/Breathe consume the Doxygen
-  # XML the C++ build emits, but cmake/Doxygen.cmake declares doc_doxygen as a
+  # XML the C++ build emits, but ContainerHub's cmake/Doxygen.cmake declares doc_doxygen as a
   # custom target with no compiled dependencies, so that XML costs a configure
   # plus a doxygen run rather than a ~20-minute engine build.
   # ---------------------------------------------------------------------------
