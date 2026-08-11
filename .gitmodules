@@ -34,10 +34,12 @@
 [submodule "ExternalLib/Kataglyphis-ContainerHub"]
 	path = ExternalLib/Kataglyphis-ContainerHub
 	url = git@github.com:Kataglyphis/Kataglyphis-ContainerHub.git
+	branch = main
 [submodule "ExternalLib/Kataglyphis-RustProjectTemplate"]
 	path = ExternalLib/Kataglyphis-RustProjectTemplate
 	url = git@github.com:Kataglyphis/Kataglyphis-RustProjectTemplate.git
 
+	branch = develop
 [submodule "ExternalLib/tomlplusplus"]
 	path = ExternalLib/tomlplusplus
 	url = https://github.com/marzer/tomlplusplus.git
