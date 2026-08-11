@@ -3,9 +3,29 @@
 # Sources utilities from ContainerHub when available, provides fallbacks
 
 SCRIPT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER_HUB_CORE="${SCRIPT_LIB_DIR}/../../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/01-core"
 
-# Source module loader (mirrors ContainerHub pattern)
+# Where ContainerHub is, and how to resolve a file inside it, comes from the
+# canonical bootstrap — a verbatim copy of upstream's
+# shared/linux/templates/containerhub.sh. It defines CONTAINERHUB_DIR (honouring
+# an environment override, which matters in the container) plus
+# containerhub_path / containerhub_source / containerhub_exec.
+#
+# Before this, the submodule path was spelled out here as a ../../.. literal.
+# Six repos each had their own version of that line; see ContainerHub
+# shared/linux/templates/README.md for what they drifted into.
+# shellcheck source=/dev/null
+source "${SCRIPT_LIB_DIR}/containerhub.sh"
+
+CONTAINER_HUB_CORE="${CONTAINERHUB_DIR}/linux/scripts/01-core"
+
+# source_module keeps THIS repo's search order, which is deliberately wider than
+# containerhub_source's single path:
+#   1. lib/<name>          — a local override wins
+#   2. ContainerHub        — the submodule checkout
+#   3. lib/../<name>       — legacy layout
+#   4. /opt/scripts/core   — where the image bakes these same files, and where
+#                            there is no submodule to resolve against at all
+# That last one is why this cannot simply become containerhub_source.
 source_module() {
   local name="$1"
   if [[ -z "${name}" ]]; then
