@@ -92,12 +92,8 @@ __pycache__/
 build-release*
 
 
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
 
 
-#Ignore vscode AI rules
-.github\instructions\codacy.instructions.md
 
 # ASan logs
 asan.log*
