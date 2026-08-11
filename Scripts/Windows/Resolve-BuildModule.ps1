@@ -1,63 +1,108 @@
 #requires -Version 7.0
-<#
-.SYNOPSIS
-Resolves the source path of a Windows build PowerShell module.
 
-.DESCRIPTION
-Reusable modules live upstream in the ContainerHub submodule
-(ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules) and are preferred
-whenever present, so improvements land upstream and are shared across projects.
-Modules that ContainerHub's module refactor (commit b391a1d) removed are vendored
-in Scripts/Windows/modules as a fallback. Dot-source this file, then call
-Resolve-BuildModulePath 'WindowsBuild.Common' (module name without extension).
-#>
+# Copied verbatim from Kataglyphis-ContainerHub
+# `shared/windows/templates/Resolve-BuildModule.ps1` — do not hand-edit; sync
+# from upstream instead. This is the one build-tooling file that cannot be
+# imported out of the submodule, because it is what *finds* the submodule: it
+# runs before anything upstream is importable.
+#
+# Contract (ContainerHub docs/adopting-in-a-new-project.md § 1):
+#
+#   1. ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/<Name>.psm1
+#   2. <this script's directory>/modules/<Name>.psm1   (project-specific fallback)
+#   3. throw, naming BOTH probed paths
+#
+# That preference order is the whole point: put a module upstream and it wins
+# automatically, so this repo never silently keeps building against a stale
+# vendored copy. Keep ONLY genuinely project-specific modules in the local
+# fallback directory.
 
-function Resolve-BuildModulePath {
+Set-StrictMode -Version Latest
+
+$script:RepoRootRelativeToHere = '..\..'
+
+$script:BuildModuleSearchRoots = @(
+    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot (Join-Path $script:RepoRootRelativeToHere 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'))),
+    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'modules'))
+)
+
+function Get-BuildModuleSearchRoot {
+    <#
+    .SYNOPSIS
+        The module search roots in preference order (ContainerHub first).
+    #>
+    return @($script:BuildModuleSearchRoots)
+}
+
+function Resolve-BuildModule {
+    <#
+    .SYNOPSIS
+        Resolves a build-module name to its .psm1, ContainerHub first.
+    .PARAMETER Name
+        Module name with or without the .psm1 suffix, e.g. 'WindowsBuild.Common'.
+    #>
     param(
         [Parameter(Mandatory)]
-        [string]$Name
+        [string] $Name
     )
 
-    $scriptsWindowsRoot = $PSScriptRoot
-    if ([string]::IsNullOrWhiteSpace($scriptsWindowsRoot)) {
-        throw 'Resolve-BuildModulePath must be dot-sourced from a script file.'
+    $fileName = if ($Name.EndsWith('.psm1', [System.StringComparison]::OrdinalIgnoreCase)) { $Name } else { "$Name.psm1" }
+
+    $probed = [System.Collections.Generic.List[string]]::new()
+    foreach ($root in $script:BuildModuleSearchRoots) {
+        $candidate = Join-Path $root $fileName
+        $probed.Add($candidate)
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return $candidate
+        }
     }
 
-    $repoRoot = (Resolve-Path (Join-Path $scriptsWindowsRoot '..\..')).Path
-    # ContainerHub copy is always preferred (all modules now require PS 7.0).
-    # Vendored fallback in Scripts/Windows/modules is used only when the
-    # upstream copy does not exist.
-    $candidates = @(
-        (Join-Path $repoRoot "ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\$Name.psm1"),
-        (Join-Path $scriptsWindowsRoot "modules\$Name.psm1")
-    )
+    # Naming both paths is part of the contract: the failure mode is almost
+    # always "submodule not checked out", and the first probed path says so.
+    throw ("Build module '$Name' not found. Probed:" + [Environment]::NewLine +
+        '  ' + ($probed -join ([Environment]::NewLine + '  ')) + [Environment]::NewLine +
+        'If the ContainerHub path is missing, the submodule is not checked out: ' +
+        'git submodule update --init --recursive ExternalLib/Kataglyphis-ContainerHub')
+}
 
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
-    }
-
-    throw ("Build module '$Name' found neither in the ContainerHub submodule nor in the vendored " +
-        "fallback (Scripts/Windows/modules). Checked: $($candidates -join '; ')")
+# Back-compat alias for consumers that adopted the earlier name.
+function Resolve-BuildModulePath {
+    param([Parameter(Mandatory)][string] $Name)
+    return (Resolve-BuildModule -Name $Name)
 }
 
 function Import-BuildModule {
+    <#
+    .SYNOPSIS
+        Resolves and imports build modules into the caller's global session.
+    .DESCRIPTION
+        Imports with -Force -Global, in the order given. List modules in
+        DEPENDENCY ORDER (WindowsScripts.Shared and WindowsBuild.Common first):
+        ContainerHub's modules pull their own dependencies in with a plain,
+        guarded Import-Module, so one forced top-level import gives every module
+        the same copy, whereas forcing a dependency *after* its dependents can
+        yank it back out of the global session state — the shadowing pitfall
+        WindowsCMake.Common's header warns about.
+    #>
     param(
         [Parameter(Mandatory)]
-        [string[]]$Name
+        [string[]] $Name
     )
 
     foreach ($moduleName in $Name) {
-        Import-Module (Resolve-BuildModulePath -Name $moduleName) -Force -Global
+        Import-Module (Resolve-BuildModule -Name $moduleName) -Force -Global -DisableNameChecking
     }
 
-    # Re-expose WindowsScripts.Shared after every batch, unconditionally:
-    # ContainerHub's WindowsBuild.Common internally imports it with -Force,
-    # which can shadow the global session's copy. Gating this on the caller
-    # having named 'WindowsScripts.Shared' only re-ran the repair in the one
-    # case where it was never needed (the caller already imported it itself);
-    # callers that pull in WindowsBuild.Common without naming it - e.g.
-    # run_clangcl_debug.ps1 - got the shadowed copy. The re-import is cheap
-    # (it just resolves and re-imports one small module), so always do it.
-    Import-Module (Resolve-BuildModulePath -Name 'WindowsScripts.Shared') -Force -Global
+    # WindowsScripts.Shared ALWAYS, whether or not the caller named it.
+    #
+    # A nested `Import-Module` inside a .psm1 binds into THAT MODULE'S private
+    # scope; it does not reach the importing session. So a script that imports
+    # only WindowsBuild.Common gets Write-BuildLog but NOT Resolve-WorkspacePath,
+    # Add-DirectoriesToPath or the other Shared exports WindowsBuild.Common
+    # itself depends on — verified 2026-08-11: `Get-Command Resolve-WorkspacePath`
+    # comes back empty in exactly that setup. Every consumer hit this and
+    # "fixed" it by remembering to list Shared first; doing it here means they
+    # cannot forget. Shared is dependency-free, so the extra import is safe in
+    # any position and costs one small module load.
+    Import-Module (Resolve-BuildModule -Name 'WindowsScripts.Shared') -Force -Global -DisableNameChecking
 }
-

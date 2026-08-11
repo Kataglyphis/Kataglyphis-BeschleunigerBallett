@@ -11,10 +11,17 @@ Describe 'Resolve-BuildModule' {
       $resolved | Should Be (Join-Path $expectedRoot 'WindowsScripts.Shared.psm1')
     }
 
-    It 'falls back to the vendored copy for a module that was not upstreamed' {
-      $resolved = Resolve-BuildModulePath -Name 'WindowsTesting.Common'
-      $expectedRoot = Join-Path $script:repoRoot 'Scripts\Windows\modules'
-      $resolved | Should Be (Join-Path $expectedRoot 'WindowsTesting.Common.psm1')
+    It 'resolves the once-vendored modules upstream now that they were moved there' {
+      # WindowsTesting.Common and WindowsClang.Common were vendored here until
+      # 2026-08-11, when the two-consumer test moved them into ContainerHub
+      # (Inference-Engine needed the same ASan-runtime discovery). The vendored
+      # copies were then deleted -- and nothing else had to change, because the
+      # preference order below picks up the upstream copy automatically. That
+      # automatic pickup is the property this asserts.
+      $expectedRoot = Join-Path $script:repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
+      foreach ($moduleName in @('WindowsTesting.Common', 'WindowsClang.Common')) {
+        Resolve-BuildModulePath -Name $moduleName | Should Be (Join-Path $expectedRoot "$moduleName.psm1")
+      }
     }
   }
 
@@ -38,21 +45,28 @@ Describe 'Resolve-BuildModule' {
   }
 
   Context 'Vendored fallback directory contents' {
-    It 'contains exactly the two modules AGENTS.md documents as vendored' {
+    It 'vendors nothing: every module this repo uses now lives upstream' {
+      # The rule this guards is "no consumer copy of anything that exists
+      # upstream". It is deliberately an EMPTY-set assertion rather than a
+      # deleted test: a new .psm1 appearing here should have to justify itself
+      # by failing this, not slip in unnoticed.
       $vendoredDir = Join-Path $PSScriptRoot '..\modules'
-      $actual = @(Get-ChildItem -Path $vendoredDir -Filter '*.psm1' | Select-Object -ExpandProperty Name | Sort-Object)
-      $expected = @('WindowsClang.Common.psm1', 'WindowsTesting.Common.psm1')
-      $actual | Should Be $expected
+      $actual = @(Get-ChildItem -Path $vendoredDir -Filter '*.psm1' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Name | Sort-Object)
+      $actual.Count | Should Be 0
     }
   }
 
-  Context 'Import-BuildModule repair guard' {
+  Context 'Import-BuildModule Shared guarantee' {
     It 'exposes WindowsScripts.Shared exports even when the caller does not name it' {
-      # WindowsBuild.Common internally -Force-imports WindowsScripts.Shared and
-      # can shadow the global session's copy; the repair must run regardless of
-      # whether the caller listed WindowsScripts.Shared itself.
+      # NOT a shadowing problem (the old comment here said so): a nested
+      # Import-Module inside a .psm1 binds into THAT module's private scope and
+      # never reaches the importing session. So importing WindowsBuild.Common
+      # alone yields Write-BuildLog but not Resolve-WorkspacePath. The template's
+      # unconditional Shared import is what closes that gap.
       Import-BuildModule @('WindowsBuild.Common')
       (Get-Command Resolve-WorkspacePath -ErrorAction SilentlyContinue) | Should Not Be $null
+      (Get-Command Add-DirectoriesToPath -ErrorAction SilentlyContinue) | Should Not Be $null
     }
   }
 }

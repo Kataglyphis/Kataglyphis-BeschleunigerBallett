@@ -321,12 +321,25 @@ modules through `Scripts/Windows/Resolve-BuildModule.ps1`
 there (preferred), otherwise from the vendored fallback
 **`Scripts/Windows/modules/`**.
 
-The vendored directory holds only the two genuinely project-specific modules:
+`Resolve-BuildModule.ps1` is now a **verbatim copy** of ContainerHub's
+`shared/windows/templates/Resolve-BuildModule.ps1` — sync it from upstream
+rather than hand-editing it.
 
-- `WindowsClang.Common` — hard-codes the `Src` root and the `import kataglyphis`
-  module-TU skip.
-- `WindowsTesting.Common` — test-exe discovery + ASAN env handling for this
-  repo's suites.
+**The vendored directory is now empty**, and a Pester case asserts it stays that
+way. `WindowsClang.Common` and `WindowsTesting.Common` were the last two, and
+they went upstream on 2026-08-11 under the two-consumer test: Inference-Engine
+needed the same ASan-runtime discovery, and needing something twice is what
+makes it shared. Their project-specific values became parameters whose defaults
+preserve this repo's behaviour (`-SourceSubdirectory 'Src'`,
+`-ModuleImportPattern 'import kataglyphis'`), so deleting the copies needed no
+call-site change at all. Their Pester suites moved with them.
+
+Worth knowing about `Import-BuildModule`: it imports `WindowsScripts.Shared`
+unconditionally, whether or not you list it. That is not belt-and-braces — a
+nested `Import-Module` inside a `.psm1` binds into *that module's* private scope
+and never reaches the importing session, so a script that imports only
+`WindowsBuild.Common` gets `Write-BuildLog` but **not** `Resolve-WorkspacePath`.
+(The comment that previously called this a shadowing repair misdiagnosed it.)
 
 Everything else was upstreamed to ContainerHub on 2026-08-02
 (`WindowsCMake.Common`, `WindowsConfig.Common`, `WindowsFormatting.Common`,
