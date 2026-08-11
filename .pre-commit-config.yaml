@@ -5,5 +5,5 @@ repos:
         name: clang-format
         entry: clang-format -i
         language: system
-        files: \.(c|cc|cpp|cxx|h|hh|hpp)$
+        files: \.(c|cc|cpp|cxx|h|hh|hpp|ixx)$
         pass_filenames: true
