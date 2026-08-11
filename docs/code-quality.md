@@ -27,7 +27,7 @@ $db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
 The module-skip from upstream trap 2 is implemented in
 `scripts/windows/modules/WindowsClang.Common.psm1`.
 
-Linux equivalent: `scripts/linux/run_static_analysis_format.sh`.
+Linux equivalent: `scripts/linux/run-static-analysis-format.sh`.
 
 ## Running them as part of a build
 

@@ -812,7 +812,7 @@ std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::pa
     return std::vector<std::string>{};
 }
 
-// Parses the fuzz-executable names out of run_clangcl_debug.ps1's local
+// Parses the fuzz-executable names out of run-clangcl-debug.ps1's local
 // fuzz-run loop: a PowerShell `foreach ($fuzzExecutable in @('a.exe', ...))`
 // loop. Anchored the same way as parse_ci_fuzz_targets, then strips the
 // trailing ".exe" so the names compare directly against
@@ -1911,7 +1911,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 // fuzzer could sit unexercised for weeks between opt-in runs, and nothing
 // noticed when a new target was added to neither lane. This gates every
 // target declared in Test/fuzz/CMakeLists.txt against both workflow files
-// AND the local host runner (run_clangcl_debug.ps1), which used to hard-code
+// AND the local host runner (run-clangcl-debug.ps1), which used to hard-code
 // only the two FuzzTest smoke targets and silently skip the five with real
 // engine-surface coverage.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
@@ -1928,7 +1928,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 
     const fs::path linux_workflow_path = repo_root / ".github" / "workflows" / "Linux.yml";
     const fs::path windows_workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
-    const fs::path local_runner_path = repo_root / "Scripts" / "Windows" / "run_clangcl_debug.ps1";
+    const fs::path local_runner_path = repo_root / "scripts" / "windows" / "run-clangcl-debug.ps1";
 
     const auto linux_targets_opt = parse_linux_ci_fuzz_targets(linux_workflow_path);
     if (!linux_targets_opt.has_value()) {
@@ -1963,7 +1963,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     struct NotRunInCi
     {
         std::string target;
-        std::string lane;// "Linux.yml", "Windows.yml", or "run_clangcl_debug.ps1"
+        std::string lane;// "Linux.yml", "Windows.yml", or "run-clangcl-debug.ps1"
         std::string reason;
     };
     const std::vector<NotRunInCi> kNotRunInCi;
@@ -1981,7 +1981,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     };
     check_lane("Linux.yml", linux_set);
     check_lane("Windows.yml", windows_set);
-    check_lane("run_clangcl_debug.ps1", local_set);
+    check_lane("run-clangcl-debug.ps1", local_set);
 
     EXPECT_TRUE(missing.empty())
       << missing.size()
@@ -1999,15 +1999,15 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     }
     EXPECT_TRUE(dead_local_entries.empty())
       << dead_local_entries.size()
-      << " entry/entries in run_clangcl_debug.ps1's local fuzz-run foreach array do not correspond to any "
+      << " entry/entries in run-clangcl-debug.ps1's local fuzz-run foreach array do not correspond to any "
          "target declared in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
       << joinViolations(dead_local_entries);
 }
 
 // A source-shape gate, not a behavioural one: it does not exercise a runner
 // end-to-end (that would need a stub executable and a fake build tree), only
-// that each run_clangcl_*.ps1 helper contains a top-level `exit` statement
-// whose argument is a variable. run_clangcl_debug.ps1 used to launch the app
+// that each run-clangcl-*.ps1 helper contains a top-level `exit` statement
+// whose argument is a variable. run-clangcl-debug.ps1 used to launch the app
 // without ever propagating its exit code - the launch happened inside an
 // Invoke-WithAsanOptions scriptblock, and a non-zero result was downgraded to
 // a warning that never escaped - so a device-lost or fatal-submit run read as
@@ -2017,19 +2017,19 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path scripts_dir = repo_root / "Scripts" / "Windows";
+    const fs::path scripts_dir = repo_root / "scripts" / "windows";
     ASSERT_TRUE(fs::exists(scripts_dir)) << "could not locate " << scripts_dir.string();
 
     std::vector<fs::path> runner_scripts;
     for (const auto &entry : fs::directory_iterator(scripts_dir)) {
         if (!entry.is_regular_file()) { continue; }
         const fs::path &candidate = entry.path();
-        if (candidate.extension() == ".ps1" && candidate.filename().string().rfind("run_clangcl_", 0) == 0) {
+        if (candidate.extension() == ".ps1" && candidate.filename().string().rfind("run-clangcl-", 0) == 0) {
             runner_scripts.push_back(candidate);
         }
     }
     ASSERT_FALSE(runner_scripts.empty())
-      << "found zero run_clangcl_*.ps1 helpers under " << scripts_dir.string()
+      << "found zero run-clangcl-*.ps1 helpers under " << scripts_dir.string()
       << " - the naming convention may have changed";
 
     static const std::regex kExitVariableLine(R"(^\s*exit\s+\$[A-Za-z_][A-Za-z0-9_:]*\s*$)");
@@ -2054,7 +2054,7 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
 
     EXPECT_TRUE(missing_exit.empty())
       << missing_exit.size()
-      << " run_clangcl_*.ps1 helper(s) have no top-level 'exit $<variable>' line, so a failing launch inside "
+      << " run-clangcl-*.ps1 helper(s) have no top-level 'exit $<variable>' line, so a failing launch inside "
          "them can silently report success to the caller: "
       << joinViolations(missing_exit);
 }

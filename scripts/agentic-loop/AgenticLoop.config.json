@@ -111,7 +111,7 @@
     "windowsTestCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug",
     "linuxTestCommand": "ctest --test-dir build --output-on-failure -C Debug",
     "windowsQualityCommand": "pwsh -ExecutionPolicy Bypass -File scripts/windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
-    "linuxQualityCommand": "scripts/linux/run_static_analysis_format.sh"
+    "linuxQualityCommand": "scripts/linux/run-static-analysis-format.sh"
   },
 
   "backlog": {

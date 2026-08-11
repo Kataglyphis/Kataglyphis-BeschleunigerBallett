@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_static_analysis_format.sh - project wrapper around ContainerHub's generic
+# run-static-analysis-format.sh - project wrapper around ContainerHub's generic
 # code-quality driver. Everything reusable (cmake-format bootstrap, the
 # file-enumeration walks, clang-format, clang-tidy, and the container
 # compile-database path remapping) lives in
@@ -142,7 +142,7 @@ run_clang_analyze_html() {
 
 usage() {
   cat <<'EOF'
-Usage: run_static_analysis_format.sh [options]
+Usage: run-static-analysis-format.sh [options]
 
 Single entrypoint for formatting and static analysis.
 

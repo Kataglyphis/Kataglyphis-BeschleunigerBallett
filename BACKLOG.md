@@ -581,7 +581,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   directly.
 - **LLVM is not on `PATH`** despite being installed — see
   `docs/code-quality.md` for the absolute paths.
-- **`run_clangcl_debug.ps1` sets `VK_LAYER_PATH = ''`**, which crashes the
+- **`run-clangcl-debug.ps1` sets `VK_LAYER_PATH = ''`**, which crashes the
   app at startup with `0xC0000409`. Launch with
   `VK_LAYER_PATH='C:\VulkanSDK\1.4.350.0\Bin'`.
 - **Swapchain screenshots read black while the desktop session is
@@ -6244,7 +6244,7 @@ submission before returning (`CommandBufferManager.cpp:101-112`), so no later
 submission races it. **`App::run` returning `EXIT_SUCCESS` after a device-lost
 abort** (`App.cpp:70-82`, `hasDeviceLost()` is checked three times and never
 reaches the return) — real, and it makes a crashed run read as green to
-`run_clangcl_*.ps1`, but there is no device-free way to exercise it and it is
+`run-clangcl-*.ps1`, but there is no device-free way to exercise it and it is
 two lines; fold it into whatever next touches `App.cpp`. **`apply_mouse_input`
 never wrapping `yaw`** (`CameraController.ixx:69`) — unbounded growth is real
 but float precision stays adequate for any plausible session length and there
@@ -7256,7 +7256,7 @@ defect in each, and neither is subtle once you look:
   `& $Script` propagates it, `Invoke-WithRuntimePath` returns it, and
   `Invoke-ManualTestExecutable` never captures it — then falls through to
   `return $true` (`:241`). The function's output is therefore `@($false, $true)`,
-  a two-element array. `run_clangcl_debug.ps1:203-206` does
+  a two-element array. `run-clangcl-debug.ps1:203-206` does
   `$ranFuzzExecutable = Invoke-ManualTestExecutable ...; if (-not
   $ranFuzzExecutable) { throw ... }` — and `-not` on a non-empty array is
   `$false`, so **the "did not start successfully" throw is unreachable on

@@ -77,7 +77,7 @@ env:
 #
 # The jobs are deliberately INDEPENDENT - no `needs:` - because each has to
 # build what it tests anyway (build-coverage-llvm.sh runs compileTestSuite,
-# run_static_analysis_format.sh needs compile_commands.json), and shipping a
+# run-static-analysis-format.sh needs compile_commands.json), and shipping a
 # multi-GB build tree between jobs as an artifact costs more than rebuilding it
 # in parallel.
 #
@@ -353,7 +353,7 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
-      # run_static_analysis_format.sh refuses to start without
+      # run-static-analysis-format.sh refuses to start without
       # ${BUILD_DIR}/compile_commands.json ("Run CMake configure first"), which
       # in the old single job happened to exist only because an earlier step had
       # already built into the same directory.
@@ -368,7 +368,7 @@ jobs:
           log-file: output.log
 
       # The ONLY step that still needs CXXFLAGS/LDFLAGS in the environment: it
-      # runs `clang++ --analyze` DIRECTLY (run_static_analysis_format.sh), with
+      # runs `clang++ --analyze` DIRECTLY (run-static-analysis-format.sh), with
       # no CMake and no preset, so it cannot inherit the --gcc-toolchain flags
       # that CMakePresets.json now carries for every preset-driven step. Without
       # them clang++ would resolve libstdc++ headers from the system GCC instead
@@ -382,7 +382,7 @@ jobs:
             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0"
             -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0"
           script: >-
-            bash ./scripts/linux/run_static_analysis_format.sh
+            bash ./scripts/linux/run-static-analysis-format.sh
             --only-clang-analyze-html
           log-file: output.log
 
@@ -392,7 +392,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./scripts/linux/run_static_analysis_format.sh
+            bash ./scripts/linux/run-static-analysis-format.sh
             --only-scan-build
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "linux-debug-clang"

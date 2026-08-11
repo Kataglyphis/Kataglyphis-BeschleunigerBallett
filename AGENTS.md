@@ -12,7 +12,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | If you are doing this | Start with |
 | --- | --- |
 | Building anything on Windows | `Build-Windows-Container.ps1` — see [Fast path](#fast-path-windows-build-run-verify). Never invoke CMake/Ninja/MSBuild on the host. |
-| Running the engine / seeing pixels | `scripts/windows/run_clangcl_*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
+| Running the engine / seeing pixels | `scripts/windows/run-clangcl-*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
 | Changing a shader | Edit `Resources/ShadersSlang/*.slang` + `shader-manifest.json`, run `compile-slang-shaders.ps1`, run one golden. No C++ rebuild. [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) |
 | Adding or changing a test | `Test/commit/VulkanEngine/` (CPU + GPU golden), `Test/fuzz/`, `Test/perf/`. Always in scope — see [Testing](#testing) |
 | Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Run-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
@@ -67,9 +67,9 @@ this repo's presets (see below).
    directory must be the **repo root** (`Resources/` is loaded via cwd-relative
    paths):
    ```pwsh
-   .\scripts\windows\run_clangcl_debug.ps1        # ctest + fuzz exes + launch
-   .\scripts\windows\run_clangcl_profile.ps1
-   .\scripts\windows\run_clangcl_release.ps1
+   .\scripts\windows\run-clangcl-debug.ps1        # ctest + fuzz exes + launch
+   .\scripts\windows\run-clangcl-profile.ps1
+   .\scripts\windows\run-clangcl-release.ps1
    ```
    Debug builds need the Vulkan validation layers installed on the host; see
    [Running on the Host](#running-on-the-host-windows). Profile/Release do not.
@@ -266,9 +266,9 @@ wrapper only supplies this project's payload.
 | --- | --- |
 | `scripts/windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
 | `scripts/linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
-| `scripts/windows/run_clangcl_{profile,release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
+| `scripts/windows/run-clangcl-{profile,release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
 | `scripts/linux/run-{debug,profile,release}.sh` | `linux/scripts/lib/app-runner.sh` (the Bash twin of the above) |
-| `scripts/linux/run_static_analysis_format.sh` | `linux/scripts/lib/code-quality.sh` |
+| `scripts/linux/run-static-analysis-format.sh` | `linux/scripts/lib/code-quality.sh` |
 | `scripts/linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
 | `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
@@ -278,7 +278,7 @@ wrapper only supplies this project's payload.
 | `scripts/windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
 | `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
 
-`run_clangcl_debug.ps1` is the exception: it keeps its own flow because it
+`run-clangcl-debug.ps1` is the exception: it keeps its own flow because it
 orchestrates CTest and the fuzz executables before launching — but it still
 takes `Resolve-AppExecutablePath` from `WindowsAppRunner.Common`.
 
@@ -391,7 +391,7 @@ coupling above — that one is on you.
 ## Running on the Host (Windows)
 
 Containers cannot present a swapchain — run the built binaries on the bare host,
-from the **repo root** as working directory (`scripts/windows/run_clangcl_*.ps1`
+from the **repo root** as working directory (`scripts/windows/run-clangcl-*.ps1`
 wrap this). Verified 2026-07-17 on the AMD RX 9070 XT: all four clang-cl builds
 render (~32 FPS ImGui overlay).
 
@@ -530,7 +530,7 @@ the submodule, so the default root resolves to ContainerHub and the gate would
 lint the wrong tree while still reporting green.
 
 Not covered today: `scripts/agentic-loop/Run-AgenticLoop.sh` and
-`bump_version.sh` fall outside the shellcheck globs.
+`bump-version.sh` fall outside the shellcheck globs.
 
 The `ubuntu-24.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
