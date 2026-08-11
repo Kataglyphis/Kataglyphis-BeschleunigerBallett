@@ -1,0 +1,35 @@
+# Vulkan explicit layer settings for the khronos_validation layer.
+#
+# The Vulkan loader reads this file from the CURRENT WORKING DIRECTORY or
+# from the directory containing the running executable - there is no
+# environment variable that points it at an arbitrary path. That is why
+# scripts/windows/Run-SyncValidation.ps1 copies this file next to the target
+# executable for the duration of a single run and deletes it afterwards,
+# rather than checking in a permanent copy next to the binary (which would
+# silently enable sync validation, with its extra overhead, on every run).
+#
+# This project's copy is kept in-tree (and passed to the driver as
+# -SettingsPath) because its comments record project-specific provenance -
+# VulkanInstance.cpp's debug-build layer setup and the July 2026 hazard find.
+# ContainerHub ships a generic, minimal twin
+# (windows/scripts/modules/vk_layer_settings.default.txt) that the driver
+# stages when a caller supplies no settings file; keep the setting VALUES in
+# the two files identical.
+#
+# Reference: https://vulkan.lunarg.com/doc/sdk/latest/windows/khronos_validation_layer.html
+
+# Standard core + error/warning validation - the same class of checks every
+# debug build already runs under (VulkanInstance.cpp enables the layer
+# unconditionally in debug builds); listed explicitly here so this file is a
+# complete, self-contained configuration.
+khronos_validation.validate_core = true
+khronos_validation.report_flags = error,warn
+khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
+
+# Synchronization validation - NOT part of core validation, off by default
+# because it is expensive. Catches missing or incorrect barriers between GPU
+# commands that read or write the same resource (WRITE-AFTER-WRITE,
+# READ-AFTER-WRITE, WRITE-AFTER-READ) that core validation does not check.
+# This found 10 real WRITE-AFTER-WRITE hazards in July 2026 (see BACKLOG.md,
+# "Recurring validation runs").
+khronos_validation.validate_sync = true

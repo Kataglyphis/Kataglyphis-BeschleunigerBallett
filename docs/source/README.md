@@ -15,8 +15,8 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground fo
 | --- | --- |
 | `Src/` | Engine and renderer source code |
 | `Resources/` | Shaders and runtime assets |
-| `Scripts/Linux/` | Linux build, test, and docs automation |
-| `Scripts/Windows/` | Windows build, run, and dependency helpers |
+| `scripts/linux/` | Linux build, test, and docs automation |
+| `scripts/windows/` | Windows build, run, and dependency helpers |
 | `Test/` | Tests |
 | `docs/` | Engineering docs: roadmaps, audits, pipeline notes; see the Docs table in `AGENTS.md` for the full inventory |
 | `docs/source/` | Hand-written Sphinx pages |

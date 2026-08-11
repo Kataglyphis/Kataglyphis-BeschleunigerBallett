@@ -28,7 +28,7 @@ Open the demo full-page ↗
   the authoritative per-feature status (IBL, skybox, animation/skinning/morph
   targets, egui overlay, bloom, SSAO, auto-exposure, LOD, GPU occlusion
   culling, and more) is `docs/webgpu-renderer-roadmap.md` in the repository.
-- **Rebuild the demo**: `Scripts/Linux/docs-build-web.sh` compiles
+- **Rebuild the demo**: `scripts/linux/docs-build-web.sh` compiles
   `kataglyphis_webgpu_renderer` to wasm32, runs `wasm-bindgen`, and refreshes
   this folder before Sphinx runs; the CI docs deploy runs it automatically,
   so the deployed demo always tracks the current renderer.

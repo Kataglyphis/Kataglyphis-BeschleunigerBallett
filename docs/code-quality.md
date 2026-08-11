@@ -6,7 +6,7 @@ generic and live upstream:
 Read that first — this page only carries what is specific to **this** repo.
 
 The configs themselves (`.clang-format`, `.clang-tidy`, `gcovr.cfg`) are owned
-by ContainerHub as well and copied in here; `Scripts/Windows/tests/SharedConfig.Drift.Tests.ps1`
+by ContainerHub as well and copied in here; `scripts/windows/tests/SharedConfig.Drift.Tests.ps1`
 fails if a local copy drifts. Edit them upstream in `shared/config/`, then run
 `Sync-SharedConfig.ps1 -RepoRoot . -Write`. `.cmake-format.yaml` also lives at
 this repo's root.
@@ -25,9 +25,9 @@ $db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
 ```
 
 The module-skip from upstream trap 2 is implemented in
-`Scripts/Windows/modules/WindowsClang.Common.psm1`.
+`scripts/windows/modules/WindowsClang.Common.psm1`.
 
-Linux equivalent: `Scripts/Linux/run_static_analysis_format.sh`.
+Linux equivalent: `scripts/linux/run_static_analysis_format.sh`.
 
 ## Running them as part of a build
 
@@ -35,13 +35,13 @@ Linux equivalent: `Scripts/Linux/run_static_analysis_format.sh`.
 
 ```pwsh
 # format + tidy included (slower)
-.\Scripts\Windows\Build-Windows.ps1 -Configurations 'clangcl-debug'
+.\scripts\windows\Build-Windows.ps1 -Configurations 'clangcl-debug'
 
 # the fast loop, skipping them
-.\Scripts\Windows\Build-Windows.ps1 -Configurations 'clangcl-debug' -SkipFormat -SkipTidy
+.\scripts\windows\Build-Windows.ps1 -Configurations 'clangcl-debug' -SkipFormat -SkipTidy
 ```
 
-**Caveat worth knowing:** `Scripts/Windows/Build-Windows-Container.ps1`
+**Caveat worth knowing:** `scripts/windows/Build-Windows-Container.ps1`
 hard-codes `-SkipTidy` when it invokes `Build-Windows.ps1`, so containerized
 builds never run clang-tidy — but they always run the clang-format check (only
 `-SkipTidy` is hard-coded; the container script has no `-SkipFormat` to

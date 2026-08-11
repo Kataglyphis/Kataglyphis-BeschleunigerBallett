@@ -15,8 +15,8 @@ The hand-written pages should always build, even if generated artifacts are miss
 ### Windows
 
 ```pwsh
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m sphinx -M html docs/source docs/build -E
+.\.venv\scripts\python.exe -m pip install -r requirements.txt
+.\.venv\scripts\python.exe -m sphinx -M html docs/source docs/build -E
 ```
 
 ### Linux
@@ -45,7 +45,7 @@ If none of these locations exists, the API section stays hidden and the rest of 
 
 ## Graphviz Include Graphs
 
-`Scripts/Linux/docs-build-web.sh` automates the Graphviz flow:
+`scripts/linux/docs-build-web.sh` automates the Graphviz flow:
 
 1. ensure the Python environment and dependencies
 2. copy generated SVG files into `docs/source/_static/`

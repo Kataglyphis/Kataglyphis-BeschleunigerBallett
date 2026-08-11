@@ -13,7 +13,7 @@ containerized builds never run it (`Build-Windows-Container.ps1` hard-codes
 
 **Linux:**
 ```
-Scripts/Linux/run_static_analysis_format.sh
+scripts/linux/run_static_analysis_format.sh
 ```
 This runs clang-format, clang-tidy, and cmake-format.
 

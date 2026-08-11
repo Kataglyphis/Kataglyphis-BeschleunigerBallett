@@ -152,8 +152,8 @@ bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::f
 }
 
 // Resources/ShadersSlang/shader-manifest.json is the SINGLE source of truth
-// for the Slang shader build: both Scripts/Windows/compile-slang-shaders.ps1
-// and Scripts/Linux/compile-slang-shaders.sh consume it. It replaced the two
+// for the Slang shader build: both scripts/windows/compile-slang-shaders.ps1
+// and scripts/linux/compile-slang-shaders.sh consume it. It replaced the two
 // per-script hand-maintained copies of the manifest/WGSL-map/patch tables
 // that this suite used to cross-check against each other - with one data
 // file there is no second copy left to drift, so the tests below instead
@@ -1291,7 +1291,7 @@ std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
 
 }// namespace
 
-// Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
+// Both the build-time compiler (scripts/windows/compile-slang-shaders.ps1) and
 // the runtime fallback used to reuse a .spv whenever it merely EXISTED, with
 // no timestamp check. Every shader edit after the first build was then
 // silently ignored and the GPU executed stale SPIR-V - a fragment shader
@@ -5090,7 +5090,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
                 violations.push_back(mapping.slang_source + " -> " + fs::relative(dest, repo_root).string()
                                       + ": reachable function '" + name
                                       + "' is missing from the checked-in WGSL (regenerate with "
-                                        "Scripts/Windows/compile-slang-shaders.ps1 or .sh)");
+                                        "scripts/windows/compile-slang-shaders.ps1 or .sh)");
             }
         }
     }

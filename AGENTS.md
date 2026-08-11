@@ -12,7 +12,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | If you are doing this | Start with |
 | --- | --- |
 | Building anything on Windows | `Build-Windows-Container.ps1` — see [Fast path](#fast-path-windows-build-run-verify). Never invoke CMake/Ninja/MSBuild on the host. |
-| Running the engine / seeing pixels | `Scripts/Windows/run_clangcl_*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
+| Running the engine / seeing pixels | `scripts/windows/run_clangcl_*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
 | Changing a shader | Edit `Resources/ShadersSlang/*.slang` + `shader-manifest.json`, run `compile-slang-shaders.ps1`, run one golden. No C++ rebuild. [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) |
 | Adding or changing a test | `Test/commit/VulkanEngine/` (CPU + GPU golden), `Test/fuzz/`, `Test/perf/`. Always in scope — see [Testing](#testing) |
 | Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Run-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
@@ -34,7 +34,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `Resources/ShadersSlang/` | All shaders (Slang) + `shader-manifest.json`; compiled output under `build/` is gitignored |
 | `ExternalLib/Kataglyphis-RustProjectTemplate/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
 | `ExternalLib/Kataglyphis-ContainerHub/` | The submodule that owns every reusable script, module and doc (see the rule below) |
-| `Scripts/Windows/`, `Scripts/Linux/`, `Scripts/AgenticLoop/` | Thin project wrappers over ContainerHub drivers + this project's payload |
+| `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ContainerHub drivers + this project's payload |
 | `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ContainerHub — see [CMake modules](#cmake-modules-containerhub-first-local-override-wins) |
 
 ---
@@ -49,7 +49,7 @@ this repo's presets (see below).
 1. **Build** (`clangcl-debug` shown; the script defaults to all three clang-cl
    configurations):
    ```pwsh
-   pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 `
+   pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 `
      -Configurations "clangcl-debug"
    ```
    The build runs inside the reusable container `bb-build-persistent` and
@@ -67,9 +67,9 @@ this repo's presets (see below).
    directory must be the **repo root** (`Resources/` is loaded via cwd-relative
    paths):
    ```pwsh
-   .\Scripts\Windows\run_clangcl_debug.ps1        # ctest + fuzz exes + launch
-   .\Scripts\Windows\run_clangcl_profile.ps1
-   .\Scripts\Windows\run_clangcl_release.ps1
+   .\scripts\windows\run_clangcl_debug.ps1        # ctest + fuzz exes + launch
+   .\scripts\windows\run_clangcl_profile.ps1
+   .\scripts\windows\run_clangcl_release.ps1
    ```
    Debug builds need the Vulkan validation layers installed on the host; see
    [Running on the Host](#running-on-the-host-windows). Profile/Release do not.
@@ -95,10 +95,10 @@ lines; pick a preset.
 
 ### Windows configurations (Build-Windows.ps1)
 
-`Scripts/Windows/Build-Windows.ps1` is the single entry point for Windows builds
+`scripts/windows/Build-Windows.ps1` is the single entry point for Windows builds
 (the container script invokes it inside the image). Its `-Configurations` names
 (comma-separated) map to presets and build directories via
-`Scripts/Windows/Build-Windows.config.psd1`:
+`scripts/windows/Build-Windows.config.psd1`:
 
 | Configuration | Preset | Build dir | What you get |
 | --- | --- | --- | --- |
@@ -119,7 +119,7 @@ stays: the `windows-clang-release-wix` package preset builds on it.
 Typical full sweep (ASAN debug, profile, release):
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-profile,clangcl-release" `
   -SkipFormat -SkipTidy -SkipTests -SkipPerfTests -SkipMsix
 ```
@@ -196,7 +196,7 @@ This repo's measured numbers, the `KATAGLYPHIS_KEEP_BUILD_ROOT=1` contract, the
 
 ## Linux Builds
 
-`Scripts/Linux/cmake-configure-build.sh` wraps configure+build
+`scripts/linux/cmake-configure-build.sh` wraps configure+build
 (`--preset linux-debug-clang`, `--build-dir build`, …). TSan is selected by
 preset only (`linux-debug-tsan-clang`, `linux-debug-tsan-GNU`) — there is no
 script flag for it; `--use-thread-sanitizer` errors out on purpose rather than
@@ -258,24 +258,24 @@ precompile hook) — plus `Resolve-BuildModule.ps1` itself, the bootstrap that
 
 ### The wrapper map
 
-Almost every script under `Scripts/` is a thin consumer. **When you need to know
+Almost every script under `scripts/` is a thin consumer. **When you need to know
 what one actually does, read the upstream driver, not the wrapper** — the
 wrapper only supplies this project's payload.
 
 | This repo | Upstream driver (in `ExternalLib/Kataglyphis-ContainerHub/`) |
 | --- | --- |
-| `Scripts/Windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
-| `Scripts/Linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
-| `Scripts/Windows/run_clangcl_{profile,release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
-| `Scripts/Linux/run-{debug,profile,release}.sh` | `linux/scripts/lib/app-runner.sh` (the Bash twin of the above) |
-| `Scripts/Linux/run_static_analysis_format.sh` | `linux/scripts/lib/code-quality.sh` |
-| `Scripts/Linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
-| `Scripts/Linux/wasm-size-budget.sh` / `Scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
-| `Scripts/Linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
-| `Scripts/Windows/Run-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
-| `Scripts/AgenticLoop/Run-AgenticLoop.{ps1,sh}` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
-| `Scripts/test-all-configs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
-| `Scripts/Windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
+| `scripts/windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
+| `scripts/linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
+| `scripts/windows/run_clangcl_{profile,release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
+| `scripts/linux/run-{debug,profile,release}.sh` | `linux/scripts/lib/app-runner.sh` (the Bash twin of the above) |
+| `scripts/linux/run_static_analysis_format.sh` | `linux/scripts/lib/code-quality.sh` |
+| `scripts/linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
+| `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
+| `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
+| `scripts/windows/Run-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
+| `scripts/agentic-loop/Run-AgenticLoop.{ps1,sh}` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
+| `scripts/test-all-configs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
+| `scripts/windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
 | `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
 
 `run_clangcl_debug.ps1` is the exception: it keeps its own flow because it
@@ -315,11 +315,11 @@ different VC Tools.
 ### PowerShell module resolution (ContainerHub first, vendored fallback)
 
 `Build-Windows.ps1`, the run helpers and the Pester tests resolve PowerShell
-modules through `Scripts/Windows/Resolve-BuildModule.ps1`
+modules through `scripts/windows/Resolve-BuildModule.ps1`
 (`Resolve-BuildModulePath` / `Import-BuildModule`): a module is imported from
 `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/` when it exists
 there (preferred), otherwise from the vendored fallback
-**`Scripts/Windows/modules/`**.
+**`scripts/windows/modules/`**.
 
 `Resolve-BuildModule.ps1` is now a **verbatim copy** of ContainerHub's
 `shared/windows/templates/Resolve-BuildModule.ps1` — sync it from upstream
@@ -381,7 +381,7 @@ Known coupling to watch when bumping pins:
   FuzzTest pin or configure fails with missing `absl::*` targets (observed:
   `absl::random_mocking_access`). Both are `20260526.0` today.
 
-Drift itself is guarded by `Scripts/Windows/tests/Submodule.Pins.Tests.ps1`,
+Drift itself is guarded by `scripts/windows/tests/Submodule.Pins.Tests.ps1`,
 which asserts no submodule sits away from its recorded commit (and that
 `FUZZTEST` in particular is at a commit reachable from its remote — an
 unidentified host tool keeps re-checking it out to the latest date tag). Run
@@ -391,7 +391,7 @@ coupling above — that one is on you.
 ## Running on the Host (Windows)
 
 Containers cannot present a swapchain — run the built binaries on the bare host,
-from the **repo root** as working directory (`Scripts/Windows/run_clangcl_*.ps1`
+from the **repo root** as working directory (`scripts/windows/run_clangcl_*.ps1`
 wrap this). Verified 2026-07-17 on the AMD RX 9070 XT: all four clang-cl builds
 render (~32 FPS ImGui overlay).
 
@@ -416,10 +416,10 @@ render (~32 FPS ImGui overlay).
   Host `ctest` cannot read a container-generated CMake tree — invoke the test
   executable directly instead (`.\build-clangcl-debug\commitTestSuite.exe`).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
-  `Build-Windows.ps1` without `-SkipPerfTests`. `Scripts/Compare-PerfBaseline.ps1`,
+  `Build-Windows.ps1` without `-SkipPerfTests`. `scripts/Compare-PerfBaseline.ps1`,
   `Compare-RendererPixels.ps1` and `Compare-RendererTimings.ps1` are local-only
   comparison tools (CI runs them in validation-only mode — the runners have no GPU).
-- PowerShell module tests: Pester suites under `Scripts/Windows/tests/`
+- PowerShell module tests: Pester suites under `scripts/windows/tests/`
   (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/Windows.yml`
   runs them with a pinned Pester 3.4.0 — gated on `[build-win]` like the rest of
   Windows CI, so they do NOT run on ordinary pushes). **Only suites covering
@@ -427,7 +427,7 @@ render (~32 FPS ImGui overlay).
   upstream goes upstream with it (2026-08-07); the six that remain cover the two
   vendored modules, the module-resolution bootstrap, the preset/artifact guards
   and the renderer comparison tools.
-- `Scripts/test-all-configs.ps1` is a local one-shot gate: the three standard
+- `scripts/test-all-configs.ps1` is a local one-shot gate: the three standard
   Windows container builds plus the Linux TSan build (`-SkipLinux` drops the
   latter). Not wired into CI.
 - ContainerHub's own suites (the modules this repo imports) run via
@@ -447,7 +447,7 @@ render (~32 FPS ImGui overlay).
   pixel oracle can see (it found 10 real WRITE-AFTER-WRITE hazards in July
   2026). Run it after touching render passes, barriers, or frames-in-flight:
   ```pwsh
-  pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1
+  pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1
   ```
   It exits non-zero iff the run log contains `SYNC-HAZARD`. Deliberately not in
   CI (needs a GPU) — details in
@@ -521,7 +521,7 @@ using its pinned, SHA-verified binaries rather than a second set installed here:
 
 | Gate | Invocation | Covers |
 | --- | --- | --- |
-| shellcheck (`-S error`) | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh Scripts/Linux/*.sh Scripts/Linux/lib/*.sh` | this repo's Linux shell scripts |
+| shellcheck (`-S error`) | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh scripts/linux/*.sh scripts/linux/lib/*.sh` | this repo's Linux shell scripts |
 | actionlint | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-workflows.sh "$GITHUB_WORKSPACE"` | `.github/workflows/*.yml` |
 
 Both run locally the same way (the binary bootstrap downloads once and caches).
@@ -529,11 +529,11 @@ Both run locally the same way (the binary bootstrap downloads once and caches).
 the submodule, so the default root resolves to ContainerHub and the gate would
 lint the wrong tree while still reporting green.
 
-Not covered today: `Scripts/AgenticLoop/Run-AgenticLoop.sh` and
+Not covered today: `scripts/agentic-loop/Run-AgenticLoop.sh` and
 `bump_version.sh` fall outside the shellcheck globs.
 
 The `ubuntu-24.04` leg of the Linux lane also runs the Rust renderer crate's
-own test suite (`Scripts/Linux/run-cargo-tests.sh`, `cargo test -p
+own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
 kataglyphis_webgpu_renderer`) after the performance benchmarks step. Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm
 demo) but its ~150 tests only ran in `Kataglyphis-RustProjectTemplate`'s own
@@ -575,21 +575,21 @@ queue must be fully drained before the planner adds new tasks; tasks marked
 `- [b]` are blocked and do not count as pending.
 
 Two engines are selectable via `engine` in
-`Scripts/AgenticLoop/AgenticLoop.config.json`, `-Engine`/`--engine`, or the
+`scripts/agentic-loop/AgenticLoop.config.json`, `-Engine`/`--engine`, or the
 `AGENTIC_ENGINE` env var: **`claude`** (default — Claude Code CLI, Opus 5
 planner with Fable 5 fallback, Sonnet executor, system prompts in
-`Scripts/AgenticLoop/prompts/`) and **`opencode`** (GLM 5.2 planner, DeepSeek v4
+`scripts/agentic-loop/prompts/`) and **`opencode`** (GLM 5.2 planner, DeepSeek v4
 Flash executor, agents in `.opencode/agents/`).
 
 **Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
-thin consumers: run `Scripts/AgenticLoop/Run-AgenticLoop.ps1` (Windows,
-requires PowerShell 7+) or `Scripts/AgenticLoop/Run-AgenticLoop.sh` (Linux,
+thin consumers: run `scripts/agentic-loop/Run-AgenticLoop.ps1` (Windows,
+requires PowerShell 7+) or `scripts/agentic-loop/Run-AgenticLoop.sh` (Linux,
 requires `jq`). The default planner/executor **task** prompts are single-sourced
 in ContainerHub at `shared/agentic-loop/prompts/*.md` — both the PowerShell
 module and the Bash library read them; only the engine-neutral **system**
 prompts stay project-owned. Architecture, configuration, and usage:
-[`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md); build matrix
+[`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
 and sanitizer-aware tests:
 [agentic-loop-build-matrix.md](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md);
 module API reference:
@@ -620,7 +620,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
-| `Scripts/AgenticLoop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
+| `scripts/agentic-loop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |

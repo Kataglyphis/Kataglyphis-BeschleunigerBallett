@@ -1,0 +1,132 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "_comment": "Configuration for the agentic loop. Select the engine and edit model IDs / intervals here. Env overrides: AGENTIC_ENGINE, AGENTIC_PLANNER_MODEL, AGENTIC_EXECUTOR_MODEL.",
+
+  "engine": "claude",
+
+  "engines": {
+    "claude": {
+      "_comment": "Claude Code CLI (claude -p). Planner: Opus 5 with Fable 5 fallback when unavailable/overloaded (via claude --fallback-model). Executor: Sonnet. Planner is sandboxed to read-only tools + BACKLOG.md edits; executor runs with bypassPermissions (trusted repo).",
+      "plannerModel": "claude-opus-5",
+      "plannerFallbackModel": "claude-fable-5",
+      "executorModel": "claude-sonnet-5",
+      "plannerPromptOverlayFile": "scripts/agentic-loop/prompts/planner-overlay.md",
+      "executorPromptOverlayFile": "scripts/agentic-loop/prompts/executor-overlay.md",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)",
+      "permissionMode": "bypassPermissions",
+      "streamOutput": true,
+      "extraArgs": ""
+    },
+    "opencode": {
+      "plannerModel": "opencode-go/glm-5.2",
+      "executorModel": "opencode-go/deepseek-v4-flash"
+    }
+  },
+
+  "models": {
+    "_comment": "Legacy fallback used when the engines block has no entry for the selected engine.",
+    "planner": "opencode-go/glm-5.2",
+    "executor": "opencode-go/deepseek-v4-flash"
+  },
+
+  "intervals": {
+    "buildEveryNTasks": 3,
+    "qualityEveryNTasks": 5,
+    "refactorEveryNIterations": 3,
+    "fullMatrixEveryNIterations": 5,
+    "testAfterBuild": true,
+    "maxExecutorRetries": 3,
+    "loopDelaySeconds": 10,
+    "maxIterations": 0,
+    "timeoutSeconds": 1200,
+    "plannerTimeoutSeconds": 1800,
+    "executorTimeoutSeconds": 3600,
+    "agentRetries": 2,
+    "agentRetryDelaySeconds": 30,
+    "fixBuildFailures": true,
+    "maxConsecutiveBuildFailures": 3,
+    "waitForUsageLimitReset": true
+  },
+
+  "buildMatrix": {
+    "_comment": "Build configurations cycled through by the agentic loop. Each entry has: name, sanitizer (asan|tsan|none), buildDir, buildType, testCommand (or null). Windows builds via Stevedore container; Linux builds via Rancher Desktop.",
+    "windows": [
+      {
+        "name": "clangcl-debug",
+        "sanitizer": "asan",
+        "buildDir": "build-clangcl-debug",
+        "buildType": "Debug",
+        "testCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug"
+      },
+      {
+        "name": "clangcl-profile",
+        "sanitizer": "none",
+        "buildDir": "build-clangcl-profile",
+        "buildType": "RelWithDebInfo",
+        "testCommand": "ctest --test-dir build-clangcl-profile --output-on-failure -C RelWithDebInfo"
+      },
+      {
+        "name": "clangcl-release",
+        "sanitizer": "none",
+        "buildDir": "build-clangcl-release",
+        "buildType": "Release",
+        "testCommand": null
+      }
+    ],
+    "linux": [
+      {
+        "name": "linux-debug-asan-clang",
+        "sanitizer": "asan",
+        "buildDir": "build-asan-clang",
+        "buildType": "Debug",
+        "testCommand": "ctest --test-dir build-asan-clang --output-on-failure -C Debug"
+      },
+      {
+        "name": "linux-debug-tsan-clang",
+        "sanitizer": "tsan",
+        "buildDir": "build-tsan-clang",
+        "buildType": "Debug",
+        "testCommand": "ctest --test-dir build-tsan-clang --output-on-failure -C Debug"
+      },
+      {
+        "name": "linux-profile-clang",
+        "sanitizer": "none",
+        "buildDir": "build-profile-clang",
+        "buildType": "RelWithDebInfo",
+        "testCommand": "ctest --test-dir build-profile-clang --output-on-failure -C RelWithDebInfo"
+      },
+      {
+        "name": "linux-release-clang",
+        "sanitizer": "none",
+        "buildDir": "build-release-clang",
+        "buildType": "Release",
+        "testCommand": null
+      }
+    ]
+  },
+
+  "build": {
+    "windowsScript": "scripts/windows/Build-Windows-Container.ps1",
+    "linuxScript": "scripts/linux/cmake-configure-build.sh",
+    "windowsTestCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug",
+    "linuxTestCommand": "ctest --test-dir build --output-on-failure -C Debug",
+    "windowsQualityCommand": "pwsh -ExecutionPolicy Bypass -File scripts/windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
+    "linuxQualityCommand": "scripts/linux/run_static_analysis_format.sh"
+  },
+
+  "backlog": {
+    "_comment": "skipPlannerWhenTasksPending: go straight to the executor while BACKLOG.md still has unchecked tasks. deleteCompletedTasks: prune completed (- [x]) entries from BACKLOG.md after each task — history lives in git.",
+    "skipPlannerWhenTasksPending": true,
+    "deleteCompletedTasks": true
+  },
+
+  "git": {
+    "autoCommit": true,
+    "commitPrefix": "agentic-loop"
+  },
+
+  "logging": {
+    "logDir": "logs/agentic-loop",
+    "logToConsole": true
+  }
+}

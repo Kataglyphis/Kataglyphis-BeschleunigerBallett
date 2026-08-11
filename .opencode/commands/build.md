@@ -6,12 +6,12 @@ Build the project with the specified configuration.
 
 **Windows (container build via Stevedore):**
 ```
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations $ARGUMENTS
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations $ARGUMENTS
 ```
 
 **Linux:**
 ```
-Scripts/Linux/cmake-configure-build.sh --preset $ARGUMENTS --build-dir build
+scripts/linux/cmake-configure-build.sh --preset $ARGUMENTS --build-dir build
 ```
 
 Report build success or failures. If the build fails, read the error output and

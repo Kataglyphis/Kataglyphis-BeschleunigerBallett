@@ -64,7 +64,7 @@ auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &dev
     if (!validateSpirvBlob(code)) {
         spdlog::default_logger_raw()->log(spdlog::level::critical,
           std::string("Invalid or missing SPIR-V shader blob at '") + spvPath
-            + "' - run Scripts/Windows/compile-slang-shaders.ps1 (or the Linux .sh) to (re)compile shaders.");
+            + "' - run scripts/windows/compile-slang-shaders.ps1 (or the Linux .sh) to (re)compile shaders.");
         std::abort();
     }
 

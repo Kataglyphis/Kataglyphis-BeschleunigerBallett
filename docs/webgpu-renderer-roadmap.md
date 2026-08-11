@@ -85,14 +85,14 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Async asset loading | M | Background thread native / fetch + progress on web; loading UI |
 | Indirect draws | M | `draw_indexed_indirect` batching once culling is GPU-side |
 | ✅ GPU occlusion culling | XL | Done 2026-07-21: temporal hardware occlusion queries (NOT a Hi-Z pyramid — WebGPU core lacks portable depth-mip sampling). Per-primitive world-AABB query pass → `resolve_query_set` → async readback → next-frame skip of zero-sample primitives; one-frame latency accepted. `render/occlusion.rs`, `TimedPass::OcclusionCull`, overlay checkbox, off by default. GPU *frustum* culling (compute-based) still open |
-| ✅ wasm size budget | S | Done 2026-07-31: `Scripts/Linux/wasm-size-budget.sh` builds wasm32-unknown-unknown release, runs `wasm-opt -Oz`, fails above a 12 MiB budget; wired into `Linux.yml`'s "Enforce wasm demo size budget" step ahead of the docs deploy. Measured post-opt size at the time: ~8.3 MiB — the previously-quoted ~3.7 MB figure was stale/never enforced |
+| ✅ wasm size budget | S | Done 2026-07-31: `scripts/linux/wasm-size-budget.sh` builds wasm32-unknown-unknown release, runs `wasm-opt -Oz`, fails above a 12 MiB budget; wired into `Linux.yml`'s "Enforce wasm demo size budget" step ahead of the docs deploy. Measured post-opt size at the time: ~8.3 MiB — the previously-quoted ~3.7 MB figure was stale/never enforced |
 | ✅ Timestamp-query profiling | M | Done 2026-07-20: per-pass wgpu timestamp queries, averaged ms via `gpu_timings_ms()` (`render/gpu_timing.rs`), + `dump_gpu_timings` example feeding the cross-renderer timing table |
 
 ## Phase E — Web platform & demo polish
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| ✅ Web deploy (via Sphinx docs site) | S | Done 2026-07-18: demo ships inside the Sphinx site (`docs/source/_webgpu_demo` + `html_extra_path`, page `webgpu_demo.md`), deployed by the existing docs FTP pipeline. **CI auto-rebuild done 2026-07-23** (`4088fe0a`): `Scripts/Linux/docs-build-web.sh` recompiles the crate to wasm32 + wasm-bindgen and refreshes `_webgpu_demo` before Sphinx on every deploy (pinned wasm-bindgen, best-effort with the committed snapshot as fallback), so the live demo always tracks the current renderer instead of a hand-built snapshot that goes stale |
+| ✅ Web deploy (via Sphinx docs site) | S | Done 2026-07-18: demo ships inside the Sphinx site (`docs/source/_webgpu_demo` + `html_extra_path`, page `webgpu_demo.md`), deployed by the existing docs FTP pipeline. **CI auto-rebuild done 2026-07-23** (`4088fe0a`): `scripts/linux/docs-build-web.sh` recompiles the crate to wasm32 + wasm-bindgen and refreshes `_webgpu_demo` before Sphinx on every deploy (pinned wasm-bindgen, best-effort with the committed snapshot as fallback), so the live demo always tracks the current renderer instead of a hand-built snapshot that goes stale |
 | ✅ Responsive canvas | S | Done 2026-07-18: CSS-driven layout, backing store follows clientSize × devicePixelRatio per frame |
 | ✅ Touch controls | M | Done 2026-07-20: one finger orbits, two-finger pinch-zoom; ratio-based (DPI-independent), pinch baseline resets on finger-count change |
 | Model picker UI | S | Query param + dropdown of bundled scenes |

@@ -36,15 +36,15 @@ and fails `cmake --list-presets` with `Unrecognized "version" field` — read
 the file itself, or the Windows configurations table in
 [AGENTS.md](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/blob/develop/AGENTS.md#windows-configurations-build-windowsps1),
 instead.
-On Windows, prefer `Scripts/Windows/Build-Windows-Container.ps1`, which builds
+On Windows, prefer `scripts/windows/Build-Windows-Container.ps1`, which builds
 inside a container that already has a new enough CMake.
 
 ## Linux Workflow
 
-For Linux, the helper script under `Scripts/Linux/` wraps the common configure-and-build path:
+For Linux, the helper script under `scripts/linux/` wraps the common configure-and-build path:
 
 ```bash
-bash ./Scripts/Linux/cmake-configure-build.sh \
+bash ./scripts/linux/cmake-configure-build.sh \
   --preset linux-debug-clang \
   --build-dir build \
   --build-config Debug
@@ -52,10 +52,10 @@ bash ./Scripts/Linux/cmake-configure-build.sh \
 
 Useful adjacent scripts:
 
-- `Scripts/Linux/run-ctest.sh`
-- `Scripts/Linux/build-coverage-gcovr.sh`
-- `Scripts/Linux/build-coverage-llvm.sh`
-- `Scripts/Linux/run-perf-suite.sh`
+- `scripts/linux/run-ctest.sh`
+- `scripts/linux/build-coverage-gcovr.sh`
+- `scripts/linux/build-coverage-llvm.sh`
+- `scripts/linux/run-perf-suite.sh`
 
 ## Windows Workflow
 
@@ -63,10 +63,10 @@ For Windows, use the orchestration script if you want configuration, build, form
 
 ```pwsh
 # single configuration
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 -Configurations clangcl-debug
 
 # full sanitizer/profile/release sweep
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
 ```
 
@@ -75,8 +75,8 @@ Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer 
 After building, these run helpers are available:
 
 ```pwsh
-& ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
-& ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
+& ./scripts/windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
+& ./scripts/windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
 ```
 
 If build dependencies are missing on the host, prefer the containerized workflow below — the toolchain image ships everything (clang-cl, CMake, Ninja, Vulkan SDK, Rust, sccache).
@@ -87,7 +87,7 @@ The Windows builds also run fully containerized in the ContainerHub developer im
 
 ```pwsh
 # defaults to clangcl-debug,clangcl-profile,clangcl-release
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1
 ```
 
 Details worth knowing:
@@ -95,20 +95,20 @@ Details worth knowing:
 - The script always uses Stevedore's `docker.exe`; `nerdctl` is not usable for builds or runs on Windows.
 - Process isolation is the default so the container sees all host CPUs.
 - By default the script streams the sources into a reusable container via tar and streams the resulting build trees and logs back into the working tree; `-UseBindMount` opts into bind-mounting the repo instead. On a Dev Drive the bind mount additionally requires the container filesystem filters to be allow-listed once from an elevated prompt, followed by a reboot: `fsutil devdrv setFiltersAllowed /volume D: "bindFlt,wcifs"` — the filter list must be one quoted argument (unquoted `bindFlt, wcifs` is parsed as two arguments and fails). Setup, verification, and revert steps live in `ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`; this repo's measured transport numbers and incremental-build wiring live in `docs/container-build-caching.md` (on this Dev Drive host the tar-pipe measured faster than the bind mount — measure before switching).
-- Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, falling back to vendored copies in `Scripts/Windows/modules` (see `Scripts/Windows/Resolve-BuildModule.ps1`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` >= FuzzTest's own Abseil pin (see `AGENTS.md`).
+- Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, falling back to vendored copies in `scripts/windows/modules` (see `scripts/windows/Resolve-BuildModule.ps1`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` >= FuzzTest's own Abseil pin (see `AGENTS.md`).
 
 ## Packaging
 
 ### Linux release packages
 
 ```bash
-bash ./Scripts/Linux/cmake-configure-build.sh \
+bash ./scripts/linux/cmake-configure-build.sh \
   --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
   --preset linux-release-clang \
   --build-dir build-release \
   --build-config Release
 
-bash ./Scripts/Linux/cmake-configure-build.sh \
+bash ./scripts/linux/cmake-configure-build.sh \
   --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
   --build-dir build-release \
   --skip-configure true \

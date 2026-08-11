@@ -45,8 +45,8 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground us
 | --- | --- |
 | `Src/` | Engine and renderer source code |
 | `Resources/` | Shaders and runtime assets |
-| `Scripts/Linux/` | Linux build, test, coverage, analysis, and docs helpers |
-| `Scripts/Windows/` | Windows build, run, and dependency setup helpers |
+| `scripts/linux/` | Linux build, test, coverage, analysis, and docs helpers |
+| `scripts/windows/` | Windows build, run, and dependency setup helpers |
 | `Test/` | Tests |
 | `docs/source/` | Hand-written Sphinx pages |
 | `Documents/` | Generated PDF and reference artifacts |
@@ -74,7 +74,7 @@ A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
 and fails `cmake --list-presets` with `Unrecognized "version" field` — read
 the file itself, or the Windows configurations table in
 [AGENTS.md](AGENTS.md#windows-configurations-build-windowsps1), instead. On
-Windows, prefer `Scripts/Windows/Build-Windows-Container.ps1`, which builds
+Windows, prefer `scripts/windows/Build-Windows-Container.ps1`, which builds
 inside a container that already has a new enough CMake.
 
 Full prerequisites, the per-platform workflows (Linux helper scripts, the Windows `Build-Windows.ps1` configurations, the containerized Stevedore build), packaging (CPack/MSIX), and troubleshooting live in [docs/source/getting_started.md](docs/source/getting_started.md).
@@ -96,10 +96,10 @@ If Doxygen XML is available, the Sphinx build automatically includes the generat
 ## Tests and Analysis
 
 - `ctest` runs the configured test suite from the active build directory
-- `Scripts/Linux/run-ctest.sh` wraps Linux test execution
-- `Scripts/Linux/build-coverage-gcovr.sh` and `Scripts/Linux/build-coverage-llvm.sh` generate coverage reports
-- `Scripts/Linux/run-perf-suite.sh` runs performance-oriented checks
-- `Scripts/Windows/Build-Windows.ps1` can orchestrate formatting, tidy, builds, tests, and packaging
+- `scripts/linux/run-ctest.sh` wraps Linux test execution
+- `scripts/linux/build-coverage-gcovr.sh` and `scripts/linux/build-coverage-llvm.sh` generate coverage reports
+- `scripts/linux/run-perf-suite.sh` runs performance-oriented checks
+- `scripts/windows/Build-Windows.ps1` can orchestrate formatting, tidy, builds, tests, and packaging
 
 ## Packaging
 
@@ -109,13 +109,13 @@ Linux binary packages are generated with CPack (optionally as AppImage); the Win
 
 Shaders are written in [Slang](https://shader-slang.com/) under
 `Resources/ShadersSlang/` and compiled ahead of time by
-`Scripts/Windows/compile-slang-shaders.ps1` / `Scripts/Linux/compile-slang-shaders.sh`
+`scripts/windows/compile-slang-shaders.ps1` / `scripts/linux/compile-slang-shaders.sh`
 to SPIR-V and WGSL. See `docs/shader-build-pipeline.md` and AGENTS.md §
 Shaders for the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `Scripts/Windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
 
 ## Roadmap
 

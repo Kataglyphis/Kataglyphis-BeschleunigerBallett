@@ -117,7 +117,7 @@ jobs:
       - name: Lint shell scripts (ContainerHub shellcheck gate)
         run: >-
           bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh
-          Scripts/Linux/*.sh Scripts/Linux/lib/*.sh
+          scripts/linux/*.sh scripts/linux/lib/*.sh
 
       - name: Lint workflows (ContainerHub actionlint gate)
         run: >-
@@ -143,7 +143,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -153,7 +153,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/run-ctest.sh
+            bash ./scripts/linux/run-ctest.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
             --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
@@ -182,7 +182,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-asan-clang"
             --build-dir "build-asan-clang"
           log-file: output-asan.log
@@ -247,7 +247,7 @@ jobs:
             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"
             -e UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"
           script: >-
-            bash ./Scripts/Linux/run-ctest.sh
+            bash ./scripts/linux/run-ctest.sh
             --build-dir "build-asan-clang"
             --build-type "${{ env.BUILD_TYPE }}"
             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
@@ -275,7 +275,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-tsan-clang"
             --build-dir "build-tsan"
           log-file: output-tsan.log
@@ -287,7 +287,7 @@ jobs:
           extra-args: >-
             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"
           script: >-
-            bash ./Scripts/Linux/run-ctest.sh
+            bash ./scripts/linux/run-ctest.sh
             --build-dir "build-tsan"
             --build-type "${{ env.BUILD_TYPE }}"
             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
@@ -314,7 +314,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -324,7 +324,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/build-coverage-llvm.sh
+            bash ./scripts/linux/build-coverage-llvm.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --coverage-json "${{ env.COVERAGE_JSON }}"
           log-file: output.log
@@ -362,7 +362,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -382,7 +382,7 @@ jobs:
             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0"
             -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0"
           script: >-
-            bash ./Scripts/Linux/run_static_analysis_format.sh
+            bash ./scripts/linux/run_static_analysis_format.sh
             --only-clang-analyze-html
           log-file: output.log
 
@@ -392,7 +392,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/run_static_analysis_format.sh
+            bash ./scripts/linux/run_static_analysis_format.sh
             --only-scan-build
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "linux-debug-clang"
@@ -417,7 +417,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "${{ env.CLANG_PROFILE_PRESET }}"
             --clean-build-dir true
@@ -427,14 +427,14 @@ jobs:
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
-          script: bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
+          script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
   # ---------------------------------------------------------------------------
   # The Rust bridge and the wasm demo are both compiled from this crate
   # elsewhere in this lane, but neither runs its ~150 tests - this is the only
   # place in this repo that does. GPU-touching tests self-skip without an
-  # adapter (see Scripts/Linux/run-cargo-tests.sh). ARM does not pay for a
+  # adapter (see scripts/linux/run-cargo-tests.sh). ARM does not pay for a
   # second run of the same crate's CPU-only tests.
   # ---------------------------------------------------------------------------
   rust:
@@ -453,7 +453,7 @@ jobs:
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
-          script: bash ./Scripts/Linux/run-cargo-tests.sh
+          script: bash ./scripts/linux/run-cargo-tests.sh
           log-file: output.log
 
   # ---------------------------------------------------------------------------
@@ -481,7 +481,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
             --build-target doc_doxygen
@@ -491,18 +491,18 @@ jobs:
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
-          script: bash ./Scripts/Linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
+          script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: Enforce wasm demo size budget
         # Deliberately fatal, unlike the best-effort rebuild in "Build web
         # page" above: a wasm bloat regression must block the deploy step
         # below, not surface as a slow page load after it is already live.
         # (It skips itself, loudly, when the image cannot build wasm at all -
-        # see Scripts/Linux/wasm-size-budget.sh.)
+        # see scripts/linux/wasm-size-budget.sh.)
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
-          script: bash ./Scripts/Linux/wasm-size-budget.sh
+          script: bash ./scripts/linux/wasm-size-budget.sh
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
@@ -537,7 +537,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "linux-debug-GNU"
             --clean-build-dir true
@@ -548,7 +548,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/run-ctest.sh
+            bash ./scripts/linux/run-ctest.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
             --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
@@ -565,7 +565,7 @@ jobs:
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
-          script: bash ./Scripts/Linux/build-coverage-gcovr.sh
+          script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
 
   # ---------------------------------------------------------------------------
@@ -590,14 +590,14 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "${{ env.GCC_PROFILE_PRESET }}"
             --clean-build-dir true
           log-file: output.log
 
       - name: Run performance benchmarks (gcc)
-        run: ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
+        run: ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
         working-directory: ${{ github.workspace }}
 
   # ---------------------------------------------------------------------------
@@ -619,7 +619,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
             --preset "linux-release-clang"
             --build-config "Release"
@@ -630,7 +630,7 @@ jobs:
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
             --skip-configure true
             --build-target package

@@ -122,14 +122,14 @@ committed to.
   2026-08-01): the `KATAGLYPHIS_GPU_TIMING_JSON` export in
   `GpuTimingSubsystem.ixx:211` writes one JSON object keyed by
   `FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES`, the Rust side mirrors it via
-  the `dump_gpu_timings` example, and `Scripts/Compare-RendererTimings.ps1`
+  the `dump_gpu_timings` example, and `scripts/Compare-RendererTimings.ps1`
   drives both and prints them side by side. What is still missing is the
   *assertion*: nothing sets a budget for `GpuTimedPass::ShadowCascades` (or
   any other pass), so the artifact is comparable but ungated.
 - **Regression tracking**: Google Benchmark can emit JSON
   (`--benchmark_out=... --benchmark_out_format=json`); storing one baseline
   per machine and diffing beats eyeballing console output. **Done
-  (2026-07-31):** `Scripts/Compare-PerfBaseline.ps1` diffs a fresh JSON run
+  (2026-07-31):** `scripts/Compare-PerfBaseline.ps1` diffs a fresh JSON run
   against the checked-in `Test/perf/baselines/win-9070xt-32core.json`, flags
   any benchmark that regressed beyond a configurable tolerance (default
   +25%), and is deliberately not wired into CI (see the "measured baseline"
@@ -226,9 +226,9 @@ that are *not* exercised that way and should be run periodically:
   This bullet stays as the record of why a green Windows "TSan" run meant
   nothing.
 - **Synchronization validation** — run
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1`
   (documented in `docs/gpu-golden-testing.md`). It sets
-  `khronos_validation.validate_sync = true` via `Scripts/vk_layer_settings.txt`,
+  `khronos_validation.validate_sync = true` via `scripts/vk_layer_settings.txt`,
   copied next to the executable for the run, and exits non-zero on any
   `SYNC-HAZARD` in the log. This found 10 real WRITE-AFTER-WRITE hazards in
   July 2026; it is still not part of any automated run (needs a GPU), so it
@@ -597,7 +597,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   (`wcifs teardown lock`); a stale container makes it look like a build is
   still running. Compare the newest `logs/windows/build-summary-*.json`
   timestamp against container start before assuming.
-- `Scripts/Windows/Build-Windows-Container.ps1` takes `-Configurations`,
+- `scripts/windows/Build-Windows-Container.ps1` takes `-Configurations`,
   not `-Preset`; passing the wrong one silently builds **all four**
   configurations.
 - ~~A source file deleted on the host keeps building inside the reusable
@@ -723,10 +723,10 @@ cleanUp+recreate pair at the four scene-changed sites.
   scenes (the Colosseum case).
 - ~~**wgpu timestamp queries** to mirror the C++ per-pass GPU timings~~ —
   **done**: `render/gpu_timing.rs` (`TimedPass`, per-pass averaged ms) and the
-  `dump_gpu_timings` example + `Scripts/Compare-RendererTimings.ps1` already
+  `dump_gpu_timings` example + `scripts/Compare-RendererTimings.ps1` already
   compare timings across renderers, not just pixels.
-- ~~**Wasm size budget**~~ — **done**: `Scripts/Linux/wasm-size-budget.sh`
-  (CI) / `Scripts/Test-WasmSizeBudget.ps1` (local) build wasm32-unknown-unknown
+- ~~**Wasm size budget**~~ — **done**: `scripts/linux/wasm-size-budget.sh`
+  (CI) / `scripts/Test-WasmSizeBudget.ps1` (local) build wasm32-unknown-unknown
   release, run `wasm-opt -Oz`, and fail above a 12 MiB budget; wired into
   `Linux.yml` ahead of the docs deploy. The ~3.7 MB figure was stale — measured
   post-opt size is ~8.3 MiB, never previously enforced.
@@ -1849,7 +1849,7 @@ an environmental/driver regression:
    never hit this because glslang auto-lowers `texture()` to explicit-LOD
    outside fragment/compute stages; Slang does not. Fixed:
    `.SampleLevel(textureSamplers[textureId], texCoords, 0.0)`. Shaders
-   recompiled via `Scripts/Windows/compile-slang-shaders.ps1`.
+   recompiled via `scripts/windows/compile-slang-shaders.ps1`.
    `path_tracing.slang`'s identical-looking `.Sample()` calls are unaffected -
    that shader is `[shader("compute")]`, which IS in the allowed list.
 
@@ -1900,7 +1900,7 @@ None duplicate the 2026-07-24/28/30 batches.
   **Context:** Documentation-drift item from the refactor mandate. AGENTS.md
   is the file every agent session loads, so a wrong prompt-file path there
   multiplies into wrong edits. Coordinate with the in-flight working-tree
-  changes to `Scripts/AgenticLoop/*` — base the wording on the files as they
+  changes to `scripts/agentic-loop/*` — base the wording on the files as they
   are at execution time, and keep AGENTS.md the summary, README the detail.
 
 ## 2026-07-31 batch — planner (perf coverage, resurrected-docs cleanup, Rust frame path)
@@ -2146,10 +2146,10 @@ and unchecked rather than guessed at.
     host GPU.
 
   **Build:** `clangcl-debug` via
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
   (`-FreshContainer` needed here because `PathTracing.ixx` changed), then host
   GPU runs per `docs/gpu-golden-testing.md`. Shader-only iterations:
-  `pwsh Scripts/Windows/compile-slang-shaders.ps1`, no C++ rebuild needed.
+  `pwsh scripts/windows/compile-slang-shaders.ps1`, no C++ rebuild needed.
 
   **Verified 2026-07-31:** 18/20 in
   `--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
@@ -2208,7 +2208,7 @@ against the tree this pass:
 - `docs/cpp-renderer-improvements.md` — **confirmed**: :66-72 still describes
   "runtime glslc resolution" and "the loader no longer recompiles GLSL", :119-121
   still tells you to edit a GLSL source and rely on `compile-shaders.ps1`. Only
-  `Scripts/Windows/compile-slang-shaders.ps1` exists; there is no runtime shader
+  `scripts/windows/compile-slang-shaders.ps1` exists; there is no runtime shader
   compilation at all (AGENTS.md § Shaders).
 - `docs/webgpu-renderer-roadmap.md:121` — **confirmed**: advertises the naga
   WGSL→SPIR-V export as a shipped feature while `docs/shader-sharing.md:133`
@@ -2449,8 +2449,8 @@ the mechanism is exact:
   same buffer; the tonemap/alpha composite reads it too.
 - Both compile scripts already carry a **post-emit patch table** for exactly
   this class of Slang-WGSL-backend deficiency —
-  `$DepthTexturePatches` (`Scripts/Windows/compile-slang-shaders.ps1:231-249`)
-  and the `sed -i -E` block (`Scripts/Linux/compile-slang-shaders.sh:183-196`),
+  `$DepthTexturePatches` (`scripts/windows/compile-slang-shaders.ps1:231-249`)
+  and the `sed -i -E` block (`scripts/linux/compile-slang-shaders.sh:183-196`),
   both of which already patch `depth_resolve.wgsl`. So the fix has an
   established home, and this is the same failure mode as commit `64f5053e`
   ("fix Slang WGSL-backend depth-texture emission blocking all Rust GPU tests").
@@ -2486,7 +2486,7 @@ animation samplers** (`keyframe_lerp_indices`/`cubic_spline_weights`/`sample_*`,
 `forward.rs:3188-3324`) out of the 3968-line hub would be pure code motion — they
 already have inline unit tests at `forward.rs:3711-3940`; **a C++ headless
 per-pass GPU-timing JSON dump** already exists (`KATAGLYPHIS_GPU_TIMING_JSON`,
-consumed by `Scripts/Compare-RendererTimings.ps1`).
+consumed by `scripts/Compare-RendererTimings.ps1`).
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
@@ -2788,7 +2788,7 @@ the code says so.** `VulkanRenderer.cpp:898-906` documents it precisely
 per-frame-in-flight), `MAX_FRAME_DRAWS == 3`, so frame N's post-pass read and
 frame N+1's compute write are ordered by nothing. The barrier at `:878-896`
 closes only the same-frame RAW. Since `5ccaca80` there is now a one-command way
-to check it (`Scripts/Windows/Run-SyncValidation.ps1`), and the fix is cheap and
+to check it (`scripts/windows/Run-SyncValidation.ps1`), and the fix is cheap and
 deterministic either way — a barrier orders against *all* previously submitted
 commands on the queue, including earlier submissions, so a WAR barrier before
 the dispatch closes it without duplicating the image. Task 3. Note
@@ -3079,7 +3079,7 @@ This is a cross-renderer parity fix with a free quality win (the 2x2 hardware
 PCF comes with the comparison sampler).
 
 **Task 5 is a defect in a checked-in tool, found by reading it against the two
-enums it claims to track.** `Scripts/Compare-RendererTimings.ps1:34` defaults
+enums it claims to track.** `scripts/Compare-RendererTimings.ps1:34` defaults
 `$RustExpectedPasses` to
 `@('Forward','ShadowCascades','Ssao','Bloom','Histogram','Post')`, and
 `Assert-PassesExist` (`:49-63`) sets `exitCode = 1` for any expected pass the
@@ -3093,7 +3093,7 @@ pass that cannot exist, and simultaneously never notices that
 (`GUIRendererSharedVars.ixx:26-32`), but nothing keeps it that way. This is
 the same class the repo already gates elsewhere (`a63edf10` self-enforcing
 Windows CI test filter, `28887db1` / `41b76ab8` generated-WGSL gates), and the
-Pester precedent is `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1`.
+Pester precedent is `scripts/windows/tests/Compare-PerfBaseline.Tests.ps1`.
 
 Candidates found but NOT tasked (checked, then rejected — do not re-propose
 without new evidence): **`Frustum::from_view_proj` in `render/bounds.rs:21-35`
@@ -3139,7 +3139,7 @@ the frame runs all the way to `advanceFrame()` at `:613` → `% 0`. The class
 should defend its own invariant instead of relying on a caller check that
 runs too early.
 
-**Task 2: `Scripts/Compare-RendererPixels.ps1` cannot complete a run.**
+**Task 2: `scripts/Compare-RendererPixels.ps1` cannot complete a run.**
 `$bmp.Dispose()` is called and the *next* statement passes `$bmp.Width` /
 `$bmp.Height` as arguments (`:204-205`, and again at `:223-224`).
 `System.Drawing.Image.Width` on a disposed bitmap throws, and the script sets
@@ -3152,8 +3152,8 @@ hard-coded `cpp-vulkan.png` (`:103`) while the capture at `:129-135` actually
 writes `cpp-vulkan-<suffix>.png` — so validation mode always finds nothing;
 and with neither renderer producing a frame, `$exitCode` stays 0 and the
 script prints `PIXEL COMPARISON PASSED`. It is also the only one of the three
-`Scripts/Compare-*.ps1` tools with no Pester suite. Sibling precedent for
-everything this needs: `Scripts/Windows/tests/Compare-RendererTimings.Tests.ps1`
+`scripts/Compare-*.ps1` tools with no Pester suite. Sibling precedent for
+everything this needs: `scripts/windows/tests/Compare-RendererTimings.Tests.ps1`
 (child-process invocation + fixture files, Pester 3.4.0 dash-less syntax).
 
 **Task 3 is the half of batch XII task 1 that did not land.** That entry said
@@ -3648,7 +3648,7 @@ span.
   and the five path-tracing tests). A wrong handle offset shows up as the wrong
   shader being invoked — expect visibly broken RT output, not a subtle shift, if
   step 1 or 2 is done wrong. Also run
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`;
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1`;
   the validation layers check SBT region sizes against the miss indices used, so
   step 3 is directly observable there.
 
@@ -3925,7 +3925,7 @@ is gitignored.
      `float4 clipPos = float4(In.uv.x * 2.0 - 1.0, 1.0 - In.uv.y * 2.0, depth, 1.0);`
      Add a one-line comment pointing at `ssao.slang:42` as the shared inverse.
      Do **not** touch `lighting_vs_main` in this task — that is task 3.
-  4. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`). `deferred`
+  4. Recompile shaders (`scripts/windows/compile-slang-shaders.ps1`). `deferred`
      is SPIR-V-only (`compile-slang-shaders.ps1:72-75`), so no WGSL is affected.
   5. Add the oracle, `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand`:
      for each of `Forward` and `Deferred`, capture once with
@@ -3953,7 +3953,7 @@ is gitignored.
   (`buildIntegritySuite.cpp:1841`) will fail otherwise.
 
   **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
   then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\`
   and run it from the repo root on the host GPU (containers have no swapchain —
   AGENTS.md § Running on the Host).
@@ -4002,7 +4002,7 @@ is gitignored.
   3. In `ssao.slang`, rewrite `view_pos_at`'s first line to use
      `fullscreen_uv_to_ndc(uv)` so there is exactly one copy of the y term.
   4. Recompile shaders; `ssao` emits WGSL, so re-run
-     `Scripts/Windows/compile-slang-shaders.ps1` and commit the regenerated
+     `scripts/windows/compile-slang-shaders.ps1` and commit the regenerated
      `crates/webgpu_renderer/src/shaders/ssao.wgsl` in the submodule
      (`BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource` and
      `CheckedInWgslHasNoHandEdits` enforce this).
@@ -4065,7 +4065,7 @@ is gitignored.
      eAllCommands`). That reasoning is not duplicated anywhere.
 
   **Test:** No new test. Re-run `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
-  on the host GPU; it must stay green. If `Scripts/Windows/Run-SyncValidation.ps1`
+  on the host GPU; it must stay green. If `scripts/windows/Run-SyncValidation.ps1`
   is runnable in this environment, re-run it and confirm no `SYNC-HAZARD`,
   matching the measurement the comment records.
 
@@ -4344,7 +4344,7 @@ ripgrep classify the whole file as binary and silently skip it.**
 `if (*override_path != '<NUL>')` — the intended `'\0'` was committed as the raw
 0x00 byte itself (confirmed at byte offset 4573; it is the only NUL in any
 tracked file under `Src/`, `Test/`, `Resources/ShadersSlang/`, `cmake/` or
-`Scripts/`). The code is semantically correct and compiles, but every
+`scripts/`). The code is semantically correct and compiles, but every
 `grep -rn`/`rg` over `Src/` reports "binary file matches" instead of the line, so
 `resolveModelPath`, `getModelFile`, `getAvailableModelPaths`,
 `findResourcesBasePath` and `KATAGLYPHIS_MODEL_OVERRIDE` are all invisible to the
@@ -4421,7 +4421,7 @@ This was not inferred — it was read out of the compiled binaries this pass wit
 declares `%SceneUBO_std140` with `OpMemberDecorate ... Offset` values
 `0, 32, 36, 40, 48, 64, 256, 272, 288, 304, 320, 336`. Slang compiles
 `ConstantBuffer<T>` as **std140** (the emitted type is literally named
-`SceneUBO_std140`; `Scripts/Windows/compile-slang-shaders.ps1:191` passes no
+`SceneUBO_std140`; `scripts/windows/compile-slang-shaders.ps1:191` passes no
 `-fvk-use-scalar-layout`), so the `uint/float/uint` run at bytes 32/36/40 is
 followed by 4 bytes of std140 padding before `cascadeSplits` at 48. The host
 struct (`Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:29-52`) has no such pad,
@@ -6751,7 +6751,7 @@ exists to keep it deleted, and `find Resources -name '*.glsl' -o -name '*.frag'
 `SceneUBO`; `common/push_constants.slang:14` `PushConstantRasterizer`), which is
 why `TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)`
 (`:3980`) and `HostAndShaderSharedConstantsAgree` (`:1257`) exist. No script
-under `Scripts/` feeds any of these headers to `slangc`. So every `#ifdef
+under `scripts/` feeds any of these headers to `slangc`. So every `#ifdef
 __cplusplus` in them is a branch that is always taken and every `#else` branch
 is unreachable text.
 
@@ -7229,21 +7229,21 @@ this pass.
 **Every task in this batch is verifiable with no GPU**, deliberately: host
 golden verification is still blocked over RDP (see the `- [b]` entry near the
 end of this file), so nothing here may depend on it. Tasks 1, 2 and 5 land
-entirely in `Scripts/Windows/tests/` and run under the existing `pester-tests`
+entirely in `scripts/windows/tests/` and run under the existing `pester-tests`
 CI job and locally with pinned Pester 3.4.0 — no build at all. Task 3 adds a
 filesystem gate to `buildIntegritySuite.cpp` plus a workflow edit. Task 4 is a
 five-line source change plus an extension of an existing text-order gate.
 `Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
 `CONFIGURE_DEPENDS`, so no new suite file needs registering.
 
-**The headline is that `Scripts/Windows/modules/` holds exactly two modules —
+**The headline is that `scripts/windows/modules/` holds exactly two modules —
 the two AGENTS.md says are genuinely project-specific and must stay here
 (`WindowsClang.Common`, `WindowsTesting.Common`) — and they are the only two
-with no Pester suite at all.** `Scripts/Windows/tests/` carries twelve suites;
+with no Pester suite at all.** `scripts/windows/tests/` carries twelve suites;
 five of them (`WindowsCMake.Common`, `WindowsConfig.Common`,
 `WindowsMsix.Common`, `WindowsMsix.Signing`, `WindowsWebDav.Common`) cover
 modules that were **upstreamed to ContainerHub on 2026-08-02** and no longer
-exist under `Scripts/Windows/modules/`. Those suites are not redundant —
+exist under `scripts/windows/modules/`. Those suites are not redundant —
 ContainerHub's own `windows/scripts/tests/` has no equivalents, so this repo is
 their only coverage, do not delete them — but the coverage map is exactly
 inverted from where the risk is. Reading the two untested modules found a real
@@ -7371,7 +7371,7 @@ small source edits plus CPU unit tests.
 `CONFIGURE_DEPENDS`, so no new suite file needs registering.
 
 **The headline is that `CMakePresets.json`'s `binaryDir` and
-`Scripts/Windows/Build-Windows.config.psd1`'s `BuildDir` are two independent
+`scripts/windows/Build-Windows.config.psd1`'s `BuildDir` are two independent
 answers to "where does this configuration build", and they have drifted apart
 far enough that CI hedges.** `Build-Windows.ps1:94-95` reads `BuildDir`/`Preset`
 out of the `.psd1` and passes the directory to the upstream driver as
@@ -8092,7 +8092,7 @@ expose to a different grey than the CPU oracle in `tests/histogram.rs`
 asserts, silently.
 
 **Fifth, this repo compiles the Rust crate twice and lints it zero times.**
-`Linux.yml:277-286` runs `Scripts/Linux/run-cargo-tests.sh` on the
+`Linux.yml:277-286` runs `scripts/linux/run-cargo-tests.sh` on the
 `ubuntu-24.04` leg, and its comment states the case exactly: the crate is
 compiled here by the Rust bridge and the wasm demo, but its tests only ran in
 `Kataglyphis-RustProjectTemplate`'s own workflow, "so edits made to
@@ -8149,7 +8149,7 @@ here does.
   or (b) accept the new step running non-blocking, which weakens the gate
   this task exists to add.
 
-  `Scripts/Linux/run-cargo-lints.sh` has been added (mirrors
+  `scripts/linux/run-cargo-lints.sh` has been added (mirrors
   `run-cargo-tests.sh`, delegates to
   `linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` workspace-wide, no
   `-p` filter) and confirmed to correctly delegate and correctly fail (exit
@@ -8159,19 +8159,19 @@ here does.
 
   **Files to read:**
   - `.github/workflows/Linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
-  - `Scripts/Linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
+  - `scripts/linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
   - `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
   - `ExternalLib/Kataglyphis-RustProjectTemplate/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
   - `AGENTS.md` § "Rule: Reusable Work Belongs in ContainerHub" and the wrapper map
 
   **Steps:**
   1. Before writing anything, run the linters locally from `ExternalLib/Kataglyphis-RustProjectTemplate` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
-  2. Add `Scripts/Linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ContainerHub script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
-  3. Add a "Lint Rust renderer crate" step to `.github/workflows/Linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./Scripts/Linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
+  2. Add `scripts/linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ContainerHub script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
+  3. Add a "Lint Rust renderer crate" step to `.github/workflows/Linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
   4. Add the new wrapper to `AGENTS.md`'s wrapper map table (next to the `run-cargo-tests.sh` row) and to `AGENTS.md` § "What CI runs" where the Rust test step is described. Keeping that table complete is a stated invariant.
   5. If step 1 surfaced findings in crates **other than** `webgpu_renderer`, do not fix them here and do not silence them with `#[allow]`: the submodule's own CI owns those crates. Fall back to a crate-scoped wrapper instead — `cargo fmt -p kataglyphis_webgpu_renderer -- --check` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets --all-features -- -D warnings` invoked directly rather than via the upstream script — and say in the script's header comment why the upstream delegation was not usable.
 
-  **Test:** Run `bash ./Scripts/Linux/run-cargo-lints.sh` (Git Bash on the host, or in the Linux container per `AGENTS.md` § "Running the Linux build locally") and confirm it exits 0. There is no unit test for a CI step; the acceptance is a clean local run plus the workflow YAML parsing (`gh workflow view` or a `yq`/`python -c "import yaml"` parse of `Linux.yml`).
+  **Test:** Run `bash ./scripts/linux/run-cargo-lints.sh` (Git Bash on the host, or in the Linux container per `AGENTS.md` § "Running the Linux build locally") and confirm it exits 0. There is no unit test for a CI step; the acceptance is a clean local run plus the workflow YAML parsing (`gh workflow view` or a `yq`/`python -c "import yaml"` parse of `Linux.yml`).
 
   **Build:** none (CI/scripts). The Linux lane runs on every push, so no `[build-win]`/`[build-arm]` marker is needed to get the signal.
 
@@ -8225,7 +8225,7 @@ CPU suites staying green plus a new gate.
 
   **Build:** `clangcl-debug`, with `-FreshContainer` because
   `MeshDrawRecorder.ixx` is a module interface:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
   Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root. Once the
   RDP blocker below clears, `GoldenRender.FrustumCull*` and the shadow goldens
   are the behavioural check.
@@ -8721,7 +8721,7 @@ between this engine's raster and ray modes, before task 3 widens the
 transform.
 
 **Fifth, nothing validates the emitted SPIR-V.** `grep -rn "spirv-val"` over
-`Scripts/`, `Test/` and the CMake files returns nothing: the Slang output is
+`scripts/`, `Test/` and the CMake files returns nothing: the Slang output is
 compiled, copied and loaded, never checked. `buildIntegritySuite.cpp` already
 walks `.spv` at the word level for a different purpose —
 `spirv_literal_string` (`:857`) and `parse_spirv_member_offsets` (`:878`),
@@ -9398,7 +9398,7 @@ opacity flags can be relaxed without a perf or stability surprise.
   test` and `cargo build` do **not** link on this host (the VC++ Build Tools
   install is incomplete and Git Bash's `link.exe` shadows MSVC's). The crate's
   test suite runs in this repo's always-on Linux lane via
-  `Scripts/Linux/run-cargo-tests.sh`, so push and read CI for the test result; do
+  `scripts/linux/run-cargo-tests.sh`, so push and read CI for the test result; do
   not report the tests as passing locally when they were never run.
 
   **Context:** The glTF spec caps `emissiveFactor` at `[0,1]` per component,
@@ -10284,7 +10284,7 @@ host: the VC++ Build Tools install is incomplete and Git Bash's `link.exe`
 shadows MSVC's. Verify tasks 3 and 4 with `cargo check`, `cargo clippy` and
 `cargo fmt --check` from
 `ExternalLib/Kataglyphis-RustProjectTemplate`, say so explicitly in the commit
-message, and let the always-on Linux lane (`Scripts/Linux/run-cargo-tests.sh`)
+message, and let the always-on Linux lane (`scripts/linux/run-cargo-tests.sh`)
 be the thing that actually runs the tests you add.
 
 **Ordering.** Task 5 must run **last** — tasks 2 and 3 each delete a row from
@@ -10408,7 +10408,7 @@ this host: the VC++ Build Tools install is incomplete and Git Bash's `link.exe`
 shadows MSVC's. Verify with `cargo check`, `cargo clippy` and
 `cargo fmt --check` from `ExternalLib/Kataglyphis-RustProjectTemplate`, say so
 explicitly in the commit message, and let the always-on Linux lane
-(`Scripts/Linux/run-cargo-tests.sh`) be what actually runs the tests you add.
+(`scripts/linux/run-cargo-tests.sh`) be what actually runs the tests you add.
 
 **Ordering.** Tasks 1, 2 and 3 all edit
 `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — land them one at a time,
@@ -10544,7 +10544,7 @@ install is incomplete and Git Bash's `link.exe` shadows MSVC's. Verify with
 `cargo check`, `cargo clippy` and `cargo fmt --check` from
 `ExternalLib/Kataglyphis-RustProjectTemplate`, say so explicitly in the
 commit message, and let the always-on Linux lane
-(`Scripts/Linux/run-cargo-tests.sh`) run the tests you add. Regenerating
+(`scripts/linux/run-cargo-tests.sh`) run the tests you add. Regenerating
 `forward.wgsl` is a `compile-slang-shaders.ps1` run, not a cargo build.
 
 **Ordering.** Tasks 1, 4 and 5 all edit
@@ -10804,7 +10804,7 @@ carries the same mandatory check:
 # before touching anything
 Copy-Item -Recurse Resources\ShadersSlang\build\spirv $env:TEMP\spirv-before
 # ... make the change ...
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\compile-slang-shaders.ps1
 Compare-Object `
   (Get-ChildItem -Recurse $env:TEMP\spirv-before -File | Get-FileHash) `
   (Get-ChildItem -Recurse Resources\ShadersSlang\build\spirv -File | Get-FileHash) `
@@ -11006,7 +11006,7 @@ without a GPU are strong and every task has one:
 # before touching anything
 Copy-Item -Recurse Resources\ShadersSlang\build\spirv $env:TEMP\spirv-before
 # ... make the change ...
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\compile-slang-shaders.ps1
 Compare-Object `
   (Get-ChildItem -Recurse $env:TEMP\spirv-before -File | Get-FileHash) `
   (Get-ChildItem -Recurse Resources\ShadersSlang\build\spirv -File | Get-FileHash) `
@@ -11562,7 +11562,7 @@ task 4 is where most of that ratio comes from.
 
   **Build:** `clangcl-debug` (no `Src/` output changes if step 4 is the only
   source edit, but `GUI.cpp` is compiled either way). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
   then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
 
   **Context:** Land **after** task 1 (both edit `GUI.cpp` and this file, and

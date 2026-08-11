@@ -9,7 +9,7 @@ device-path changes that the CPU unit suites cannot cover.
 
 Each of these tests begins with `SKIP_WITHOUT_GPU()` (or an equivalent
 GLFW/Vulkan-runtime guard). In the headless container build
-(`Scripts/Windows/Build-Windows-Container.ps1 -RunTests`) there is no GPU, so
+(`scripts/windows/Build-Windows-Container.ps1 -RunTests`) there is no GPU, so
 they report **skipped**, not passed. A green container build therefore proves
 the code *compiles and links* and that the CPU suites pass — it does **not**
 prove a render/device refactor is behaviour-preserving.
@@ -61,7 +61,7 @@ This is the canonical per-unit verification pattern; `AGENTS.md` and
 For a behaviour-preserving refactor of the record path, a pipeline, a device
 feature, an image transition, or the loader upload path:
 
-1. Build in the container: `Scripts/Windows/Build-Windows-Container.ps1
+1. Build in the container: `scripts/windows/Build-Windows-Container.ps1
    -Configurations 'clangcl-debug'` (tar-pipe fallback on a Dev Drive, where
    bind mounts break). Fresh-container rule: `-FreshContainer` (after
    deleting the local build tree) is required after ANY module-interface
@@ -142,12 +142,12 @@ the debug build's normal validation layers.
 Run it after touching render passes, barriers, or frames-in-flight:
 
 ```
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1
 ```
 
 This builds on the same `commitTestSuite.exe` as above (repo root or
 `build-clangcl-debug\`, same working-directory requirement), copies
-`Scripts/vk_layer_settings.txt` next to it for the duration of the run (the
+`scripts/vk_layer_settings.txt` next to it for the duration of the run (the
 Vulkan loader reads `vk_layer_settings.txt` from the CWD or the executable's
 directory - there is no path env var for it), and exits non-zero with a
 per-hazard summary if the run's log contains `SYNC-HAZARD`. Deliberately not

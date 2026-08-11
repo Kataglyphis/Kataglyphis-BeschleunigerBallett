@@ -40,11 +40,11 @@ completion notifications never arrive. Therefore:
    present.
 6. **Build.** Use the container build script on Windows:
    ```
-   pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
+   pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
    ```
    On Linux:
    ```
-   Scripts/Linux/cmake-configure-build.sh --preset linux-debug-clang --build-dir build
+   scripts/linux/cmake-configure-build.sh --preset linux-debug-clang --build-dir build
    ```
    When running that inside a container with the repo bind-mounted, pass a
    **container-native** build dir instead (`--build-dir /tmp/bb`): CMake's
