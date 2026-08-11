@@ -162,7 +162,10 @@ Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
 (`.github/workflows/Windows.yml`).
 
 **All Windows-container knowledge lives in ContainerHub** — do not restate it
-here. Two documents cover it:
+here. When you do not know which document owns a topic, start at
+[`ExternalLib/Kataglyphis-ContainerHub/docs/INDEX.md`](ExternalLib/Kataglyphis-ContainerHub/docs/INDEX.md),
+which maps topic → owning document; linking through it keeps these references
+valid when upstream reorganises. For this section, two documents cover it:
 
 - [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md)
   — the image itself: build sequence, Stevedore setup, invariants.
@@ -234,6 +237,12 @@ sharing shader code between the two renderers:
 **Before writing a script, module, or doc here, ask whether another project
 could use it. If yes, it goes into `ExternalLib/Kataglyphis-ContainerHub` and
 this repo consumes it — never a copy.**
+
+That is the local form of the rule ContainerHub states canonically as *"would
+this still be true in a different project?"* — see
+[`docs/INDEX.md`](ExternalLib/Kataglyphis-ContainerHub/docs/INDEX.md)
+§ *Where does a piece of knowledge belong?* for the worked splits and the
+three-broken-copies case that motivated it.
 
 What belongs upstream:
 

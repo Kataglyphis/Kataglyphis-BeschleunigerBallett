@@ -5,10 +5,17 @@
 
 from pathlib import Path
 
-# Import shared configuration from ContainerHub
+# Import shared configuration from ContainerHub.
+#
+# The shared docs tooling moved out of ContainerHub into Kataglyphis-DocumANTation,
+# which ContainerHub vendors under external/. This path still pointed at the old
+# ContainerHub location, so .exists() had been silently False ever since and the
+# else-branch fallback below was what actually configured these docs — the shared
+# extension list and theme options were never applied. Fixed 2026-08-11.
 CONTAINER_HUB_CONF = (
     Path(__file__).parent.parent.parent
-    / "ExternalLib/Kataglyphis-ContainerHub/docs/source_templates/sphinx-book/conf_base.py"
+    / "ExternalLib/Kataglyphis-ContainerHub/external/Kataglyphis-DocumANTation"
+    / "docs-tooling/source_templates/sphinx-book/conf_base.py"
 )
 if CONTAINER_HUB_CONF.exists():
     import importlib.util
