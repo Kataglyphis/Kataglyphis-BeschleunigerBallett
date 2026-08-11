@@ -71,6 +71,15 @@ jobs:
           target: /d/ws
           token: ${{ github.token }}
       
+      # The winamd64 image is ~54 GB to import and Docker keeps its data-root on
+      # the SYSTEM drive. Measured on a windows-2025 runner 2026-08-11:
+      #   C: 29.9 GB free of 149.4 | D: 219.5 GB free of 220.0
+      # Pointing the data-root at D: puts the image where the space is, instead of
+      # deleting Visual Studio off C: to make room. MUST precede the pull.
+      - name: 'Put the Docker data-root on D:'
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/set-docker-data-root@main
+        with:
+          data-root: 'D:\docker'
       # my windows container is quite big ... so remove runner packages for enough
       # dis space
       - name: Cleanup disk space
