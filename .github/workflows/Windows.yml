@@ -44,82 +44,26 @@ jobs:
       packages: read
     steps:
 
-     # windows is so funny ... NOT
-      # actions/checkout lays down only the superproject (no submodules) so the
-      # composite action below and the build scripts exist at the default
-      # workspace. The submodules are cloned in the next step, into a short path.
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 1
-          submodules: false
-
-      # Windows MAX_PATH is the whole problem: the runner's workspace path
-      # (D:\a\<repo>\<repo>, the repo name doubled, ~71 chars) plus the deep
-      # transitive submodule chain (RustProjectTemplate -> ContainerHub ->
-      # DocumANTation -> md2pdfLib -> latex/*) pushes the .git/modules/.../config
-      # path past 260 chars, and core.longpaths does not reliably bypass that for
-      # these child clones. So clone the WHOLE tree - every submodule, recursively,
-      # nothing skipped - into a SHORT path (D:\ws) where the same chain stays well
-      # under the limit, then build from there.
+      # Der komplette Prolog - long paths, Checkout ohne Submodule,
+      # Kurzpfad-Klon, data-root auf D:, Disk-Cleanup, Registry-Login, Pull,
+      # Disk-Report - kommt aus ContainerHub. Er war hier ~60 Zeilen und in drei
+      # Schwester-Repos identisch; jede der drei Fallen darin hatte schon eine
+      # Lane gekostet.
       #
-      # The mechanics (and the git@github.com -> token HTTPS rewrite a hosted
-      # runner needs, having no SSH key) are generic and live in ContainerHub.
-      - name: Clone full tree with submodules into a short path (D:\ws)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/clone-into-short-path@main
+      # Der Kurzpfad-Klon bleibt Pflicht (MAX_PATH auf der Submodulkette), und
+      # required-free-gb ersetzt den separaten assert-docker-disk-space-Schritt:
+      # die Action prueft die ZIELplatte, bevor sie die data-root dorthin
+      # verschiebt - frueher als eine Pruefung nach dem Cleanup, und auf genau
+      # dem Laufwerk, auf dem das Image dann landet.
+      - name: Prepare Windows container host
+        id: prep
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-windows-container-host@main
         with:
-          target: /d/ws
-          token: ${{ github.token }}
-      
-      # The winamd64 image is ~54 GB to import and Docker keeps its data-root on
-      # the SYSTEM drive. Measured on a windows-2025 runner 2026-08-11:
-      #   C: 29.9 GB free of 149.4 | D: 219.5 GB free of 220.0
-      # Pointing the data-root at D: puts the image where the space is, instead of
-      # deleting Visual Studio off C: to make room. MUST precede the pull.
-      - name: 'Put the Docker data-root on D:'
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/set-docker-data-root@main
-        with:
-          data-root: 'D:\docker'
-      # my windows container is quite big ... so remove runner packages for enough
-      # dis space
-      - name: Cleanup disk space
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/cleanup-disk-space@main
-
-      - name: Log in to GHCR (for container image)
-        uses: docker/login-action@v4.6.0
-        with:
-          registry: ghcr.io
-          username: Kataglyphis
-          password: ${{ secrets.GHCR_PAT }}
-
-      # The winamd64 image is ~54 GB and `docker pull` was dying with
-      # hcsshim::ImportLayer "not enough space on the disk (0x70)": it imports
-      # the layers into Docker's data-root and the runner runs out of room.
-      # This gates the pull on that number rather than letting a doomed
-      # ~40-minute pull start.
-      #
-      # 70 GB, not 54: measured 2026-07-21, a data-root drive with 59.3 GB free
-      # still failed to import the 54 GB image, so the import needs real
-      # headroom over the image size. If C: cannot reach it, slim the image
-      # (build.ps1 -Stages base,toolchain, no -Gpu) - D: is not an option, it
-      # cannot host Windows-container compute.
-      #
-      # The probe itself - which is subtler than it looks, see the action - is
-      # generic and lives in ContainerHub.
-      - name: Disk space report before pull (winamd64 needs ~54 GB to import)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/assert-docker-disk-space@main
-        with:
+          image: ${{ env.GHCR_IMAGE_WIN }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+          fetch-depth: 0
+          short-path-target: /d/ws
           required-free-gb: '70'
-
-      # The pull used to be the first line of the build step's inline script;
-      # it is its own step now that the docker run itself is a composite action
-      # (the action runs a container, it does not fetch one). Same command, same
-      # host, same shell - only the step boundary moved.
-      - name: Pull the Windows container image
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          docker pull '${{ env.GHCR_IMAGE_WIN }}'
 
       # Bind-mount target is C:\ws (a FRESH path), NOT C:\workspace. The image
       # bakes `WORKDIR C:\workspace` + `VOLUME ["C:\workspace"]` (windows/
@@ -347,12 +291,12 @@ jobs:
         with:
           name: windows-installers-container
           path: |
-            D:/ws/build-clangcl-release/**/*.msi
-            D:/ws/build-clangcl-release/**/*.msix
-            D:/ws/build-clangcl-release/**/*.exe
-            D:/ws/build-clangcl-release/**/*.zip
-            D:/ws/build-clangcl-release/**/*.dll
-            D:/ws/build-clangcl-release/**/*.lib
+            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.msi
+            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.msix
+            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.exe
+            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.zip
+            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.dll
+            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.lib
 
 
   # CPU-only, container-free: the PowerShell module Pester suites (this repo's
