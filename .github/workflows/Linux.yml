@@ -45,18 +45,23 @@ env:
   # list still ADVERTISES amd64/arm64/riscv64 but every child manifest it points
   # at now 404s (MANIFEST_UNKNOWN) - it is not a fallback for anything.
   #
-  # Per-ARCH tag, not the :latest-cross index (verified against GHCR 2026-08-04):
-  # the :latest-cross manifest list contains exactly ONE entry, linux/amd64, so
-  # `docker pull` on ubuntu-24.04-arm died with "no matching manifest for
-  # linux/arm64/v8 in the manifest list entries" - three attempts, then the whole
-  # ARM lane. The arch-specific tags ContainerHub pushes alongside the index are
-  # both present and current (:latest-cross-amd64 built 2026-07-26,
-  # :latest-cross-arm64 built 2026-07-24), and :latest-cross-amd64 resolves to
-  # the very same image the index serves today, so naming them directly costs the
-  # x86 lane nothing and stops the ARM lane depending on an index that has never
-  # listed it. Use the same tag locally so a CI failure is reproducible on a dev
-  # box; see ContainerHub docs/rancher-desktop-linux-containers.md.
-  CONTAINER_IMAGE: "ghcr.io/kataglyphis/kataglyphis_beschleuniger:${{ inputs.runner == 'ubuntu-24.04-arm' && 'latest-cross-arm64' || 'latest-cross-amd64' }}"
+  # The :latest-cross INDEX, one tag for every architecture. This used to be a
+  # per-arch expression, and the reason it had to be is now obsolete: on
+  # 2026-08-04 the :latest-cross manifest list contained exactly ONE entry,
+  # linux/amd64, so `docker pull` on ubuntu-24.04-arm died with "no matching
+  # manifest for linux/arm64/v8 in the manifest list entries" and took the whole
+  # ARM lane with it. Naming :latest-cross-amd64 / :latest-cross-arm64 directly
+  # was the way around that.
+  #
+  # Re-verified against GHCR 2026-08-12: the index now lists linux/amd64,
+  # linux/arm64 AND linux/riscv64, and all three child manifests resolve. Docker
+  # picks the right one per runner, so the arch no longer belongs in the tag -
+  # and the arch-suffixed tags go back to being an implementation detail of the
+  # image build rather than something a lane references.
+  #
+  # Use the same tag locally so a CI failure is reproducible on a dev box; see
+  # ContainerHub docs/rancher-desktop-linux-containers.md.
+  CONTAINER_IMAGE: "ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross"
 
 # WHY THIS IS FANNED OUT (2026-08-06)
 #
