@@ -93,9 +93,30 @@ if(UNIX
       "installed GCC prefix, or leave it empty to auto-detect one under /opt.")
 endif()
 
+# --gcc-toolchain is a CLANG option. GCC itself rejects it outright:
+#   g++: error: unrecognized command-line option '--gcc-toolchain=/opt/gcc-16.2.0'
+# This never came up while the flags lived in CMakePresets.json, because only
+# the linux-*-clang presets carried them. Applying them from here reaches every
+# Linux configure, so the gcc lanes have to be excluded explicitly.
+#
+# The compiler ID is not known yet (enable_language is below, and the flags must
+# be in place before it so the compiler test exercises the real ones), so decide
+# from the configured compiler path - which the presets always set - and fall
+# back to $ENV{CXX}/$ENV{CC} for a bare `cmake -S . -B build`.
+set(_gcc_toolchain_for_clang FALSE)
+foreach(_cc_probe
+        "${CMAKE_CXX_COMPILER}" "${CMAKE_C_COMPILER}"
+        "$ENV{CXX}" "$ENV{CC}")
+  if(_cc_probe MATCHES "clang")
+    set(_gcc_toolchain_for_clang TRUE)
+    break()
+  endif()
+endforeach()
+
 if(UNIX
    AND NOT APPLE
-   AND MYPROJECT_GCC_TOOLCHAIN_PATH)
+   AND MYPROJECT_GCC_TOOLCHAIN_PATH
+   AND _gcc_toolchain_for_clang)
   set(_GCC_TOOLCHAIN_ROOT "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
   set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
   if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
@@ -113,6 +134,11 @@ if(UNIX
   else()
     message(WARNING "GCC toolchain found at ${_GCC_TOOLCHAIN_ROOT}, but no lib or lib64 dir exists.")
   endif()
+elseif(UNIX AND NOT APPLE AND MYPROJECT_GCC_TOOLCHAIN_PATH)
+  message(STATUS
+    "GCC toolchain ${MYPROJECT_GCC_TOOLCHAIN_PATH} detected but NOT applied: "
+    "--gcc-toolchain is a Clang option and this configure uses "
+    "'${CMAKE_CXX_COMPILER}'. GCC finds its own toolchain.")
 endif()
 
 enable_language(CXX C)

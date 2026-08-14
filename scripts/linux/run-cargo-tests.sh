@@ -31,5 +31,20 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 export CARGO_HOME="${CARGO_HOME:-/tmp/cargo-home}"
 mkdir -p "${CARGO_HOME}"
 
+# The image carries TWO Rusts: the PINNED rustup toolchain in
+# /usr/local/cargo/bin, and Ubuntu's `cargo` deb at /usr/bin. The image's own
+# ENV puts /bin ahead of /usr/local/cargo/bin, and the ordering is only
+# corrected by /etc/profile.d/10-rust.sh - which a LOGIN shell sources and this
+# script, invoked as `bash run-cargo-tests.sh`, does not. So the deb won here
+# while the sibling lanes (which use `bash -lc`) got the pinned toolchain, and
+# the suite failed against a Rust two minors older than every other lane:
+#   error: rustc 1.93.1 is not supported by the following packages:
+#     egui@0.36.1 requires rustc 1.95  (and seven more)
+# Prepend it ourselves so the answer no longer depends on how we were invoked.
+if [[ -x /usr/local/cargo/bin/cargo ]] && [[ ":${PATH}:" != *":/usr/local/cargo/bin:"* ]]; then
+  export PATH="/usr/local/cargo/bin:${PATH}"
+fi
+info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"
+
 info "=== Rust renderer test suite (kataglyphis_webgpu_renderer) ==="
 ( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_TEST_SH}" -p kataglyphis_webgpu_renderer )
