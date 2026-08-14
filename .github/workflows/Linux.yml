@@ -375,20 +375,26 @@ jobs:
       # The ONLY step that still needs CXXFLAGS/LDFLAGS in the environment: it
       # runs `clang++ --analyze` DIRECTLY (run-static-analysis-format.sh), with
       # no CMake and no preset, so it cannot inherit the --gcc-toolchain flags
-      # that CMakePresets.json now carries for every preset-driven step. Without
-      # them clang++ would resolve libstdc++ headers from the system GCC instead
-      # of /opt/gcc-16.1.0.
+      # CMakeLists.txt computes for every preset-driven step. Without them
+      # clang++ would resolve libstdc++ headers from the system GCC instead of
+      # the image's.
+      #
+      # The prefix is RESOLVED IN THE CONTAINER, not written out here. It used
+      # to be the literal /opt/gcc-16.1.0; the image then bumped to GCC 16.2.0
+      # and every Linux job died on "cannot find crtbeginS.o". Sharing one
+      # resolver with CMakeLists means the next bump needs no edit at all.
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
-          extra-args: >-
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0"
-            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0"
           script: >-
-            bash ./scripts/linux/run-static-analysis-format.sh
-            --only-clang-analyze-html
+            bash -lc 'set -e;
+            gcc_root="$(bash ./scripts/linux/gcc-toolchain-root.sh)";
+            echo "Using GCC toolchain: ${gcc_root}";
+            export CXXFLAGS="--gcc-toolchain=${gcc_root}";
+            export LDFLAGS="-L${gcc_root}/lib64 -Wl,-rpath,${gcc_root}/lib64 --gcc-toolchain=${gcc_root}";
+            bash ./scripts/linux/run-static-analysis-format.sh --only-clang-analyze-html'
           log-file: output.log
 
       - name: Run Clang static analysis (scan-build)
