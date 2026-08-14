@@ -40,9 +40,18 @@ mkdir -p "${CARGO_HOME}"
 # the suite failed against a Rust two minors older than every other lane:
 #   error: rustc 1.93.1 is not supported by the following packages:
 #     egui@0.36.1 requires rustc 1.95  (and seven more)
-# Prepend it ourselves so the answer no longer depends on how we were invoked.
-if [[ -x /usr/local/cargo/bin/cargo ]] && [[ ":${PATH}:" != *":/usr/local/cargo/bin:"* ]]; then
-  export PATH="/usr/local/cargo/bin:${PATH}"
+# HOIST it, do not merely add it. The image's ENV already contains
+# /usr/local/cargo/bin — just far too late, after /bin — so an
+# "add it if missing" guard is a no-op and the deb still wins:
+#   [INFO] cargo: /bin/cargo (cargo 1.93.1 ...)
+# Drop any existing occurrence, then put it first.
+if [[ -x /usr/local/cargo/bin/cargo ]]; then
+  _cargo_path=":${PATH}:"
+  _cargo_path="${_cargo_path//:\/usr\/local\/cargo\/bin:/:}"
+  _cargo_path="${_cargo_path#:}"
+  _cargo_path="${_cargo_path%:}"
+  export PATH="/usr/local/cargo/bin:${_cargo_path}"
+  unset _cargo_path
 fi
 info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"
 
