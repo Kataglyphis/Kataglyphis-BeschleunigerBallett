@@ -20,7 +20,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ContainerHub](#rule-reusable-work-belongs-in-containerhub) |
 | Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
-| Changing the Rust WebGPU renderer | `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer` — [`docs/webgpu-renderer-roadmap.md`](docs/webgpu-renderer-roadmap.md) |
+| Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — [`docs/webgpu-renderer-roadmap.md`](docs/webgpu-renderer-roadmap.md) |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
 
 ### Repo map
@@ -32,8 +32,8 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `Test/commit/VulkanEngine/` | The main gtest suite (`commitTestSuite.exe`) — CPU suites plus `GoldenRender.*` / `Integration.*` |
 | `Test/compile/`, `Test/fuzz/`, `Test/perf/` | Compile-time checks, FuzzTest targets, Google Benchmark suite (`perfTestSuite`) |
 | `Resources/ShadersSlang/` | All shaders (Slang) + `shader-manifest.json`; compiled output under `build/` is gitignored |
-| `ExternalLib/Kataglyphis-RustProjectTemplate/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
-| `ExternalLib/Kataglyphis-ContainerHub/` | The submodule that owns every reusable script, module and doc (see the rule below) |
+| `third_party/OxidANT/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
+| `third_party/ContainerHub/` | The submodule that owns every reusable script, module and doc (see the rule below) |
 | `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ContainerHub drivers + this project's payload |
 | `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ContainerHub — see [CMake modules](#cmake-modules-containerhub-first-local-override-wins) |
 
@@ -127,7 +127,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
 ### Sanitizer semantics (do not guess — this is how it actually works)
 
 - Sanitizer flags are applied **only to the Debug configuration**
-  (`$<$<CONFIG:Debug>:...>` in `ExternalLib/Kataglyphis-ContainerHub/cmake/Sanitizers.cmake`). Profile/Release builds are
+  (`$<$<CONFIG:Debug>:...>` in `third_party/ContainerHub/cmake/Sanitizers.cmake`). Profile/Release builds are
   never sanitized.
 - ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
   see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
@@ -163,13 +163,13 @@ Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
 
 **All Windows-container knowledge lives in ContainerHub** — do not restate it
 here. When you do not know which document owns a topic, start at
-[`ExternalLib/Kataglyphis-ContainerHub/docs/INDEX.md`](ExternalLib/Kataglyphis-ContainerHub/docs/INDEX.md),
+[`third_party/ContainerHub/docs/INDEX.md`](third_party/ContainerHub/docs/INDEX.md),
 which maps topic → owning document; linking through it keeps these references
 valid when upstream reorganises. For this section, two documents cover it:
 
-- [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md)
+- [`third_party/ContainerHub/docs/windows-builds.md`](third_party/ContainerHub/docs/windows-builds.md)
   — the image itself: build sequence, Stevedore setup, invariants.
-- [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md)
+- [`third_party/ContainerHub/docs/windows-container-build-performance.md`](third_party/ContainerHub/docs/windows-container-build-performance.md)
   — building *inside* it: **both transports and how to set each one up**
   (§ Transports), the reusable-container pattern and its safety rails, why
   sccache cannot cache a C++23 modules build, why a named volume cannot be a
@@ -215,7 +215,7 @@ a silent `|| warn` once left CI green with no SPIR-V at all).
 ### Running the Linux build locally (Rancher Desktop)
 
 Two things that will bite you locally, both documented with the full recipe in
-[ContainerHub § Persisting the cargo cache](ExternalLib/Kataglyphis-ContainerHub/docs/rancher-desktop-linux-containers.md#persisting-the-cargo-cache):
+[ContainerHub § Persisting the cargo cache](third_party/ContainerHub/docs/rancher-desktop-linux-containers.md#persisting-the-cargo-cache):
 pass `--build-dir /tmp/...` (a build dir on the bind-mounted host tree breaks
 FetchContent renames and cargo cleanup), and `--cargo-cache-dir` at a named
 volume so Rust dependencies survive the container.
@@ -235,12 +235,12 @@ sharing shader code between the two renderers:
 ## Rule: Reusable Work Belongs in ContainerHub
 
 **Before writing a script, module, or doc here, ask whether another project
-could use it. If yes, it goes into `ExternalLib/Kataglyphis-ContainerHub` and
+could use it. If yes, it goes into `third_party/ContainerHub` and
 this repo consumes it — never a copy.**
 
 That is the local form of the rule ContainerHub states canonically as *"would
 this still be true in a different project?"* — see
-[`docs/INDEX.md`](ExternalLib/Kataglyphis-ContainerHub/docs/INDEX.md)
+[`docs/INDEX.md`](third_party/ContainerHub/docs/INDEX.md)
 § *Where does a piece of knowledge belong?* for the worked splits and the
 three-broken-copies case that motivated it.
 
@@ -271,7 +271,7 @@ Almost every script under `scripts/` is a thin consumer. **When you need to know
 what one actually does, read the upstream driver, not the wrapper** — the
 wrapper only supplies this project's payload.
 
-| This repo | Upstream driver (in `ExternalLib/Kataglyphis-ContainerHub/`) |
+| This repo | Upstream driver (in `third_party/ContainerHub/`) |
 | --- | --- |
 | `scripts/windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
 | `scripts/linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
@@ -294,7 +294,7 @@ takes `Resolve-AppExecutablePath` from `WindowsAppRunner.Common`.
 ### CMake modules (ContainerHub first, local override wins)
 
 The root `CMakeLists.txt` puts **`cmake/` then
-`ExternalLib/Kataglyphis-ContainerHub/cmake/`** on `CMAKE_MODULE_PATH`, and
+`third_party/ContainerHub/cmake/`** on `CMAKE_MODULE_PATH`, and
 every module is included **by name** — `include(Sanitizers)`, never
 `include(cmake/Sanitizers.cmake)`. That indirection is the whole point: a module
 can live in either directory without its callers changing, and a project that
@@ -326,7 +326,7 @@ different VC Tools.
 `Build-Windows.ps1`, the run helpers and the Pester tests resolve PowerShell
 modules through `scripts/windows/Resolve-BuildModule.ps1`
 (`Resolve-BuildModulePath` / `Import-BuildModule`): a module is imported from
-`ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/` when it exists
+`third_party/ContainerHub/windows/scripts/modules/` when it exists
 there (preferred), otherwise from the vendored fallback
 **`scripts/windows/modules/`**.
 
@@ -372,7 +372,7 @@ the same change.
 
 **Adopting any of this in another project** — the loop, both container flows,
 the launchers, the CI actions — is a checklist upstream:
-[`adopting-in-a-new-project.md`](ExternalLib/Kataglyphis-ContainerHub/docs/adopting-in-a-new-project.md).
+[`adopting-in-a-new-project.md`](third_party/ContainerHub/docs/adopting-in-a-new-project.md).
 Read it before hand-rolling equivalents elsewhere.
 
 ## Critical Invariant: Submodule Pins
@@ -384,9 +384,9 @@ the same change.
 
 Known coupling to watch when bumping pins:
 
-- `ExternalLib/FUZZTEST` pins its own Abseil LTS (`absl_TAG` in
+- `third_party/FUZZTEST` pins its own Abseil LTS (`absl_TAG` in
   `cmake/BuildDependencies.cmake`); this repo's `ABSL_TAG` in
-  `ExternalLib/CMakeLists.txt` is declared first and wins, so it must stay >= the
+  `third_party/CMakeLists.txt` is declared first and wins, so it must stay >= the
   FuzzTest pin or configure fails with missing `absl::*` targets (observed:
   `absl::random_mocking_access`). Both are `20260526.0` today.
 
@@ -440,7 +440,7 @@ render (~32 FPS ImGui overlay).
   Windows container builds plus the Linux TSan build (`-SkipLinux` drops the
   latter). Not wired into CI.
 - ContainerHub's own suites (the modules this repo imports) run via
-  `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/tests/Invoke-Tests.ps1`
+  `third_party/ContainerHub/windows/scripts/tests/Invoke-Tests.ps1`
   and need **Pester >= 5** (it fails rather than silently skipping without it;
   `Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
   -SkipPublisherCheck`). Run it after changing anything upstream — and note that
@@ -500,9 +500,9 @@ commit's message:
 Consequence: **a Windows-only change pushed without `[build-win]` gets no CI
 signal at all.** The marker must be in the HEAD commit of the push, not an
 earlier one. Full rules:
-[`ci-build-triggers.md`](ExternalLib/Kataglyphis-ContainerHub/docs/ci-build-triggers.md).
+[`ci-build-triggers.md`](third_party/ContainerHub/docs/ci-build-triggers.md).
 Reading pipeline status from a shell (`gh`):
-[`github-cli-pipeline-monitoring.md`](ExternalLib/Kataglyphis-ContainerHub/docs/github-cli-pipeline-monitoring.md).
+[`github-cli-pipeline-monitoring.md`](third_party/ContainerHub/docs/github-cli-pipeline-monitoring.md).
 
 `Linux_x86.yml` and `Linux_arm.yml` both call the reusable `Linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
@@ -530,8 +530,8 @@ using its pinned, SHA-verified binaries rather than a second set installed here:
 
 | Gate | Invocation | Covers |
 | --- | --- | --- |
-| shellcheck (`-S error`) | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh scripts/linux/*.sh scripts/linux/lib/*.sh` | this repo's Linux shell scripts |
-| actionlint | `bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-workflows.sh "$GITHUB_WORKSPACE"` | `.github/workflows/*.yml` |
+| shellcheck (`-S error`) | `bash third_party/ContainerHub/linux/scripts/lint-shell.sh scripts/linux/*.sh scripts/linux/lib/*.sh` | this repo's Linux shell scripts |
+| actionlint | `bash third_party/ContainerHub/linux/scripts/lint-workflows.sh "$GITHUB_WORKSPACE"` | `.github/workflows/*.yml` |
 
 Both run locally the same way (the binary bootstrap downloads once and caches).
 `lint-workflows.sh` **must** be given the consumer root: the script lives inside
@@ -600,9 +600,9 @@ module and the Bash library read them; only the engine-neutral **system**
 prompts stay project-owned. Architecture, configuration, and usage:
 [`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
 and sanitizer-aware tests:
-[agentic-loop-build-matrix.md](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md);
+[agentic-loop-build-matrix.md](third_party/ContainerHub/docs/agentic-loop-build-matrix.md);
 module API reference:
-[windows-agentic-loop.md](ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md).
+[windows-agentic-loop.md](third_party/ContainerHub/docs/windows-agentic-loop.md).
 
 ## Docs
 
@@ -630,15 +630,15 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
 | `scripts/agentic-loop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/github-cli-pipeline-monitoring.md` | Reading and fixing CI status from a shell with `gh` |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
-| `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
-| `ExternalLib/Kataglyphis-ContainerHub/cmake/README.md` | The shared CMake modules: how to put them on `CMAKE_MODULE_PATH`, what each provides, what stays project-local |
+| `third_party/ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
+| `third_party/ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
+| `third_party/ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
+| `third_party/ContainerHub/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins |
+| `third_party/ContainerHub/docs/github-cli-pipeline-monitoring.md` | Reading and fixing CI status from a shell with `gh` |
+| `third_party/ContainerHub/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
+| `third_party/ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
+| `third_party/ContainerHub/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
+| `third_party/ContainerHub/cmake/README.md` | The shared CMake modules: how to put them on `CMAKE_MODULE_PATH`, what each provides, what stays project-local |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
   `README.md`, `docs/source/getting_started.md`, and this file in the same change.

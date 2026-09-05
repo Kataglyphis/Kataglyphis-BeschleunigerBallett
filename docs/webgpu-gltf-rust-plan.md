@@ -4,7 +4,7 @@
 status lives in [webgpu-renderer-roadmap.md](webgpu-renderer-roadmap.md).*
 
 Status: **milestones 1–5 implemented** (2026-07-18) as
-`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`
+`third_party/OxidANT/crates/webgpu_renderer`
 (`kataglyphis_webgpu_renderer`): wgpu context (wgpu 27 then; the crate is on
 wgpu 29 now) with headless + windowed
 paths, resize/Outdated/Lost-safe surface lifecycle (attachment sizes derive
@@ -139,5 +139,5 @@ asset, and attribute.**
 
 Not required initially — the crate lives and builds in the Rust workspace. If
 desired later: a `RUST_WEBGPU` CMake option could build the viewer via
-corrosion like the existing `kataglyphis_rustprojecttemplate` bridge, but the
+corrosion like the existing `oxidant` bridge, but the
 faster path is `cargo run --example viewer` during development.

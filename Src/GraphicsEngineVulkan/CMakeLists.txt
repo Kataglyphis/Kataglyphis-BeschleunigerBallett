@@ -67,9 +67,9 @@ kataglyphis_apply_runtime_compile_definitions(
   INCLUDE_PATH_MSVC
   "/../../Src/GraphicsEngineVulkan/"
   IMGUI_FONTS_PATH_NON_MSVC
-  "/../ExternalLib/IMGUI/misc/fonts/"
+  "/../third_party/IMGUI/misc/fonts/"
   IMGUI_FONTS_PATH_MSVC
-  "/../../ExternalLib/IMGUI/misc/fonts/")
+  "/../../third_party/IMGUI/misc/fonts/")
 
 target_sources(
   VulkanEngineCore
@@ -123,8 +123,8 @@ target_link_libraries(
 
 if(RUST_FEATURES)
   # Ensure CXX bridge headers are generated before module scanning
-  add_dependencies(VulkanEngineCore kataglyphis_rustprojecttemplate_bridge)
-  target_link_libraries(VulkanEngineCore PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
+  add_dependencies(VulkanEngineCore oxidant_bridge)
+  target_link_libraries(VulkanEngineCore PUBLIC oxidant oxidant_bridge)
 endif()
 
 # Enable ASan in Debug mode on Linux (applied to the library so tests benefit).

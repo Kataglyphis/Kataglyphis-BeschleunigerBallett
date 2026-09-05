@@ -16,7 +16,7 @@
 Describe 'Shared tool config' {
 
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-    $syncScript = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\shared\config\Sync-SharedConfig.ps1'
+    $syncScript = Join-Path $repoRoot 'third_party\ContainerHub\shared\config\Sync-SharedConfig.ps1'
 
     It 'has the ContainerHub sync script available' {
         # A missing script means the submodule is not checked out; without this

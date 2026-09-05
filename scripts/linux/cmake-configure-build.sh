@@ -2,7 +2,7 @@
 # cmake-configure-build.sh - project wrapper around ContainerHub's generic
 # CMake build driver. Everything reusable (arg parsing, cargo/ccache/sccache
 # writability fallbacks, Vulkan env, parallelism, configure+build) lives in
-# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/cmake-build.sh; only
+# third_party/ContainerHub/linux/scripts/lib/cmake-build.sh; only
 # this project's defaults and its Slang pre-build step live here.
 set -euo pipefail
 
@@ -10,11 +10,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-CMAKE_BUILD_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/cmake-build.sh"
+CMAKE_BUILD_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/cmake-build.sh"
 if [[ ! -f "${CMAKE_BUILD_LIB}" ]]; then
   err "Shared cmake-build library not found at '${CMAKE_BUILD_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/cmake-build.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/cmake-build.sh
 source "${CMAKE_BUILD_LIB}"
 
 CMAKE_BUILD_DEFAULT_PRESET="linux-debug-clang"

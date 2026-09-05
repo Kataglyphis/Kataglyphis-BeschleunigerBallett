@@ -5,7 +5,7 @@ set -euo pipefail
 # Agentic loop for Kataglyphis-BeschleunigerBallett (Linux / Rancher Desktop)
 #
 # Thin wrapper around the reusable library in
-# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/agentic-loop.sh.
+# third_party/ContainerHub/linux/scripts/lib/agentic-loop.sh.
 #
 # Engines (config .engine, or --engine / AGENTIC_ENGINE):
 #   claude   — planner: Opus 5 (fallback Fable 5), executor: Sonnet
@@ -31,7 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # ── Source reusable library from ContainerHub ───────────────────────────
-AGENTIC_LIB="${REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/agentic-loop.sh"
+AGENTIC_LIB="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/lib/agentic-loop.sh"
 if [[ -f "$AGENTIC_LIB" ]]; then
     source "$AGENTIC_LIB"
 else

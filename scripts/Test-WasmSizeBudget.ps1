@@ -29,7 +29,7 @@ param(
     # real measurement and would have failed immediately).
     [int]$BudgetBytes = 12582912,
     # Path to the Rust project template (kataglyphis_webgpu_renderer lives here).
-    [string]$RustProjectDir = (Join-Path $PSScriptRoot '..\ExternalLib\Kataglyphis-RustProjectTemplate'),
+    [string]$RustProjectDir = (Join-Path $PSScriptRoot '..\third_party\OxidANT'),
     # Skip the cargo build step (useful for re-checking an existing build).
     [switch]$SkipBuild
 )

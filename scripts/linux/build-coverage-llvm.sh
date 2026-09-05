@@ -8,11 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-COVERAGE_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/coverage.sh"
+COVERAGE_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/coverage.sh"
 if [[ ! -f "${COVERAGE_LIB}" ]]; then
   err "Shared coverage library not found at '${COVERAGE_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/coverage.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/coverage.sh
 source "${COVERAGE_LIB}"
 
 while [[ $# -gt 0 ]]; do

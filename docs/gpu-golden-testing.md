@@ -38,7 +38,7 @@ runs fine on the host.
 
 ## Rust WebGPU suite: requiring a GPU explicitly
 
-The Rust renderer (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`)
+The Rust renderer (`third_party/OxidANT/crates/webgpu_renderer`)
 has the same problem in miniature: its GPU tests guard on
 `GpuContext::headless_or_skip()` and print `SKIP: no GPU adapter available in
 this environment` and return early when no adapter is usable, so a skipped

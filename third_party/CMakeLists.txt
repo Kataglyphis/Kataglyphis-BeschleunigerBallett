@@ -183,7 +183,7 @@ macro(_myproject_configure_kompute_vulkan)
 endmacro()
 
 # Must stay >= the absl_TAG FuzzTest pins in
-# ExternalLib/FUZZTEST/cmake/BuildDependencies.cmake — this declaration comes
+# third_party/FUZZTEST/cmake/BuildDependencies.cmake — this declaration comes
 # first and wins, and older LTS releases lack targets FuzzTest links against
 # (e.g. absl::random_mocking_access).
 set(ABSL_TAG 20260526.0)
@@ -393,7 +393,7 @@ set_target_properties(IMGUI PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
 if(RUST_FEATURES)
   if(WIN32)
     set(Rust_CARGO
-        "${CMAKE_SOURCE_DIR}/ExternalLib/Kataglyphis-ContainerHub/windows/scripts/cargo-retry.cmd"
+        "${CMAKE_SOURCE_DIR}/third_party/ContainerHub/windows/scripts/cargo-retry.cmd"
         CACHE FILEPATH "Cargo wrapper used to retry transient Windows file-lock failures" FORCE)
   endif()
 

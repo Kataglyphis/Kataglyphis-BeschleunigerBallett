@@ -1,7 +1,7 @@
 # WebGPU Demo (Rust, in your browser)
 
 A live demo of the Rust `kataglyphis_webgpu_renderer` crate
-(`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`),
+(`third_party/OxidANT/crates/webgpu_renderer`),
 compiled to WebAssembly and running on the WebGPU API — the same renderer
 that runs natively on Vulkan/DX12/Metal. It renders a glTF scene with the
 metallic-roughness PBR pipeline, directional shadow mapping (3×3 PCF), and

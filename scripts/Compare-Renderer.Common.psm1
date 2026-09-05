@@ -18,7 +18,7 @@ function Convert-DinosaursObjToGltf {
   )
 
   $dinoObj = Join-Path $RepoRoot 'Resources\Models\Dinosaurs\dinosaurs.obj'
-  Push-Location (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate')
+  Push-Location (Join-Path $RepoRoot 'third_party\OxidANT')
   try {
     if (-not (Test-Path $OutputGltf) -or
         (Get-Item $dinoObj).LastWriteTime -gt (Get-Item $OutputGltf).LastWriteTime) {

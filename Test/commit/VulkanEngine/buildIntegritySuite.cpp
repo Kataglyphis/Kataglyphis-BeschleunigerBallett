@@ -2126,7 +2126,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 // CompiledShadersAreNotOlderThanTheirSources guards the SPIR-V artifacts; the
 // checked-in Rust-crate WGSL artifacts (the manifest's wgslMap) have no
 // equivalent guard, and they live two directories away
-// (ExternalLib/Kataglyphis-RustProjectTemplate/crates/.../shaders) from the
+// (third_party/OxidANT/crates/.../shaders) from the
 // Slang source that generates them. A regenerate that drops one of the
 // depth-texture patches, or a .slang edit that never gets propagated, is
 // silent today. This walks the wgslMap and asserts each checked-in .wgsl is
@@ -7968,7 +7968,7 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
 // above), so every one of these headers is now compiled only by C++, and the
 // GLSL half of the guard is dead text describing a build that no longer
 // exists. `KTG_VEC2`/`KTG_VEC3` were the same shim under a different name.
-// This walks every .hpp/.ixx under Src/ (skipping ExternalLib/) and fails on
+// This walks every .hpp/.ixx under Src/ (skipping third_party/) and fails on
 // any line still mentioning either, so the shim cannot silently come back.
 TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
 {
@@ -7983,7 +7983,7 @@ TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
     for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         const fs::path &path = it->path();
-        if (path.generic_string().find("/ExternalLib/") != std::string::npos) { continue; }
+        if (path.generic_string().find("/third_party/") != std::string::npos) { continue; }
         if (!it->is_regular_file(error)) { continue; }
         const auto extension = path.extension();
         if (extension != ".hpp" && extension != ".ixx") { continue; }

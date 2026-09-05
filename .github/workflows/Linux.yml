@@ -121,12 +121,12 @@ jobs:
 
       - name: Lint shell scripts (ContainerHub shellcheck gate)
         run: >-
-          bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-shell.sh
+          bash third_party/ContainerHub/linux/scripts/lint-shell.sh
           scripts/linux/*.sh scripts/linux/lib/*.sh
 
       - name: Lint workflows (ContainerHub actionlint gate)
         run: >-
-          bash ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lint-workflows.sh
+          bash third_party/ContainerHub/linux/scripts/lint-workflows.sh
           "${{ github.workspace }}"
 
   # ---------------------------------------------------------------------------
@@ -137,14 +137,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -154,7 +154,7 @@ jobs:
           log-file: output.log
 
       - name: Run Unit/Integration tests
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -174,7 +174,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
@@ -183,7 +183,7 @@ jobs:
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -245,7 +245,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           extra-args: >-
@@ -266,7 +266,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
@@ -276,7 +276,7 @@ jobs:
       # data races could only be found by hand. Non-GPU tests only - the
       # Integration suites need an adapter the CI container does not have.
       - name: Configure/build with ThreadSanitizer
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -286,7 +286,7 @@ jobs:
           log-file: output-tsan.log
 
       - name: Run tests under ThreadSanitizer
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           extra-args: >-
@@ -308,14 +308,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Build for coverage
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -325,7 +325,7 @@ jobs:
           log-file: output.log
 
       - name: Build Code Coverage
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -352,7 +352,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
@@ -363,7 +363,7 @@ jobs:
       # in the old single job happened to exist only because an earlier step had
       # already built into the same directory.
       - name: Configure/build for analysis
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -385,7 +385,7 @@ jobs:
       # resolver with CMakeLists means the next bump needs no edit at all.
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -399,7 +399,7 @@ jobs:
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -417,14 +417,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -435,7 +435,7 @@ jobs:
           log-file: output.log
 
       - name: Run performance benchmarks
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
@@ -454,14 +454,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Run Rust renderer tests
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/run-cargo-tests.sh
@@ -481,14 +481,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Generate Doxygen XML
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -499,7 +499,7 @@ jobs:
           log-file: output.log
 
       - name: Build web page
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
@@ -510,7 +510,7 @@ jobs:
         # below, not surface as a slow page load after it is already live.
         # (It skips itself, loudly, when the image cannot build wasm at all -
         # see scripts/linux/wasm-size-budget.sh.)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/wasm-size-budget.sh
@@ -537,14 +537,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests (gcc)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -555,7 +555,7 @@ jobs:
           log-file: output.log
 
       - name: Run Unit/Integration tests (gcc)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -573,7 +573,7 @@ jobs:
       # gcovr walks the build tree for the .gcda files the ctest run above left
       # behind, so it has to stay in the same job as those tests.
       - name: Build Code Coverage (gcc)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/build-coverage-gcovr.sh
@@ -590,14 +590,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (gcc)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -619,14 +619,14 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-
@@ -637,7 +637,7 @@ jobs:
           log-file: output.log
 
       - name: Package
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
           image: ${{ env.CONTAINER_IMAGE }}
           script: >-

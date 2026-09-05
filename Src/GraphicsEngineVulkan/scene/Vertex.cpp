@@ -74,7 +74,7 @@ auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescrip
 
 // Per-vertex tangent frame from triangle UV gradients (Lengyel's method),
 // ported from the Rust renderer's compute_tangents
-// (ExternalLib/Kataglyphis-RustProjectTemplate/.../gltf_loader.rs). Accumulates
+// (third_party/OxidANT/.../gltf_loader.rs). Accumulates
 // BOTH tangent and bitangent per vertex across every triangle in
 // indices[firstIndex..], then Gram-Schmidt-orthogonalizes against the
 // (already final) vertex normal and stores the handedness sign

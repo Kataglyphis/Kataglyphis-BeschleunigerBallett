@@ -73,23 +73,23 @@ endfunction()
 if(RUST_FEATURES)
   corrosion_import_crate(
     MANIFEST_PATH
-    ../ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.toml
+    ../third_party/OxidANT/Cargo.toml
     CRATE_TYPES
     staticlib
     CRATES
-    kataglyphis_rustprojecttemplate)
+    oxidant)
 
   if(WIN32)
-    _myproject_configure_windows_rust_crate(kataglyphis_rustprojecttemplate)
+    _myproject_configure_windows_rust_crate(oxidant)
   else()
-    _myproject_configure_native_rust_crate(kataglyphis_rustprojecttemplate)
+    _myproject_configure_native_rust_crate(oxidant)
   endif()
 
   # Keep the CXX bridge generated unconditionally so bridge headers are always available.
   corrosion_add_cxxbridge(
-    kataglyphis_rustprojecttemplate_bridge
+    oxidant_bridge
     CRATE
-    kataglyphis_rustprojecttemplate
+    oxidant
     FILES
     native_only.rs)
 

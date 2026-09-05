@@ -27,13 +27,13 @@ source_hub_module lib rust-toolchain.sh   || err "ContainerHub lib/rust-toolchai
 # wasm-opt feature flags come from ContainerHub's generic driver; only the
 # budget and the crate below are this project's data. The driver's PowerShell
 # twin backs scripts/Test-WasmSizeBudget.ps1.
-WASM_OPT_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/wasm-opt.sh"
+WASM_OPT_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/wasm-opt.sh"
 [[ -f "${WASM_OPT_LIB}" ]] || err "wasm-opt library not found at ${WASM_OPT_LIB} (is the ContainerHub submodule checked out?)"
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/wasm-opt.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/wasm-opt.sh
 source "${WASM_OPT_LIB}"
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/ExternalLib/Kataglyphis-RustProjectTemplate}"
+RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
 WASM_FILE="${RUST_PROJECT_DIR}/target/wasm32-unknown-unknown/release/kataglyphis_webgpu_renderer.wasm"
 BUDGET_BYTES="${WASM_SIZE_BUDGET_BYTES:-12582912}" # 12 MiB
 

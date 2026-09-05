@@ -14,8 +14,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # what the submodule's own CI runs (rust_ubuntu24_04.yml).
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/ExternalLib/Kataglyphis-RustProjectTemplate}"
-CARGO_FMT_CLIPPY_SH="${REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh"
+RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
+CARGO_FMT_CLIPPY_SH="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh"
 
 [[ -d "${RUST_PROJECT_DIR}" ]] || err "Rust project dir not found at ${RUST_PROJECT_DIR} (is the RustProjectTemplate submodule checked out?)"
 [[ -f "${CARGO_FMT_CLIPPY_SH}" ]] || err "cargo_fmt_clippy.sh not found at ${CARGO_FMT_CLIPPY_SH} (is the ContainerHub submodule checked out?)"

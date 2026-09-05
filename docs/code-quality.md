@@ -2,7 +2,7 @@
 
 The commands, the scoping rules, the two clang-tidy traps and the cadence are
 generic and live upstream:
-[`ContainerHub / code-quality-tooling.md`](../ExternalLib/Kataglyphis-ContainerHub/docs/code-quality-tooling.md).
+[`ContainerHub / code-quality-tooling.md`](../third_party/ContainerHub/docs/code-quality-tooling.md).
 Read that first — this page only carries what is specific to **this** repo.
 
 The configs themselves (`.clang-format`, `.clang-tidy`, `gcovr.cfg`) are owned

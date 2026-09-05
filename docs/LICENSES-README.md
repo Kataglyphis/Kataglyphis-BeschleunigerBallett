@@ -1,38 +1,38 @@
 # Lizenzübersicht der Open-Source-Abhängigkeiten
 
-Die folgenden Tabellen listen die im Repository genutzten Open-Source-Abhängigkeiten auf (Stand: 2026-08-02). Verifikation: Diese Liste wurde gegen `git submodule status`, `ExternalLib/CMakeLists.txt` (FetchContent), die gevendorten Quellen unter `ExternalLib/` sowie `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/Cargo.toml` abgeglichen; jede Lizenzangabe stammt aus der jeweils zitierten, auf der Festplatte gelesenen Lizenzdatei bzw. dem `license`-Feld der Cargo-Metadaten — nicht aus Annahmen. Für rechtsverbindliche Angaben ist immer die zitierte Lizenzdatei selbst maßgeblich.
+Die folgenden Tabellen listen die im Repository genutzten Open-Source-Abhängigkeiten auf (Stand: 2026-08-02). Verifikation: Diese Liste wurde gegen `git submodule status`, `third_party/CMakeLists.txt` (FetchContent), die gevendorten Quellen unter `third_party/` sowie `third_party/OxidANT/crates/webgpu_renderer/Cargo.toml` abgeglichen; jede Lizenzangabe stammt aus der jeweils zitierten, auf der Festplatte gelesenen Lizenzdatei bzw. dem `license`-Feld der Cargo-Metadaten — nicht aus Annahmen. Für rechtsverbindliche Angaben ist immer die zitierte Lizenzdatei selbst maßgeblich.
 
-## Git-Submodule unter `ExternalLib/` (mitgeliefert)
+## Git-Submodule unter `third_party/` (mitgeliefert)
 
 | Projekt | URL | Pin | Lizenz (laut Lizenzdatei) | Geprüfte Datei |
 |---|---|---|---|---|
-| tinyobjloader | https://github.com/tinyobjloader/tinyobjloader | v2.0.0rc10-73-g45636bd | MIT | `ExternalLib/TINY_OBJ_LOADER/LICENSE` |
-| glm | https://github.com/g-truc/glm | 6f14f479 | Dual: "The Happy Bunny License or MIT License" | `ExternalLib/GLM/copying.txt` |
-| imgui | https://github.com/ocornut/imgui | v1.92.9b-1-g9b7699f32 | MIT | `ExternalLib/IMGUI/LICENSE.txt` |
-| stb | https://github.com/nothings/stb | 2c980bb5 | Dual: MIT oder Public Domain (nach Wahl) | `ExternalLib/STB/LICENSE` |
-| glfw | https://github.com/glfw/glfw | 3.5.1 (d9d6f0f1) | Zlib/libpng-Lizenztext | `ExternalLib/GLFW/LICENSE.md` |
-| Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | 3aa92122 | MIT-Lizenztext (Copyright AMD) | `ExternalLib/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
-| nlohmann/json | https://github.com/nlohmann/json | v3.11.2-532-g2222d386c | MIT | `ExternalLib/NLOHMANN_JSON/LICENSE.MIT` |
-| google/benchmark | https://github.com/google/benchmark | v1.9.4-213-g3e57f2b | Apache-2.0 | `ExternalLib/GOOGLE_BENCHMARK/LICENSE` |
-| spdlog | https://github.com/gabime/spdlog | 989d28dd | MIT; enthält gebündeltes {fmt} (MIT) | `ExternalLib/SPDLOG/LICENSE`; `ExternalLib/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
-| google/fuzztest | https://github.com/google/fuzztest | 704efb34 (2026-06-29) | Apache-2.0; zusätzliche Lucent-Notiz für `fuzztest/internal/domains/rune.*` | `ExternalLib/FUZZTEST/LICENSE` |
-| kompute (nur optionales Playground, `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND`) | https://github.com/KomputeProject/kompute | v0.9.0-97-g890c97e | Apache-2.0 | `ExternalLib/KOMPUTE/LICENSE` |
-| cgltf | https://github.com/jkuhlmann/cgltf | v1.15-11-g85cd623 | MIT-Lizenztext (Copyright Johannes Kuhlmann) | `ExternalLib/cgltf/LICENSE` |
-| tomlplusplus | https://github.com/marzer/tomlplusplus | v3.4.0-50-g1e8829b | MIT | `ExternalLib/tomlplusplus/LICENSE` |
+| tinyobjloader | https://github.com/tinyobjloader/tinyobjloader | v2.0.0rc10-73-g45636bd | MIT | `third_party/TINY_OBJ_LOADER/LICENSE` |
+| glm | https://github.com/g-truc/glm | 6f14f479 | Dual: "The Happy Bunny License or MIT License" | `third_party/GLM/copying.txt` |
+| imgui | https://github.com/ocornut/imgui | v1.92.9b-1-g9b7699f32 | MIT | `third_party/IMGUI/LICENSE.txt` |
+| stb | https://github.com/nothings/stb | 2c980bb5 | Dual: MIT oder Public Domain (nach Wahl) | `third_party/STB/LICENSE` |
+| glfw | https://github.com/glfw/glfw | 3.5.1 (d9d6f0f1) | Zlib/libpng-Lizenztext | `third_party/GLFW/LICENSE.md` |
+| Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | 3aa92122 | MIT-Lizenztext (Copyright AMD) | `third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
+| nlohmann/json | https://github.com/nlohmann/json | v3.11.2-532-g2222d386c | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
+| google/benchmark | https://github.com/google/benchmark | v1.9.4-213-g3e57f2b | Apache-2.0 | `third_party/GOOGLE_BENCHMARK/LICENSE` |
+| spdlog | https://github.com/gabime/spdlog | 989d28dd | MIT; enthält gebündeltes {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
+| google/fuzztest | https://github.com/google/fuzztest | 704efb34 (2026-06-29) | Apache-2.0; zusätzliche Lucent-Notiz für `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
+| kompute (nur optionales Playground, `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND`) | https://github.com/KomputeProject/kompute | v0.9.0-97-g890c97e | Apache-2.0 | `third_party/KOMPUTE/LICENSE` |
+| cgltf | https://github.com/jkuhlmann/cgltf | v1.15-11-g85cd623 | MIT-Lizenztext (Copyright Johannes Kuhlmann) | `third_party/cgltf/LICENSE` |
+| tomlplusplus | https://github.com/marzer/tomlplusplus | v3.4.0-50-g1e8829b | MIT | `third_party/tomlplusplus/LICENSE` |
 
 ## Gevendorte Quellen (kein Submodul)
 
 | Projekt | URL | Lizenz (laut Datei-Headern) | Geprüfte Datei(en) |
 |---|---|---|---|
-| KTX (KTX-Software, Teil-Vendoring: `include/`, `lib/`, `other_include/`) | https://github.com/KhronosGroup/KTX-Software | Apache-2.0 (SPDX-Header in `include/ktx.h` und in 98 Dateien unter `lib/`) | `ExternalLib/KTX/include/ktx.h` |
+| KTX (KTX-Software, Teil-Vendoring: `include/`, `lib/`, `other_include/`) | https://github.com/KhronosGroup/KTX-Software | Apache-2.0 (SPDX-Header in `include/ktx.h` und in 98 Dateien unter `lib/`) | `third_party/KTX/include/ktx.h` |
 
 Hinweis KTX: Die vollständige `LICENSE.md` von KTX-Software ist **nicht** mitvendort
-(`ExternalLib/KTX/LICENSE.md` existiert nicht). Die eingebetteten
-Third-Party-Komponenten unter `ExternalLib/KTX/lib/` wurden deshalb einzeln aus den
+(`third_party/KTX/LICENSE.md` existiert nicht). Die eingebetteten
+Third-Party-Komponenten unter `third_party/KTX/lib/` wurden deshalb einzeln aus den
 Dateien auf der Festplatte verifiziert — teils aus mitvendorten Lizenzdateien, teils
 aus dem Lizenzkopf der Quelldatei selbst:
 
-| Komponente | Lizenz | Geprüfte Datei (jeweils unter `ExternalLib/KTX/lib/`) |
+| Komponente | Lizenz | Geprüfte Datei (jeweils unter `third_party/KTX/lib/`) |
 |---|---|---|
 | basisu (Encoder + Transcoder) | Apache-2.0 (Copyright Binomial LLC) | `basisu/LICENSE` (voller Apache-2.0-Text); Lizenzkopf in `basisu/encoder/basisu_enc.cpp` und `basisu/transcoder/basisu_transcoder.cpp`. Die REUSE-Texte `basisu/LICENSES/{Apache-2.0,BSD,Zlib}.txt` liegen für die Unterkomponenten bei. |
 | zstd (in basisu gebündelt) | BSD-3-Clause; der Dateikopf nennt zusätzlich GPLv2 zur Wahl ("You may select, at your option, one of the above-listed licenses") | `basisu/zstd/LICENSE` (BSD-Text, Copyright Facebook, Inc.); Kopf von `basisu/zstd/zstd.c` |
@@ -48,7 +48,7 @@ Zu beachten: `etcdec.cxx` ist die einzige Komponente im gesamten Baum, die nicht
 unter einer OSI-anerkannten Lizenz steht. Für Redistribution ist der Wortlaut der
 SLA im Dateikopf maßgeblich.
 
-## Build-Zeit-Abhängigkeiten via FetchContent (`ExternalLib/CMakeLists.txt`, nicht im Repo eingecheckt)
+## Build-Zeit-Abhängigkeiten via FetchContent (`third_party/CMakeLists.txt`, nicht im Repo eingecheckt)
 
 Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `build*/\_deps/` gelesen.
 
@@ -65,12 +65,12 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 
 | Projekt | URL | Pin | Lizenz | Geprüfte Quelle |
 |---|---|---|---|---|
-| Kataglyphis-RustProjectTemplate | https://github.com/Kataglyphis/Kataglyphis-RustProjectTemplate | 49e8ee24 (develop) | MIT (`license = "MIT"` in `[workspace.package]`; keine LICENSE-Datei im Submodul) | `ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.toml` |
-| Kataglyphis-ContainerHub | https://github.com/Kataglyphis/Kataglyphis-ContainerHub | 6d5b1af5 (main) | MIT — `LICENSE` (Copyright (c) 2024 Jonas Heinle), `SPDX-License-Identifier: MIT` in allen 101 eigenen Quelldateien, OCI-Label `org.opencontainers.image.licenses="MIT"` in allen drei Image-Definitionen | `ExternalLib/Kataglyphis-ContainerHub/LICENSE` + SPDX-Header + OCI-Labels |
+| Kataglyphis-RustProjectTemplate | https://github.com/Kataglyphis/OxidANT | 49e8ee24 (develop) | MIT (`license = "MIT"` in `[workspace.package]`; keine LICENSE-Datei im Submodul) | `third_party/OxidANT/Cargo.toml` |
+| Kataglyphis-ContainerHub | https://github.com/Kataglyphis/ContainerHub | 6d5b1af5 (main) | MIT — `LICENSE` (Copyright (c) 2024 Jonas Heinle), `SPDX-License-Identifier: MIT` in allen 101 eigenen Quelldateien, OCI-Label `org.opencontainers.image.licenses="MIT"` in allen drei Image-Definitionen | `third_party/ContainerHub/LICENSE` + SPDX-Header + OCI-Labels |
 
-## Rust-Crate-Abhängigkeiten (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
+## Rust-Crate-Abhängigkeiten (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
 
-Versionen laut `ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.lock`.
+Versionen laut `third_party/OxidANT/Cargo.lock`.
 
 **Quelle der Lizenzangaben (alle Zeilen dieser Tabelle):** das `license`-Feld der
 Cargo-Metadaten — also genau das Feld, das die Crate auf crates.io veröffentlicht
@@ -147,13 +147,13 @@ Am 2026-08-02 erledigt und daher aus dieser Liste entfernt:
 - `anyhow`, `log` und `bytemuck` sind jetzt für die **exakte** Lock-Version
   belegt statt für eine benachbarte gecachte Version; die Lizenzausdrücke sind
   dabei unverändert geblieben.
-- Die eingebetteten Third-Party-Anteile in `ExternalLib/KTX/lib/` sind einzeln
+- Die eingebetteten Third-Party-Anteile in `third_party/KTX/lib/` sind einzeln
   aus den Dateien auf der Festplatte belegt — siehe die Tabelle im Abschnitt
   "Gevendorte Quellen".
 
 ## Hinweise
 
-- Entfernt gegenüber Stand 2026-03-26: **glad** (kein `ExternalLib/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen unter `Src/`) und **KTX als Submodul** (jetzt Teil-Vendoring, siehe oben).
+- Entfernt gegenüber Stand 2026-03-26: **glad** (kein `third_party/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen unter `Src/`) und **KTX als Submodul** (jetzt Teil-Vendoring, siehe oben).
 - Kompute wird nur mit `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON` gebaut (Demo, nicht Teil der Engine).
 - Die `build*/_deps/`-Pfade sind lokale Checkouts (nicht eingecheckt); sie dokumentieren, welche Datei bei der Verifikation tatsächlich gelesen wurde. Für die Rust-Crates tritt an diese Stelle die Registry im `:latest-cross`-Container (Volume `cargo-cache`, `CARGO_HOME=/cargo-cache`), aus der `cargo metadata` das `license`-Feld liest.
 

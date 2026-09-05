@@ -3,7 +3,7 @@
 # builder. Everything reusable (venv bootstrap, _static staging, the diagram
 # generator step and the `make html` / `make linkcheck` pair with warnings as
 # errors) lives in
-# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh; only
+# third_party/ContainerHub/linux/scripts/lib/docs-build.sh; only
 # this project's paths and its WebGPU wasm demo live here.
 set -euo pipefail
 
@@ -16,11 +16,11 @@ source "${SCRIPT_DIR}/lib/common.sh"
 source_hub_module lib rust-toolchain.sh   || err "ContainerHub lib/rust-toolchain.sh not found. Initialize the submodule first."
 
 
-DOCS_BUILD_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh"
+DOCS_BUILD_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/docs-build.sh"
 if [[ ! -f "${DOCS_BUILD_LIB}" ]]; then
   err "Shared docs-build library not found at '${DOCS_BUILD_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/docs-build.sh
 source "${DOCS_BUILD_LIB}"
 
 # Directory the C++ build wrote its Doxygen/Graphviz SVGs to.
@@ -42,7 +42,7 @@ DOCS_BUILD_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirem
 # pinned to the EXACT version the crate's Cargo.lock locks (CLI and crate must
 # match or wasm-bindgen refuses to run).
 build_webgpu_wasm_demo() {
-    local rpt="ExternalLib/Kataglyphis-RustProjectTemplate"
+    local rpt="third_party/OxidANT"
     local demo="docs/source/_webgpu_demo/webgpu-demo"
     local wb_ver
     wb_ver="$(grep -A1 '^name = "wasm-bindgen"$' "${rpt}/Cargo.lock" | grep '^version' | head -1 | sed -E 's/version = "(.*)"/\1/')"

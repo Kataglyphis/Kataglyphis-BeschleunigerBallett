@@ -162,7 +162,7 @@ endif()
 #
 # Local first: a project that needs to override an upstream module can drop a
 # same-named file in cmake/ and win, without editing ContainerHub.
-set(KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ExternalLib/Kataglyphis-ContainerHub/cmake")
+set(KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ContainerHub/cmake")
 if(NOT EXISTS "${KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR}/Sanitizers.cmake")
   message(
     FATAL_ERROR
@@ -196,7 +196,7 @@ endif()
 
 include(SystemLibDependencies)
 include(Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
-add_subdirectory(ExternalLib)
+add_subdirectory(third_party)
 
 add_subdirectory(Src)
 
@@ -241,16 +241,16 @@ foreach(_myproject_resource_dir IN LISTS _myproject_runtime_resource_dirs)
 endforeach()
 
 set(_myproject_imgui_fonts
-    ExternalLib/IMGUI/misc/fonts/Cousine-Regular.ttf
-    ExternalLib/IMGUI/misc/fonts/DroidSans.ttf
-    ExternalLib/IMGUI/misc/fonts/Karla-Regular.ttf
-    ExternalLib/IMGUI/misc/fonts/ProggyClean.ttf
-    ExternalLib/IMGUI/misc/fonts/ProggyTiny.ttf
-    ExternalLib/IMGUI/misc/fonts/Roboto-Medium.ttf)
+    third_party/IMGUI/misc/fonts/Cousine-Regular.ttf
+    third_party/IMGUI/misc/fonts/DroidSans.ttf
+    third_party/IMGUI/misc/fonts/Karla-Regular.ttf
+    third_party/IMGUI/misc/fonts/ProggyClean.ttf
+    third_party/IMGUI/misc/fonts/ProggyTiny.ttf
+    third_party/IMGUI/misc/fonts/Roboto-Medium.ttf)
 
 install(
   FILES ${_myproject_imgui_fonts}
-  DESTINATION ExternalLib/IMGUI/misc/fonts/)
+  DESTINATION third_party/IMGUI/misc/fonts/)
 if(UNIX AND NOT APPLE)
   install(FILES docs/packaging/GraphicsEngine.desktop DESTINATION usr/share/applications)
   install(

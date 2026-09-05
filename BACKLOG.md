@@ -52,7 +52,7 @@ the loop skips these and they do not count toward its pending-task queue),
 
 - Animate the cloud volume (needs a time uniform + a deterministic override for the goldens).
 
-## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+## Rust WebGPU renderer (`third_party/OxidANT`)
 
 - [b] **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder + a test
   asset**) — KTX2 BCn passthrough is done; supercompressed files are already
@@ -209,7 +209,7 @@ that are *not* exercised that way and should be run periodically:
   (debug timings are noise). Run it after any perf-relevant change and
   before a release; it also builds `perfTestSuite.exe`.
 - **`clangcl-tsan` does NOT detect data races** — checked 2026-07-20 by
-  building it and inspecting the result. `ExternalLib/Kataglyphis-ContainerHub/cmake/Sanitizers.cmake` warns
+  building it and inspecting the result. `third_party/ContainerHub/cmake/Sanitizers.cmake` warns
   "clang-cl ThreadSanitizer is not supported for target
   x86_64-pc-windows-msvc" and drops the request, so the preset produces a
   plain debug build: no `-fsanitize=thread` in `build.ninja`, no `__tsan_*`
@@ -1804,7 +1804,7 @@ pick them up from the older prose above.
 
 ### Build / scripts
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Cross-renderer / docs
 
@@ -1911,7 +1911,7 @@ extracted, the `clangcl-tsan` preset is already gone, strip/fan triangulation
 and 16-bit PNG down-conversion are already in the Rust loader, and the shadow
 cascades already use a render bundle — none of those are tasks (the prose
 above was corrected in this pass). The three Rust tasks live in the
-`ExternalLib/Kataglyphis-RustProjectTemplate` submodule: commit there AND bump
+`third_party/OxidANT` submodule: commit there AND bump
 the superproject gitlink in the same change (AGENTS.md § Critical Invariant:
 Submodule Pins).
 
@@ -1919,7 +1919,7 @@ Submodule Pins).
 
 ### Docs / repo hygiene
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 - **Pre-existing (found 2026-07-31, unrelated to the work below): every GPU-touching
   test in `kataglyphis_webgpu_renderer` fails headless on this host.**
@@ -1952,7 +1952,7 @@ precomputed inverse matrices" survey item is moot post-Slang). Suggested order:
 the WGSL fix first — it unblocks headless verification for every future Rust
 renderer task.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 **`headless.rs` wrong-pixels investigation — DONE (2026-07-31), 16/33 → 32/33.**
 Two systemic root causes, not 17 independent bugs:
@@ -2228,7 +2228,7 @@ pass): the 4× duplicated `checkWritePreconditions`/`findBinding` prologue in
 needs an out-param, so the consolidation is likely worse than the duplication;
 `VulkanRenderer.cpp:1194` copies `scene->getObjectDescriptions()` by value
 (needs a check of whether that path is per-frame or scene-change-only before it
-is worth a task); `ExternalLib/NLOHMANN_JSON` gitlink is drifted in the working
+is worth a task); `third_party/NLOHMANN_JSON` gitlink is drifted in the working
 tree again (`eaedec85` → `2222d386`) — the recurring drift recorded in
 `[[submodule-pin-drift]]`, an owner call rather than an executor task.
 
@@ -2293,7 +2293,7 @@ of the `VulkanRenderer` hub, but no clean extraction was identified this pass.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-01 batch II — planner (refactor: dead generality, extension-dispatch triplication, span-ify layout params)
 
@@ -2411,7 +2411,7 @@ still advertises 1..8 against `MAX_CASCADES` 3 — now cheaply fixable since
 `host_device_shared_vars.hpp` is a plain header the GUI could include, but the
 engine-side clamp already makes it a cosmetic lie rather than a bug.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-01 batch IV — planner (depth-resolve root cause, generated-shader gates)
 
@@ -2488,7 +2488,7 @@ already have inline unit tests at `forward.rs:3711-3940`; **a C++ headless
 per-pass GPU-timing JSON dump** already exists (`KATAGLYPHIS_GPU_TIMING_JSON`,
 consumed by `scripts/Compare-RendererTimings.ps1`).
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Build / scripts
 
@@ -2507,7 +2507,7 @@ batch IV's two "folded" fixes **did land** — `depth_resolve.slang:26` now loop
 doc comment no longer claims "it does not yet skip any draw". Nothing to re-do there.
 
 **One build-system fact that all three tasks depend on, checked this pass:**
-`kataglyphis_collect_module_interfaces` (`ExternalLib/Kataglyphis-ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`)
+`kataglyphis_collect_module_interfaces` (`third_party/ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`)
 uses a plain `file(GLOB_RECURSE ... *.ixx)` with **no `CONFIGURE_DEPENDS`** — unlike
 the commit-test glob (`Test/commit/VulkanEngine/CMakeLists.txt:9`), which has it
 precisely because a new file was otherwise silently never compiled. So **adding or
@@ -2664,7 +2664,7 @@ the WGSL one** — unnecessary, `git ls-files Resources/ShadersSlang/build` retu
 nothing, so no SPIR-V or WGSL artifact is tracked in this repo and there is no
 hand-edit surface to guard.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-01 batch VIII — planner (refactor: unread shadow stats + dead accessors, skybox view plumbing, descriptor-write duplication)
 
@@ -2724,7 +2724,7 @@ prologue") and never tasked.
 
 **Build-system fact all three tasks depend on** (re-checked this pass, unchanged
 since batch V): `kataglyphis_collect_module_interfaces`
-(`ExternalLib/Kataglyphis-ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
+(`third_party/ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
 `CONFIGURE_DEPENDS`, and the recorded module-BMI skew hazard ("Incremental container
 builds can ship ODR-broken binaries") applies to any edited module interface. All
 three tasks below edit a `.ixx`, so all three want `-FreshContainer`.
@@ -3386,7 +3386,7 @@ createImage` never assigns `this->mip_levels`** — batch XIII already rejected
 this with reasons that still hold; fold the one-liner into the next change
 that touches `Texture`.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 - [b] **Stop an empty tile from iterating every light in the scene** —
   **step 1 done (2026-08-01), step 2 blocked on a deeper, newly-found gap.**
@@ -3443,7 +3443,7 @@ that touches `Texture`.
   safety net — do not remove it as a drive-by.
 
   Verified: `cargo test --workspace --locked` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate` (all `tile_grid` tests green;
+  `third_party/OxidANT` (all `tile_grid` tests green;
   the pre-existing `auto_exposure_brightens_a_dark_scene_over_successive_frames`
   and the 11 `ibl` test failures reproduce identically on unmodified `develop`,
   confirmed by stashing this change — unrelated headless-GPU-adapter issues in
@@ -3663,7 +3663,7 @@ span.
 
 ### Build / scripts
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-01 batch XVII — planner (a dangling pointer in swapchain creation, an incomplete blit-capability gate, three coverage gaps)
 
@@ -3713,7 +3713,7 @@ drift fix.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-01 batch XVIII — planner (refactor: a "kept in lockstep" guard that is written twice, untested texture-slot flattening, a depth-aspect rule with four hand-rolled copies)
 
@@ -3783,7 +3783,7 @@ duplication/drift.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-02 batch — planner (a second vertical mirror, this one in GPU culling; a mirrored world-position reconstruction in the deferred lighting pass; the two comment/duplication items batch XVIII deferred)
 
@@ -4144,7 +4144,7 @@ and re-rejected for the reason the batch above gave.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Cross-renderer
 
@@ -4241,7 +4241,7 @@ leaving `tlas.vulkanAS` non-null and `blas` unshrunk (`ASManager.cpp:381-401`)**
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-02 batch V — planner (an SSAO hemisphere pointed into the screen, an exposure shader that snaps on a stalled frame, the last unpinned dispatch grid plus its inert spec constants, two command buffers that record nothing, an LOD merge that is only half order-independent)
 
@@ -4306,7 +4306,7 @@ flag, so a reallocation cannot double-destroy; **`cs_reduce_exposure` having no
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-02 batch VI — planner (refactor: a RED CI gate that says three suites never run, a source file grep classifies as binary, a descriptor-pool override with one caller that passes bytes as a count)
 
@@ -4660,7 +4660,7 @@ callback over: one predicate asked to answer two different questions.
 `values.last().map(|name| name.replace('\\', "/"))`); the C++ side takes
 `mp->diffuse_texname` verbatim (`Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:181-192`)
 and tinyobjloader does not translate separators either (grep-checked
-`ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h` — its only backslash handling is
+`third_party/TINY_OBJ_LOADER/tiny_obj_loader.h` — its only backslash handling is
 the Windows UNC prefix at `:1284-1299`). So a Windows-authored
 `map_Kd textures\wall.png` resolves in the Rust renderer on every platform and
 silently degrades to the white default texture in the C++ one on Linux — i.e.
@@ -4733,7 +4733,7 @@ pointer cannot be null; a redundant lookup, not a defect.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-02 batch XI — planner (a frame-sync counter that erases itself one line after it is computed, a glTF loader that keeps the previous parse's mesh ranges, eleven raw-handle log lines, a dead overload, a conditional whose two branches are identical)
 
@@ -4846,7 +4846,7 @@ above it makes the result harmless.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-02 batch XII — planner (refactor: a sixth "one rule, five hand-rolled copies" — render-pass begin; four copies of the extension/layer lookup that already produced one shipped bug; a descriptor write that looks its binding up twice and dereferences the second one unchecked)
 
@@ -4940,7 +4940,7 @@ The actionable queue was empty when this batch was written (0 `- [ ]`, 15
 `- [b]` across the whole file). Every `file:line` below was read out of the tree
 this pass.
 
-**The headline is a shipped regression in `ExternalLib/Kataglyphis-RustProjectTemplate`,
+**The headline is a shipped regression in `third_party/OxidANT`,
 introduced by `2a4ae68 "Replace hand-written WGSL shaders with Slang-emitted
 output"`.** Comparing every generated WGSL against its pre-Slang predecessor
 (`git show 2a4ae68^:crates/webgpu_renderer/src/shaders/<name>.wgsl`), nine of
@@ -5020,7 +5020,7 @@ The actionable queue was empty when this batch was written (0 `- [ ]`, 15
 `- [b]` across the whole file). Every `file:line` below was read out of the tree
 this pass; the "before" side comes from
 `git show 2a4ae68^:crates/webgpu_renderer/src/shaders/<name>.wgsl` inside
-`ExternalLib/Kataglyphis-RustProjectTemplate`.
+`third_party/OxidANT`.
 
 **Batch XIII found three semantic regressions in `ibl.slang` and closed two of
 them. It stopped at the entry-point count, and that is why it missed the
@@ -5573,13 +5573,13 @@ that Slang emits from it.** That commit rewired `brdf_direct` to call
 `lambert_diffuse` instead of duplicating its math inline (`brdf.slang:78`).
 `forward.wgsl` is generated output, checked into the Rust crate via the
 manifest's `wgslMap` (`shader-manifest.json`, `src: forward/forward.slang` →
-`dst: ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders`),
+`dst: third_party/OxidANT/crates/webgpu_renderer/src/shaders`),
 and the committed copy still inlines the division by π with no
 `fn lambert_diffuse_0`. Regenerating with the host's slangc 2026.8 — the exact
 version the manifest's `minSlangcVersionForWgsl` names, and which reproduces
 the other nine `wgslMap` outputs byte-for-byte — produces a 13-line/8-line diff
 that is currently uncommitted in
-`ExternalLib/Kataglyphis-RustProjectTemplate`. Six commits shipped on top of it.
+`third_party/OxidANT`. Six commits shipped on top of it.
 
 **Both gates that should have caught it are structurally unable to.**
 `BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource`
@@ -6222,7 +6222,7 @@ all) and `DeferredRasterizer`'s lighting subpass is the only one with input
 attachments, so the helper needs all three arms.
 
 Ordering: **tasks 3 and 4 both regenerate WGSL and bump the
-`ExternalLib/Kataglyphis-RustProjectTemplate` submodule pin** — land them one
+`third_party/OxidANT` submodule pin** — land them one
 at a time, pushing the submodule before the superproject each time (AGENTS.md,
 "Shipping a change that spans both repos"). Tasks 1, 2 and 5 are disjoint from
 everything, though **task 5 touches the same five files as several shipped
@@ -6603,7 +6603,7 @@ having no `mod tests`** — unchanged; every unit is GPU-resident, coverage live
 in `tests/headless.rs`. **`Src/KomputePlayground`** — unchanged; still an owner
 decision.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### C++ Vulkan engine
 
@@ -7068,7 +7068,7 @@ re-rejected for the fourth time (upload-time only, never on the frame path).
 
 ### Shaders
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Performance testing
 
@@ -7218,7 +7218,7 @@ unchanged; still an owner decision.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-03 batch XXI — planner (the two PowerShell modules that genuinely live in this repo have no tests, and both are broken: one reports success for a test binary that never started, the other's clang-tidy skip matches 1 of 33 module TUs; the always-on Linux lane runs 4 of 6 fuzz targets and skips exactly the one that has caught a real bug; the fourth member of the `create()`-releases-previous family; the module bootstrap AGENTS.md says cannot move upstream)
 
@@ -7948,7 +7948,7 @@ The local build also gave a legible assertion where CI only ever showed
 far more than the twenty minutes the container took.
 
 **Windows was never affected**, and the reason is the whole story: on Windows
-`ExternalLib/CMakeLists.txt` builds a `kataglyphis_fuzztest_windows_asan`
+`third_party/CMakeLists.txt` builds a `kataglyphis_fuzztest_windows_asan`
 interface library and propagates the flags to abseil, re2 and every
 `fuzztest_*` target by hand. Linux got the per-target flag and none of that
 propagation. The bug is that asymmetry.
@@ -8101,7 +8101,7 @@ submodule was pushed separately". The identical argument applies to
 `clippy`/`rustfmt` and has not been acted on: `grep -rn "clippy\|rustfmt"
 .github/workflows/` returns nothing in this repo, while the submodule's own
 `rust_ubuntu24_04.yml:123` runs
-`ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh`.
+`third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh`.
 The driver already exists upstream (`cargo fmt --all -- --check` then
 `cargo clippy --all-targets --all-features -- -D warnings`), so per AGENTS.md
 § "Rule: Reusable Work Belongs in ContainerHub" this repo owes only a thin
@@ -8112,7 +8112,7 @@ Ordering: the five are disjoint. Tasks 2 and 3 both add
 suite after the second. Task 5 touches four `.slang` files and nothing else
 here does.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### CI
 
@@ -8160,12 +8160,12 @@ here does.
   **Files to read:**
   - `.github/workflows/Linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
   - `scripts/linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
-  - `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
+  - `third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
+  - `third_party/OxidANT/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
   - `AGENTS.md` § "Rule: Reusable Work Belongs in ContainerHub" and the wrapper map
 
   **Steps:**
-  1. Before writing anything, run the linters locally from `ExternalLib/Kataglyphis-RustProjectTemplate` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
+  1. Before writing anything, run the linters locally from `third_party/OxidANT` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
   2. Add `scripts/linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ContainerHub script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
   3. Add a "Lint Rust renderer crate" step to `.github/workflows/Linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
   4. Add the new wrapper to `AGENTS.md`'s wrapper map table (next to the `run-cargo-tests.sh` row) and to `AGENTS.md` § "What CI runs" where the Rust test step is described. Keeping that table complete is a stated invariant.
@@ -8339,7 +8339,7 @@ last one and its checked-in WGSL is final. Task 4 touches only
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
@@ -8384,7 +8384,7 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   retries on them.
 
 - [b] **Bump the ContainerHub Linux image's Vulkan SDK past slangc 2026.8**
-  (S) — `ExternalLib/Kataglyphis-ContainerHub/linux/Dockerfile.base` already
+  (S) — `third_party/ContainerHub/linux/Dockerfile.base` already
   carries `ARG VULKAN_VERSION=1.4.350.0` (landed in ContainerHub `709756e`,
   "bump Vulkan SDK to 1.4.350.0"), and this repo's submodule pin
   (`6aeb0f6`) is already past that commit — the Dockerfile edit itself is
@@ -8402,7 +8402,7 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   with registry credentials, not attempted unattended.
   Once pushed, confirm a container run of `compile-slang-shaders.sh` emits
   10 combined WGSL files and leaves
-  `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean.
+  `git -C third_party/OxidANT status` clean.
   Build preset: none (container tooling).
 
 ## 2026-08-04 batch VII — planner (refactor: 83 declaration lines that take the engine's one `shared_ptr<VulkanDevice>` by value, against five newer helpers that take it by reference, with exactly three real sinks among them; the colour twin of the depth-attachment chain, hand-rolled in the same three raster stages the depth helper was extracted from; eleven `wgpu::TextureDescriptor` literals in the Rust crate that differ in four fields and repeat four)
@@ -8787,7 +8787,7 @@ reads "Kataglyphis-BeschleunigerBallett Documentation". Adjacent and in the
 same file: `docs/source/getting_started.md:11` lists "an OpenGL 4.6 capable
 driver/runtime **for the OpenGL renderer**" as a build prerequisite, and
 `docs/LICENSES-README.md:142` is the record of that renderer's removal ("kein
-`ExternalLib/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen
+`third_party/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen
 unter `Src/`"). Confirmed independently: the only `OpenGL` hits under `Src/`
 are three comments about clip-space and winding conventions
 (`SceneUboMarshal.hpp:27`, `Frustum.cpp:40,46`, `GltfLoader.cpp:364`).
@@ -9025,7 +9025,7 @@ and 3 change, so land it last.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-04 batch XIII — planner (refactor: the ray-tracing pipeline is the one stage that never adopted the shared shader-stage builder — six hand-assigned `pName = "main"` blocks survive project-wide, four of them here, next to four five-line shader-group blocks that differ in two fields; a whole C++23 module whose entire job is to add one log line to three free functions, and whose `read()` has zero production callers; and 50 copies of one open-and-getline loop in the gate suite, beside a helper header that says it is "the one place those helpers live now")
 
@@ -9172,7 +9172,7 @@ black in both ray modes.
 
 **First, `KHR_materials_emissive_strength`.** `GltfLoader.cpp`'s
 `fromGltfMaterial` reads `material.emissive_factor[0..2]` raw. cgltf parses
-the extension (`ExternalLib/cgltf/cgltf.h:506-509` declares
+the extension (`third_party/cgltf/cgltf.h:506-509` declares
 `cgltf_emissive_strength`, `:552` the `has_emissive_strength` flag, `:4900`
 the `KHR_materials_emissive_strength` case), and the Rust loader already folds
 it in — `asset/gltf_loader.rs:638-642`, with the comment that says exactly
@@ -9391,10 +9391,10 @@ opacity flags can be relaxed without a perf or stability surprise.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
   **Build:** No C++ build. `cargo check` / `clippy` / `fmt` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate` are the local signal — `cargo
+  `third_party/OxidANT` are the local signal — `cargo
   test` and `cargo build` do **not** link on this host (the VC++ Build Tools
   install is incomplete and Git Bash's `link.exe` shadows MSVC's). The crate's
   test suite runs in this repo's always-on Linux lane via
@@ -9439,7 +9439,7 @@ the only one that recompiles the whole engine.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-04 batch XVI — planner (the glTF `sampler` object, which the Rust loader reads in full and the C++ loader never looks at once, next to a per-texture sampler array that already has a slot for it; base-colour images referenced by an external file URI, which this repo's own OBJ→glTF converter is the thing that emits and the C++ loader is the thing that silently drops; the `eOpaque` follow-up `ASManager.cpp` asks for by name, now that every geometry in the scene invokes an any-hit shader; the path tracer, which forces every ray opaque and so is the last shading path where a MASK cut-out is a solid quad; and a G-buffer albedo attachment left at 8-bit UNORM three commits after its sibling was widened for exactly this reason)
 
@@ -9583,7 +9583,7 @@ other.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-04 batch XVII — planner (a `doubleSided` rule both renderers implement in the pipeline and neither implements in the shader, so every back face is lit by a normal pointing away from it; two ray-tracing normal transforms that column-multiply `WorldToObject` where their own comment says row-multiply, reachable from the GUI's Rotation slider; the emissive *texture*, the one lit glTF texture slot the Rust twin samples and the C++ engine has no field for; the tangent attribute that is the single prerequisite for closing the normal-map gap; and two mip-chain barriers that publish to `eFragmentShader` in an engine where three of five shading paths read those textures from compute and ray-tracing stages)
 
@@ -9725,7 +9725,7 @@ Task 4 must land *last* of the shader-touching set: it changes
 landing it in the middle would rebase tasks 1–3's diffs for no reason. Task 5
 is the only one that touches no shader at all and can go first or last.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 > The back-face normal flip above is cross-renderer: its third step edits
 > `forward.slang`, whose WGSL output is checked in under
@@ -9931,7 +9931,7 @@ needs the `createFromFile` half of it. Tasks 2 and 3 both append a member to
 rebases on the first's offsets — the entries below spell out both cases. Task 5
 is in the Rust submodule and is independent of all four.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ## 2026-08-05 batch III — planner (one `KHR_texture_transform`, read from the base-colour slot and applied to all four, so an atlased base colour silently tiles the normal, metallic-roughness and emissive maps that never asked for it; a `-bm` factor read out of `bump_texopt` even when the map came from `norm`, which is the one directive whose own texopt holds it; `map_Ke`, which tinyobjloader parses into `emissive_texname` and both OBJ paths drop while all four C++ shading paths and the Rust twin sample an emissive texture; and a material table in `docs/model-loading.md` that is two rows short of the struct it documents, behind a gate that checks the doc's citations but never its coverage)
 
@@ -10054,7 +10054,7 @@ Rust submodule and is independent of all four.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -10283,7 +10283,7 @@ claim a rendered result you cannot obtain** — state which suites you ran.
 host: the VC++ Build Tools install is incomplete and Git Bash's `link.exe`
 shadows MSVC's. Verify tasks 3 and 4 with `cargo check`, `cargo clippy` and
 `cargo fmt --check` from
-`ExternalLib/Kataglyphis-RustProjectTemplate`, say so explicitly in the commit
+`third_party/OxidANT`, say so explicitly in the commit
 message, and let the always-on Linux lane (`scripts/linux/run-cargo-tests.sh`)
 be the thing that actually runs the tests you add.
 
@@ -10298,7 +10298,7 @@ Rust submodule and touch disjoint files (`gltf_loader.rs`/`forward.rs` versus
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -10406,7 +10406,7 @@ suites you actually ran.
 **Rust verification limits (task 4).** `cargo test`/`cargo build` do not link on
 this host: the VC++ Build Tools install is incomplete and Git Bash's `link.exe`
 shadows MSVC's. Verify with `cargo check`, `cargo clippy` and
-`cargo fmt --check` from `ExternalLib/Kataglyphis-RustProjectTemplate`, say so
+`cargo fmt --check` from `third_party/OxidANT`, say so
 explicitly in the commit message, and let the always-on Linux lane
 (`scripts/linux/run-cargo-tests.sh`) be what actually runs the tests you add.
 
@@ -10419,7 +10419,7 @@ except that it deletes the divergence-matrix row task 5 does not touch.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -10542,7 +10542,7 @@ ran.**
 `cargo test`/`cargo build` do not link on this host: the VC++ Build Tools
 install is incomplete and Git Bash's `link.exe` shadows MSVC's. Verify with
 `cargo check`, `cargo clippy` and `cargo fmt --check` from
-`ExternalLib/Kataglyphis-RustProjectTemplate`, say so explicitly in the
+`third_party/OxidANT`, say so explicitly in the
 commit message, and let the always-on Linux lane
 (`scripts/linux/run-cargo-tests.sh`) run the tests you add. Regenerating
 `forward.wgsl` is a `compile-slang-shaders.ps1` run, not a cargo build.
@@ -10556,7 +10556,7 @@ and 3 are independent of everything.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -10712,7 +10712,7 @@ and therefore needs `-FreshContainer`.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -10825,7 +10825,7 @@ except task 1's optional step 6.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -11045,7 +11045,7 @@ reason too. Only task 5 changes a C++23 module interface
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Docs
 
@@ -11249,7 +11249,7 @@ regeneration is needed** and the WGSL staleness gates cannot fire — but it
 does need `compile-slang-shaders.ps1` before the SPIR-V staleness gate is
 re-run.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 **Not in this batch, recorded so it is not lost.**
 
@@ -11454,7 +11454,7 @@ Do not re-run these three sweeps without new evidence.
 
 ### C++ Vulkan engine
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+### Rust WebGPU renderer (`third_party/OxidANT`)
 
 ### Test and gate infrastructure
 

@@ -5,11 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-APP_RUNNER_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/app-runner.sh"
+APP_RUNNER_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/app-runner.sh"
 if [[ ! -f "${APP_RUNNER_LIB}" ]]; then
   err "Shared app-runner library not found at '${APP_RUNNER_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/app-runner.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/app-runner.sh
 source "${APP_RUNNER_LIB}"
 
 APP_RUNNER_DEFAULT_EXE_NAME="GraphicsEngine"
@@ -45,16 +45,16 @@ check_vulkan() {
   return 1
 }
 
-# Try to install Vulkan SDK using the ContainerHub helper script bundled in ExternalLib
+# Try to install Vulkan SDK using the ContainerHub helper script bundled in third_party
 install_vulkan_via_containerhub() {
   local sd
   # Prefer the 02-toolchain helper if present, fallback to top-level helper
-  sd="${PROJECT_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/setup-dependencies.sh"
+  sd="${PROJECT_ROOT}/third_party/ContainerHub/linux/scripts/02-toolchain/setup-dependencies.sh"
   if [[ ! -f "${sd}" ]]; then
-    sd="${PROJECT_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/setup-dependencies.sh"
+    sd="${PROJECT_ROOT}/third_party/ContainerHub/linux/scripts/setup-dependencies.sh"
   fi
   if [[ ! -f "${sd}" ]]; then
-    warn "No ContainerHub setup-dependencies.sh found under ExternalLib/Kataglyphis-ContainerHub; cannot auto-install Vulkan."
+    warn "No ContainerHub setup-dependencies.sh found under third_party/ContainerHub; cannot auto-install Vulkan."
     return 1
   fi
 

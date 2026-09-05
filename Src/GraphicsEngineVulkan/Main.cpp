@@ -9,7 +9,7 @@ import kataglyphis.vulkan.app;
 #include <vector>
 
 #if USE_RUST
-#include "kataglyphis_rustprojecttemplate_bridge/native_only.h"
+#include "oxidant_bridge/native_only.h"
 #endif
 
 #include "absl/flags/flag.h"

@@ -35,9 +35,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SLANG_ROOT="${REPO_ROOT}/Resources/ShadersSlang"
 BUILD_ROOT="${SLANG_ROOT}/build"
 
-SLANG_COMPILE_LIB="${REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/slang-compile.sh"
+SLANG_COMPILE_LIB="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/lib/slang-compile.sh"
 [[ -f "${SLANG_COMPILE_LIB}" ]] || err "Slang compile driver not found at ${SLANG_COMPILE_LIB} (is the ContainerHub submodule checked out?)"
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/slang-compile.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/slang-compile.sh
 source "${SLANG_COMPILE_LIB}"
 
 # Paths only - the driver holds the behaviour.

@@ -32,7 +32,7 @@ param(
     # Get-ExpectedPassNames below). Overridable so tests can point these at
     # fixture files instead of the real sources.
     [string]$CppPassSourcePath = (Join-Path $RepoRoot 'Src\GraphicsEngineVulkan\renderer\GUIRendererSharedVars.ixx'),
-    [string]$RustPassSourcePath = (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate\crates\webgpu_renderer\src\render\gpu_timing.rs'),
+    [string]$RustPassSourcePath = (Join-Path $RepoRoot 'third_party\OxidANT\crates\webgpu_renderer\src\render\gpu_timing.rs'),
     # Expected C++/Vulkan pass names. Defaults to every name in
     # GPU_TIMED_PASS_EXPORT_NAMES (all required - the C++ engine always
     # records all five). Left unset so the derived default (below) applies;
@@ -200,7 +200,7 @@ $dinoObj = Join-Path $RepoRoot 'Resources\Models\Dinosaurs\dinosaurs.obj'
 $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
 
 if ((-not $ValidationOnly) -and (Test-Path $suite)) {
-    Push-Location (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate')
+    Push-Location (Join-Path $RepoRoot 'third_party\OxidANT')
     try {
         if (-not (Test-Path $dinoGltf) -or
             (Get-Item $dinoObj).LastWriteTime -gt (Get-Item $dinoGltf).LastWriteTime) {

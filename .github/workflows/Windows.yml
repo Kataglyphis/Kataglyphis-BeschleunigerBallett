@@ -57,7 +57,7 @@ jobs:
       # dem Laufwerk, auf dem das Image dann landet.
       - name: Prepare Windows container host
         id: prep
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/prepare-windows-container-host@main
+        uses: Kataglyphis/ContainerHub/.github/actions/prepare-windows-container-host@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -91,7 +91,7 @@ jobs:
       # a hostname, a username, a remote path).
       - name: Build/Test/Package inside ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
         continue-on-error: false
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           extra-args: |
@@ -167,7 +167,7 @@ jobs:
           "GPU_ONLY_SUITES=$gpuOnlySuites" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Run CPU-only tests inside the container
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           # Test-Path first: a missing or unbuilt executable must say so, not
@@ -191,7 +191,7 @@ jobs:
       # cold container start and still fails the same day.
       - name: Run fuzz target seeds inside the container
         timeout-minutes: 20
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           # Inner strings use single quotes and concatenation, NOT \" escapes:
@@ -250,7 +250,7 @@ jobs:
           "TIMING_VALIDATION_FLAG=$flag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: GPU timing comparison (validation-only on GPU-less runners)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           command: >-
@@ -275,7 +275,7 @@ jobs:
       # a run that verified something. With KATAGLYPHIS_CI_HAS_GPU=1 the flag
       # is empty and 2 stays fatal, because then frames SHOULD exist.
       - name: Pixel comparison (validation-only on GPU-less runners)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           command: >-
@@ -332,7 +332,7 @@ jobs:
       # Pester 5 on the runner cannot parse. The install/run/report mechanics
       # are generic and live in ContainerHub.
       - name: Run Pester suites (pinned 3.4.0)
-        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-pester-suite@main
+        uses: Kataglyphis/ContainerHub/.github/actions/run-pester-suite@main
         with:
           path: scripts/windows/tests
           version: '3.4.0'

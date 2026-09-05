@@ -35,7 +35,7 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground us
 
 - Vulkan renderer (C++23 modules) with forward + deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps (consumed by both lighting paths), skybox, volumetric clouds, OBJ loading, and mip mapping
 - VMA-backed memory, fence-synced uploads with a persistent staging buffer, a persisted `VkPipelineCache`, and fail-fast Vulkan error handling (exceptions are disabled project-wide)
-- Companion Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`): glTF 2.0/GLB, PBR + IBL, CSM, SSAO, bloom, skinning, animations, LOD — runs natively and in the browser; shares Slang shader sources with the C++ Vulkan renderer (see `docs/shader-sharing.md`)
+- Companion Rust WebGPU renderer (`third_party/OxidANT/crates/webgpu_renderer`): glTF 2.0/GLB, PBR + IBL, CSM, SSAO, bloom, skinning, animations, LOD — runs natively and in the browser; shares Slang shader sources with the C++ Vulkan renderer (see `docs/shader-sharing.md`)
 - Tooling around CMake presets, CI, code coverage, benchmarking, fuzzing (including a real OBJ-parsing fuzz target), packaging, Sphinx, Doxygen, and Graphviz
 - Linux and Windows as the primary development targets
 
@@ -50,7 +50,7 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground us
 | `Test/` | Tests |
 | `docs/source/` | Hand-written Sphinx pages |
 | `Documents/` | Generated PDF and reference artifacts |
-| `ExternalLib/` | Third-party dependencies and submodules |
+| `third_party/` | Third-party dependencies and submodules |
 
 ## Quick Start
 
@@ -115,7 +115,7 @@ Shaders for the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
 
 ## Roadmap
 
@@ -161,7 +161,7 @@ Project link: [https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett](
 ## Further Reading
 
 - [Official homepage](https://beschleunigerballette.jonasheinle.de/)
-- [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub)
+- [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/ContainerHub)
 - [Doxygen PDF reference](Documents/refman.pdf)
 - [Sphinx docs source](docs/source)
 

@@ -143,7 +143,7 @@ get_project_root() {
 source_hub_module() {
   local category="$1"
   local name="$2"
-  local path="${SCRIPT_LIB_DIR}/../../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/${category}/${name}"
+  local path="${SCRIPT_LIB_DIR}/../../../third_party/ContainerHub/linux/scripts/${category}/${name}"
   if [[ -f "${path}" ]]; then
     # shellcheck disable=SC1090
     source "${path}"

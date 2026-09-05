@@ -21,6 +21,6 @@
 *.bat   text eol=crlf
 
 # exclude all files from language analysis which do not directly contribute to engine
-ExternalLib/** linguist-vendored
+third_party/** linguist-vendored
 Documents/** linguist-vendored
 build/** linguist-vendored

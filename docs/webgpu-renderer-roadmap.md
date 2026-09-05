@@ -4,7 +4,7 @@ Continuation of [webgpu-gltf-rust-plan.md](webgpu-gltf-rust-plan.md) (milestones
 1–5 shipped 2026-07-18: context + surface lifecycle, glTF meshes, textures +
 ACES tonemapping, directional shadows, wasm32 browser demo). This roadmap
 covers everything after. Crate:
-`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`.
+`third_party/OxidANT/crates/webgpu_renderer`.
 
 Effort: **S** ≤ half a day · **M** 1–3 days · **L** a week+ · **XL** multi-week.
 

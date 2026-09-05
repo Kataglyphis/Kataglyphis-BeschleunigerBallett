@@ -3,7 +3,7 @@
 # code-quality driver. Everything reusable (cmake-format bootstrap, the
 # file-enumeration walks, clang-format, clang-tidy, and the container
 # compile-database path remapping) lives in
-# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/code-quality.sh; only
+# third_party/ContainerHub/linux/scripts/lib/code-quality.sh; only
 # this project's source roots, tool arguments and paths live here.
 #
 # NOTE: the Windows formatting/tidy path deliberately behaves differently on six
@@ -18,11 +18,11 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-CODE_QUALITY_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/code-quality.sh"
+CODE_QUALITY_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/code-quality.sh"
 if [[ ! -f "${CODE_QUALITY_LIB}" ]]; then
   err "Shared code-quality library not found at '${CODE_QUALITY_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/code-quality.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/code-quality.sh
 source "${CODE_QUALITY_LIB}"
 
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -46,7 +46,7 @@ ANALYZE_SOURCE_ROOT="Src"
 ANALYZE_EXTRA_ARGS=(-DUSE_RUST=1)
 
 CODE_QUALITY_CMAKE_SEARCH_ROOT="."
-CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './ExternalLib/*')
+CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './third_party/*')
 CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
 # The container image builds against /opt/gcc-<version>; when that exact

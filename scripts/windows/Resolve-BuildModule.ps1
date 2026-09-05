@@ -8,7 +8,7 @@
 #
 # Contract (ContainerHub docs/adopting-in-a-new-project.md § 1):
 #
-#   1. ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/<Name>.psm1
+#   1. third_party/ContainerHub/windows/scripts/modules/<Name>.psm1
 #   2. <this script's directory>/modules/<Name>.psm1   (project-specific fallback)
 #   3. throw, naming BOTH probed paths
 #
@@ -22,7 +22,7 @@ Set-StrictMode -Version Latest
 $script:RepoRootRelativeToHere = '..\..'
 
 $script:BuildModuleSearchRoots = @(
-    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot (Join-Path $script:RepoRootRelativeToHere 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'))),
+    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot (Join-Path $script:RepoRootRelativeToHere 'third_party\ContainerHub\windows\scripts\modules'))),
     [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'modules'))
 )
 
@@ -62,7 +62,7 @@ function Resolve-BuildModule {
     throw ("Build module '$Name' not found. Probed:" + [Environment]::NewLine +
         '  ' + ($probed -join ([Environment]::NewLine + '  ')) + [Environment]::NewLine +
         'If the ContainerHub path is missing, the submodule is not checked out: ' +
-        'git submodule update --init --recursive ExternalLib/Kataglyphis-ContainerHub')
+        'git submodule update --init --recursive third_party/ContainerHub')
 }
 
 # Back-compat alias for consumers that adopted the earlier name.

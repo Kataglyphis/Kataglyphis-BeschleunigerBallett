@@ -35,7 +35,7 @@ endif()
 # So: build with preset linux-debug-asan-clang (myproject_ENABLE_SANITIZER_ADDRESS
 # ON) and run the targets from that build directory. Windows already solves the
 # same problem differently, via the kataglyphis_fuzztest_windows_asan interface
-# library in ExternalLib/CMakeLists.txt, which propagates the flags to abseil,
+# library in third_party/CMakeLists.txt, which propagates the flags to abseil,
 # re2 and the fuzztest_* targets by hand.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT myproject_ENABLE_SANITIZER_ADDRESS)
   message(

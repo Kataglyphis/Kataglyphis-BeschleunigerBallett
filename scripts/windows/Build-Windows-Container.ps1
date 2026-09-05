@@ -1,6 +1,6 @@
 #requires -Version 7.0
 # Build the project inside the ContainerHub Windows developer image using
-# Stevedore's docker.exe (see ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md
+# Stevedore's docker.exe (see third_party/ContainerHub/docs/windows-builds.md
 # for why nerdctl is not an option on Windows).
 #
 # This is a thin project wrapper: the transport decision (tar pipe vs bind
@@ -96,13 +96,13 @@ $build = @{
 
   # Anchor the build-tree excludes to the repo root (./...): unanchored
   # patterns match at every path depth in bsdtar and would strip nested files
-  # like ExternalLib/Kataglyphis-ContainerHub/windows/build.ps1. The host-side
+  # like third_party/ContainerHub/windows/build.ps1. The host-side
   # cargo target tree is excluded too: the container builds its own Rust
   # artifacts under the build dirs, and a stale incremental cache streamed in
   # once wedged every later transfer ("Can't unlink already-existing object:
   # Permission denied", observed 2026-08-02).
   InboundExclude = @('.git', './logs', './build', './build-*', './build_*',
-    './ExternalLib/Kataglyphis-RustProjectTemplate/target')
+    './third_party/OxidANT/target')
 
   IncrementalDirs    = $buildDirs
   # Cargo's cxxbridge output nests deep enough to blow past the Windows path

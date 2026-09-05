@@ -7,7 +7,7 @@ Describe 'Resolve-BuildModule' {
   Context 'Resolve-BuildModulePath preference order' {
     It 'prefers the ContainerHub upstream copy for a module that lives there' {
       $resolved = Resolve-BuildModulePath -Name 'WindowsScripts.Shared'
-      $expectedRoot = Join-Path $script:repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
+      $expectedRoot = Join-Path $script:repoRoot 'third_party\ContainerHub\windows\scripts\modules'
       $resolved | Should Be (Join-Path $expectedRoot 'WindowsScripts.Shared.psm1')
     }
 
@@ -18,7 +18,7 @@ Describe 'Resolve-BuildModule' {
       # copies were then deleted -- and nothing else had to change, because the
       # preference order below picks up the upstream copy automatically. That
       # automatic pickup is the property this asserts.
-      $expectedRoot = Join-Path $script:repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
+      $expectedRoot = Join-Path $script:repoRoot 'third_party\ContainerHub\windows\scripts\modules'
       foreach ($moduleName in @('WindowsTesting.Common', 'WindowsClang.Common')) {
         Resolve-BuildModulePath -Name $moduleName | Should Be (Join-Path $expectedRoot "$moduleName.psm1")
       }
@@ -39,7 +39,7 @@ Describe 'Resolve-BuildModule' {
       }
 
       $threw | Should Be $true
-      $message | Should Match ([regex]::Escape('ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\NoSuchModule.psm1'))
+      $message | Should Match ([regex]::Escape('third_party\ContainerHub\windows\scripts\modules\NoSuchModule.psm1'))
       $message | Should Match ([regex]::Escape('scripts\windows\modules\NoSuchModule.psm1'))
     }
   }

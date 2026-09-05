@@ -2,7 +2,7 @@
 # run-ctest.sh - project wrapper around ContainerHub's generic ctest runner.
 # Everything reusable (arg parsing, git safe.directory, Vulkan env, the ctest
 # verbosity/-T test flag set and the --ctest-exclude plumbing) lives in
-# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/ctest-run.sh; only this
+# third_party/ContainerHub/linux/scripts/lib/ctest-run.sh; only this
 # project's defaults live here.
 set -euo pipefail
 
@@ -10,11 +10,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-CTEST_RUN_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/ctest-run.sh"
+CTEST_RUN_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/ctest-run.sh"
 if [[ ! -f "${CTEST_RUN_LIB}" ]]; then
   err "Shared ctest-run library not found at '${CTEST_RUN_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
-# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/ctest-run.sh
+# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/ctest-run.sh
 source "${CTEST_RUN_LIB}"
 
 CTEST_RUN_DEFAULT_BUILD_DIR="build"

@@ -19,7 +19,7 @@ _containerhub_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both are overridable from the environment. That matters in the container,
 # where the workspace is bind-mounted at a different path than on the host.
 KATAGLYPHIS_REPO_ROOT="${KATAGLYPHIS_REPO_ROOT:-$(cd "${_containerhub_lib_dir}/${KATAGLYPHIS_REPO_ROOT_RELATIVE}" && pwd)}"
-CONTAINERHUB_DIR="${CONTAINERHUB_DIR:-${KATAGLYPHIS_REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub}"
+CONTAINERHUB_DIR="${CONTAINERHUB_DIR:-${KATAGLYPHIS_REPO_ROOT}/third_party/ContainerHub}"
 export KATAGLYPHIS_REPO_ROOT CONTAINERHUB_DIR
 
 # Absolute path of a file inside the submodule, or a hard failure naming it.
@@ -33,7 +33,7 @@ containerhub_path() {
     if [ ! -e "$resolved" ]; then
         echo "Error: ContainerHub file not found: ${resolved}" >&2
         echo "       If the whole directory is missing, the submodule is not checked out:" >&2
-        echo "       git submodule update --init --recursive ExternalLib/Kataglyphis-ContainerHub" >&2
+        echo "       git submodule update --init --recursive third_party/ContainerHub" >&2
         echo "       If only this file is missing, it moved upstream — check ${CONTAINERHUB_DIR}/docs/INDEX.md" >&2
         return 1
     fi
@@ -61,7 +61,7 @@ containerhub_source() {
 #
 # WORKSPACE_ROOT is pinned here because upstream's detect_workspace derives it
 # from the *sourcing script's* location — which, for a delegated driver, resolves
-# inside ExternalLib/Kataglyphis-ContainerHub instead of the consuming repo, so
+# inside third_party/ContainerHub instead of the consuming repo, so
 # every tool would run against the submodule tree. detect_workspace honours a
 # pre-set value and still overrides to /workspace in the container, so CI is
 # unaffected. This is the single most common thing to break when a wrapper is

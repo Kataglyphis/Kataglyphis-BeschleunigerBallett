@@ -22,7 +22,7 @@ $repoRoot = (Resolve-Path (Join-Path $scriptRoot '..\..')).Path
 
 # Resolve module from ContainerHub or vendored fallback
 $modulePath = $null
-foreach ($c in @((Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsAgenticLoop.Common.psm1'),
+foreach ($c in @((Join-Path $repoRoot 'third_party\ContainerHub\windows\scripts\modules\WindowsAgenticLoop.Common.psm1'),
                  (Join-Path $scriptRoot 'modules\WindowsAgenticLoop.Common.psm1'))) {
     if (Test-Path $c) { $modulePath = (Resolve-Path $c).Path; break }
 }

@@ -207,7 +207,7 @@ if (-not $SkipRust -and -not $ValidationOnly) {
     $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
     Import-Module (Join-Path $PSScriptRoot 'Compare-Renderer.Common.psm1') -Force
     Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf
-    Push-Location (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate')
+    Push-Location (Join-Path $RepoRoot 'third_party\OxidANT')
     try {
         Write-Host '  Running headless_render example...'
         cargo run -p kataglyphis_webgpu_renderer --example headless_render --quiet -- $dinoGltf $rustPng $Width $Height 2>$null | Out-Null

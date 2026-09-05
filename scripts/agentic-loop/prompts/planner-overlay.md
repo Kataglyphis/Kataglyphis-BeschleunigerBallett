@@ -3,7 +3,7 @@
 The role, the critical rules, the refactor focus areas and the task-entry
 template come from ContainerHub's shared Planner prompt, which the loop prepends
 to this file automatically
-(`ExternalLib/Kataglyphis-ContainerHub/shared/agentic-loop/system-prompts/planner.md`).
+(`third_party/ContainerHub/shared/agentic-loop/system-prompts/planner.md`).
 Everything below is what is specific to **this** repo.
 
 This is a Vulkan graphics engine: C++23/C17, CMake presets, optional Rust WebGPU

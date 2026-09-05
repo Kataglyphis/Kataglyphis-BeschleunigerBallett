@@ -17,8 +17,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # GPU-less CI runner still exercises the CPU-only tests and skips the rest.
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/ExternalLib/Kataglyphis-RustProjectTemplate}"
-CARGO_TEST_SH="${REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_test.sh"
+RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
+CARGO_TEST_SH="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_test.sh"
 
 [[ -d "${RUST_PROJECT_DIR}" ]] || err "Rust project dir not found at ${RUST_PROJECT_DIR} (is the RustProjectTemplate submodule checked out?)"
 [[ -f "${CARGO_TEST_SH}" ]] || err "cargo_test.sh not found at ${CARGO_TEST_SH} (is the ContainerHub submodule checked out?)"

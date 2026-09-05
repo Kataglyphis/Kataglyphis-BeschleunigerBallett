@@ -13,7 +13,7 @@ Two engines are supported (select via `engine` in the config, `--engine` /
 | `opencode` | GLM 5.2 | DeepSeek v4 Flash | [OpenCode](https://opencode.ai) `opencode run` |
 
 The reusable loop logic lives in the
-[Kataglyphis-ContainerHub](../../ExternalLib/Kataglyphis-ContainerHub)
+[Kataglyphis-ContainerHub](../../third_party/ContainerHub)
 submodule (`linux/scripts/lib/agentic-loop.sh` and
 `windows/scripts/modules/WindowsAgenticLoop.Common.psm1`); the scripts here
 are thin project-specific wrappers.
@@ -72,7 +72,7 @@ flowchart TD
    their tests, and every `fullMatrixEveryNIterations` iterations ALL
    configs build in sequence instead of just one. Cycling order, env-var
    values, and entry semantics are documented once in
-   [`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
+   [`agentic-loop-build-matrix.md`](../../third_party/ContainerHub/docs/agentic-loop-build-matrix.md).
 
 5. **Periodic quality gates**: clang-tidy and cmake-format run every M
    tasks to catch drift early.
@@ -117,7 +117,7 @@ flowchart TD
 | --- | --- |
 | `scripts/agentic-loop/prompts/planner.md` | Engine-neutral planner SYSTEM prompt (claude engine, via `--append-system-prompt-file`; project-owned) |
 | `scripts/agentic-loop/prompts/executor.md` | Engine-neutral executor SYSTEM prompt (claude engine, via `--append-system-prompt-file`; project-owned) |
-| `ExternalLib/Kataglyphis-ContainerHub/shared/agentic-loop/prompts/{planner,refactor-planner,executor}.md` | Default per-phase TASK prompts — single source of truth for both the PowerShell module and the Bash library |
+| `third_party/ContainerHub/shared/agentic-loop/prompts/{planner,refactor-planner,executor}.md` | Default per-phase TASK prompts — single source of truth for both the PowerShell module and the Bash library |
 | `opencode.json` | OpenCode project config: agent definitions, model bindings, commands |
 | `.opencode/agents/planner.md` | Planner agent system prompt (opencode engine) |
 | `.opencode/agents/executor.md` | Executor agent system prompt (opencode engine) |
@@ -190,9 +190,9 @@ Its shape, abbreviated:
 ```
 
 Key-by-key semantics live in ContainerHub's
-[`windows-agentic-loop.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md)
+[`windows-agentic-loop.md`](../../third_party/ContainerHub/docs/windows-agentic-loop.md)
 (config table); `buildMatrix` entry fields and behaviour in
-[`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
+[`agentic-loop-build-matrix.md`](../../third_party/ContainerHub/docs/agentic-loop-build-matrix.md).
 Values this project sets deliberately (rather than inheriting defaults):
 
 - `buildEveryNTasks: 3`, `qualityEveryNTasks: 5`,
@@ -362,7 +362,7 @@ After every N completed tasks, a build is triggered, cycling through the
 `fullMatrixEveryNIterations` iterations a **full matrix sweep** runs ALL
 configs in sequence instead of just one. The cycling-order table and sweep
 semantics are in
-[`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
+[`agentic-loop-build-matrix.md`](../../third_party/ContainerHub/docs/agentic-loop-build-matrix.md).
 
 On Windows, builds go through the Stevedore container script
 (`Build-Windows-Container.ps1`). On Linux, through the native build script
@@ -375,7 +375,7 @@ command. Entries with `sanitizer: "asan"` / `"tsan"` get `ASAN_OPTIONS` /
 `TSAN_OPTIONS` set for the run and restored afterwards, so
 sanitizer-instrumented tests actually catch memory errors and data races;
 the exact env-var values are in
-[`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
+[`agentic-loop-build-matrix.md`](../../third_party/ContainerHub/docs/agentic-loop-build-matrix.md).
 
 ### 5. Quality Phase
 

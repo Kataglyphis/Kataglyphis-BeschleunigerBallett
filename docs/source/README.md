@@ -21,7 +21,7 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground fo
 | `docs/` | Engineering docs: roadmaps, audits, pipeline notes; see the Docs table in `AGENTS.md` for the full inventory |
 | `docs/source/` | Hand-written Sphinx pages |
 | `Documents/` | Generated PDF and other reference artifacts |
-| `ExternalLib/` | Third-party dependencies and submodules |
+| `third_party/` | Third-party dependencies and submodules |
 
 ## Supported Environments
 

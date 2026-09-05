@@ -116,16 +116,16 @@
     { "file": "tex_quad/tex_quad.slang", "entry": "fs_main", "stage": "fragment", "targets": ["wgsl"] }
   ],
   "wgslMap": [
-    { "src": "forward/forward.slang", "out": "forward.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "sky/sky.slang", "out": "sky.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "bloom/bloom.slang", "out": "bloom.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "ssao/ssao.slang", "out": "ssao.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "ibl/ibl.slang", "out": "ibl.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "gpu_cull/gpu_cull.slang", "out": "gpu_cull.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "tonemap/tonemap.slang", "out": "tonemap.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "depth_resolve/depth_resolve.slang", "out": "depth_resolve.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "occlusion_bbox/occlusion_bbox.slang", "out": "occlusion_bbox.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders" },
-    { "src": "tex_quad/tex_quad.slang", "out": "tex_quad.wgsl", "dst": "ExternalLib/Kataglyphis-RustProjectTemplate/crates/gui/src/shaders" }
+    { "src": "forward/forward.slang", "out": "forward.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "sky/sky.slang", "out": "sky.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "bloom/bloom.slang", "out": "bloom.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "ssao/ssao.slang", "out": "ssao.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "ibl/ibl.slang", "out": "ibl.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "gpu_cull/gpu_cull.slang", "out": "gpu_cull.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "tonemap/tonemap.slang", "out": "tonemap.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "depth_resolve/depth_resolve.slang", "out": "depth_resolve.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "occlusion_bbox/occlusion_bbox.slang", "out": "occlusion_bbox.wgsl", "dst": "third_party/OxidANT/crates/webgpu_renderer/src/shaders" },
+    { "src": "tex_quad/tex_quad.slang", "out": "tex_quad.wgsl", "dst": "third_party/OxidANT/crates/gui/src/shaders" }
   ],
   "depthTexturePatches": {
     "_comment": [

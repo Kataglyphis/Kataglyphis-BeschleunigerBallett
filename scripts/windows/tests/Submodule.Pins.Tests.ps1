@@ -7,7 +7,7 @@
 # asserting is restorable.
 #
 # Why the drift check exists at all: BACKLOG.md carried an item claiming "an
-# unidentified host process occasionally re-checks-out ExternalLib/FUZZTEST to
+# unidentified host process occasionally re-checks-out third_party/FUZZTEST to
 # the latest date tag". Investigated 2026-07-20 - the submodule's reflog held 14
 # entries, all between 2026-07-15 and 2026-07-18, clustered into three working
 # sessions, with nothing since. No hook, no CMake FetchContent, no script and no
@@ -50,7 +50,7 @@ Describe 'Submodule pins' {
         # by a fresh clone, which turns local-only drift into a build that only
         # works on this machine. The shallow-clone escalation this needs lives
         # in the upstream module.
-        $result = Test-SubmoduleCommitReachable -SubmodulePath (Join-Path $repoRoot 'ExternalLib\FUZZTEST')
+        $result = Test-SubmoduleCommitReachable -SubmodulePath (Join-Path $repoRoot 'third_party\FUZZTEST')
 
         if (-not $result.Reachable) {
             Write-Host "FUZZTEST HEAD $($result.Head) is on no remote branch - a fresh clone cannot restore this pin."

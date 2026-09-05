@@ -14,7 +14,7 @@ from pathlib import Path
 # extension list and theme options were never applied. Fixed 2026-08-11.
 CONTAINER_HUB_CONF = (
     Path(__file__).parent.parent.parent
-    / "ExternalLib/Kataglyphis-ContainerHub/external/Kataglyphis-DocumANTation"
+    / "third_party/ContainerHub/external/Kataglyphis-DocumANTation"
     / "docs-tooling/source_templates/sphinx-book/conf_base.py"
 )
 if CONTAINER_HUB_CONF.exists():
@@ -103,7 +103,7 @@ extensions.extend(
 
 # -- Extra static payloads ------------------------------------------------------
 # Copied verbatim into the site root: the WebGPU/glTF WASM demo (built from
-# ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer; see
+# third_party/OxidANT/crates/webgpu_renderer; see
 # docs/webgpu-gltf-rust-plan.md for the rebuild commands).
 html_extra_path = ["_webgpu_demo"]
 

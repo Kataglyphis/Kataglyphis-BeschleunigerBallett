@@ -1,48 +1,48 @@
-[submodule "ExternalLib/TINY_OBJ_LOADER"]
-	path = ExternalLib/TINY_OBJ_LOADER
+[submodule "third_party/TINY_OBJ_LOADER"]
+	path = third_party/TINY_OBJ_LOADER
 	url = https://github.com/tinyobjloader/tinyobjloader
-[submodule "ExternalLib/GLM"]
-	path = ExternalLib/GLM
+[submodule "third_party/GLM"]
+	path = third_party/GLM
 	url = https://github.com/g-truc/glm
-[submodule "ExternalLib/IMGUI"]
-	path = ExternalLib/IMGUI
+[submodule "third_party/IMGUI"]
+	path = third_party/IMGUI
 	url = https://github.com/ocornut/imgui
-[submodule "ExternalLib/STB"]
-	path = ExternalLib/STB
+[submodule "third_party/STB"]
+	path = third_party/STB
 	url = https://github.com/nothings/stb
-[submodule "ExternalLib/GLFW"]
-	path = ExternalLib/GLFW
+[submodule "third_party/GLFW"]
+	path = third_party/GLFW
 	url = https://github.com/glfw/glfw
-[submodule "ExternalLib/VULKAN_MEMORY_ALLOCATOR"]
-	path = ExternalLib/VULKAN_MEMORY_ALLOCATOR
+[submodule "third_party/VULKAN_MEMORY_ALLOCATOR"]
+	path = third_party/VULKAN_MEMORY_ALLOCATOR
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
-[submodule "ExternalLib/NLOHMANN_JSON"]
-	path = ExternalLib/NLOHMANN_JSON
+[submodule "third_party/NLOHMANN_JSON"]
+	path = third_party/NLOHMANN_JSON
 	url = https://github.com/nlohmann/json
-[submodule "ExternalLib/GOOGLE_BENCHMARK"]
-	path = ExternalLib/GOOGLE_BENCHMARK
+[submodule "third_party/GOOGLE_BENCHMARK"]
+	path = third_party/GOOGLE_BENCHMARK
 	url = https://github.com/google/benchmark.git
-[submodule "ExternalLib/SPDLOG"]
-	path = ExternalLib/SPDLOG
+[submodule "third_party/SPDLOG"]
+	path = third_party/SPDLOG
 	url = https://github.com/gabime/spdlog
-[submodule "ExternalLib/FUZZTEST"]
-	path = ExternalLib/FUZZTEST
+[submodule "third_party/FUZZTEST"]
+	path = third_party/FUZZTEST
 	url = https://github.com/google/fuzztest
-[submodule "ExternalLib/KOMPUTE"]
-	path = ExternalLib/KOMPUTE
+[submodule "third_party/KOMPUTE"]
+	path = third_party/KOMPUTE
 	url = https://github.com/KomputeProject/kompute.git
-[submodule "ExternalLib/Kataglyphis-ContainerHub"]
-	path = ExternalLib/Kataglyphis-ContainerHub
-	url = git@github.com:Kataglyphis/Kataglyphis-ContainerHub.git
+[submodule "third_party/ContainerHub"]
+	path = third_party/ContainerHub
+	url = git@github.com:Kataglyphis/ContainerHub.git
 	branch = main
-[submodule "ExternalLib/Kataglyphis-RustProjectTemplate"]
-	path = ExternalLib/Kataglyphis-RustProjectTemplate
-	url = git@github.com:Kataglyphis/Kataglyphis-RustProjectTemplate.git
+[submodule "third_party/OxidANT"]
+	path = third_party/OxidANT
+	url = git@github.com:Kataglyphis/OxidANT.git
 
 	branch = develop
-[submodule "ExternalLib/tomlplusplus"]
-	path = ExternalLib/tomlplusplus
+[submodule "third_party/tomlplusplus"]
+	path = third_party/tomlplusplus
 	url = https://github.com/marzer/tomlplusplus.git
-[submodule "ExternalLib/cgltf"]
-	path = ExternalLib/cgltf
+[submodule "third_party/cgltf"]
+	path = third_party/cgltf
 	url = https://github.com/jkuhlmann/cgltf.git

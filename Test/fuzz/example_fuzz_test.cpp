@@ -3,7 +3,7 @@
 // in fuzzing_bit_gen.h without including them, and abseil LTS 20260526 no
 // longer provides them transitively through bit_gen_ref.h. The fuzztest_*
 // library targets get the same fix as a force-include flag
-// (ExternalLib/CMakeLists.txt); OUR targets cannot, because a force-include
+// (third_party/CMakeLists.txt); OUR targets cannot, because a force-include
 // flag flows into the synthesized C++20 module BMI compiles of imported
 // engine modules, which have no abseil include path. An ordinary include in
 // the source is invisible to module synthesis.
