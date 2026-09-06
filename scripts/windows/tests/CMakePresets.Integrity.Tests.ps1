@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Guards CMakePresets.json against dangling references.
 #
 # Removing a configure preset that a build/test/package preset still points at

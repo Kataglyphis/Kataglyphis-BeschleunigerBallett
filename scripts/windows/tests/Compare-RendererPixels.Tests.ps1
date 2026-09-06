@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Pester coverage for scripts/Compare-RendererPixels.ps1's structural-metric
 # gate - the script previously threw an ObjectDisposedException on its own
 # success path (Get-LuminanceMetrics was called with $bmp.Width/$bmp.Height

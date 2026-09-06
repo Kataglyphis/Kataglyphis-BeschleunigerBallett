@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Pester coverage for scripts/Compare-RendererTimings.ps1's expected-pass
 # derivation and gate logic - the script previously hard-coded a Rust pass
 # named 'Post' that TimedPass has never had (a guaranteed FAIL every run)

@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Guards against generated artifacts sneaking into this repo's git index.
 #
 # The check is generic and was upstreamed on 2026-08-07 to ContainerHub's

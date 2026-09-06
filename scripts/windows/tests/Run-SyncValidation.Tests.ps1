@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Pester coverage for scripts/windows/Run-SyncValidation.ps1's pass/fail
 # contract. Invokes the actual script as a child process against a canned
 # log fixture via -LogFixturePath, so it exercises the real hazard-scanning

@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 Describe 'Resolve-BuildModule' {
   BeforeAll {
     . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')

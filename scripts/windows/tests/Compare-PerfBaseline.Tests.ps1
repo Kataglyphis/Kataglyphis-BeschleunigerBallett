@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Pester coverage for scripts/Compare-PerfBaseline.ps1's pass/fail contract -
 # the one script under scripts/ with a pass/fail contract and no test, on a
 # machine where nothing else can catch a regression in it. Invokes the real

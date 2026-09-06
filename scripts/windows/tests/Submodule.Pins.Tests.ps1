@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Guards this repo's submodule pins against silent drift.
 #
 # The checks themselves are generic and were upstreamed on 2026-08-07 to

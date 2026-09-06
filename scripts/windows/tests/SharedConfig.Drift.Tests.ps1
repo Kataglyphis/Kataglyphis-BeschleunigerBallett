@@ -1,3 +1,5 @@
+#requires -Version 7.0
+
 # Guards this repo's copies of the shared tool configs against drift.
 #
 # .clang-format, .clang-tidy, gcovr.cfg and .pre-commit-config.yaml are owned by
