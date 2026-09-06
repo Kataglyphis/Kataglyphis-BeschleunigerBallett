@@ -5,16 +5,17 @@
 
 from pathlib import Path
 
-# Import shared configuration from ContainerHub.
+# Import the shared Sphinx baseline from ContainerHub's vendored DocumANTation.
 #
-# The shared docs tooling moved out of ContainerHub into DocumANTation,
-# which ContainerHub vendors under external/. This path still pointed at the old
-# ContainerHub location, so .exists() had been silently False ever since and the
-# else-branch fallback below was what actually configured these docs — the shared
-# extension list and theme options were never applied. Fixed 2026-08-11.
+# The shared docs tooling lives in DocumANTation, which ContainerHub declares as
+# a submodule at third_party/DocumANTation (see third_party/ContainerHub/
+# .gitmodules) — not under external/, which holds only an untracked leftover of
+# the pre-move layout. Get the path wrong and .exists() is silently False: the
+# else-branch fallback below configures these docs instead, and the shared
+# extension list and theme options are never applied.
 CONTAINER_HUB_CONF = (
     Path(__file__).parent.parent.parent
-    / "third_party/ContainerHub/external/DocumANTation"
+    / "third_party/ContainerHub/third_party/DocumANTation"
     / "docs-tooling/source_templates/sphinx-book/conf_base.py"
 )
 if CONTAINER_HUB_CONF.exists():

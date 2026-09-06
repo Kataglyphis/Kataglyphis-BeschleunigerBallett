@@ -282,7 +282,7 @@ wrapper only supplies this project's payload.
 | `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
 | `scripts/windows/Invoke-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
-| `scripts/agentic-loop/Run-AgenticLoop.{ps1,sh}` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
+| `scripts/agentic-loop/Invoke-AgenticLoop.ps1` / `scripts/agentic-loop/Run-AgenticLoop.sh` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
 | `scripts/Test-AllConfigs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
 | `scripts/windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
 | `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
@@ -573,6 +573,40 @@ got no test signal until the submodule was pushed separately.
   The chronological log of what changed and why:
   [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md).
   Do not restate either here — those documents are the source of truth.
+
+## Code Conventions (PowerShell scripts)
+
+The rules are upstream's, recorded for every consumer in
+[`adopting-in-a-new-project.md`](third_party/ContainerHub/docs/adopting-in-a-new-project.md).
+They are restated here because the next new script gets written in *this* repo,
+and the exceptions below are this repo's.
+
+- **Every `.ps1` and `.psm1` declares `#requires -Version 7.0`.** All 24 tracked
+  files outside `third_party/` and `archive/` carry it. It is what makes Windows
+  PowerShell 5.1 refuse the file up front instead of failing somewhere deep in a
+  pwsh-7 construct: `Build-Windows.ps1` and everything it reaches assume pwsh.
+- **Executable scripts are PascalCase `Verb-Noun`, with a verb `Get-Verb`
+  approves** — `Build-Windows.ps1`, `Invoke-ClangClRelease.ps1`,
+  `Resolve-BuildModule.ps1`, `Test-AllConfigs.ps1`, `Compare-RendererPixels.ps1`.
+  Spell the case exactly when you reference one: Windows ignores it, but git
+  pathspecs, ripgrep globs and the Linux lane do not, so a lowercase spelling in
+  a doc or workflow matches nothing.
+- **Two shapes deliberately break the plain `Verb-Noun` mould, and are not bugs.** Pester suites are
+  `<Subject>.Tests.ps1` — mirroring the script under test where there is one
+  (`Resolve-BuildModule.Tests.ps1`, `Invoke-SyncValidation.Tests.ps1`), or naming
+  the repo property under test where there is not (`Submodule.Pins.Tests.ps1`,
+  `Repo.GeneratedArtifacts.Tests.ps1`, `SharedConfig.Drift.Tests.ps1`,
+  `CMakePresets.Integrity.Tests.ps1`). Modules take the dotted noun form
+  `<Area>.Common.psm1` — `scripts/Compare-Renderer.Common.psm1`, matching
+  ContainerHub's `Windows<Area>.Common.psm1` — and export explicitly via
+  `Export-ModuleMember`.
+- **Bash is not renamed to match**: `Get-Verb` is a PowerShell notion, so the
+  shell scripts stay kebab-case (`scripts/linux/run-release.sh`,
+  `build-coverage-llvm.sh`). The lone exception is
+  `scripts/agentic-loop/Run-AgenticLoop.sh`, spelled to sit beside its
+  PowerShell twin `Invoke-AgenticLoop.ps1`.
+- `archive/setup-dependencies.ps1` predates all of this and keeps both its old
+  name and its missing directive. Archived files are not renamed.
 
 ## Agentic Loop
 
