@@ -181,7 +181,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
 
-    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/path_tracing/";
 

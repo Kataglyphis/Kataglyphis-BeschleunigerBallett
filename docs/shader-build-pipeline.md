@@ -7,7 +7,7 @@ restating it.
 
 Shaders are written in [Slang](https://shader-slang.com/) under
 `Resources/ShadersSlang/`. The build scripts
-(`scripts/windows/compile-slang-shaders.ps1`,
+(`scripts/windows/Build-SlangShaders.ps1`,
 `scripts/linux/compile-slang-shaders.sh`) compile each `.slang` file to:
 
 - **SPIR-V** (`.spv`) for the C++ Vulkan renderer → `Resources/ShadersSlang/build/spirv/`
@@ -129,7 +129,7 @@ WGSL regeneration on Linux.
 Edit a `.slang` file, then recompile locally:
 
 ```pwsh
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\compile-slang-shaders.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\Build-SlangShaders.ps1
 ```
 
 Or on Linux:

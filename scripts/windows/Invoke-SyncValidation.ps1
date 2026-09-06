@@ -43,7 +43,7 @@ Where the tee'd run log is written, one timestamped file per run.
 Test-only escape hatch: skip running the executable entirely and just
 evaluate an existing log file for SYNC-HAZARD lines, then exit accordingly.
 Exists so the exit-code contract (non-zero iff a hazard is present) can be
-Pester-tested without a GPU - see scripts/windows/tests/Run-SyncValidation.Tests.ps1.
+Pester-tested without a GPU - see scripts/windows/tests/Invoke-SyncValidation.Tests.ps1.
 #>
 
 param(

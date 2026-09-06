@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compile Slang shaders to SPIR-V (Vulkan/C++) and WGSL (Rust/WebGPU).
-# Linux equivalent of scripts/windows/compile-slang-shaders.ps1.
+# Linux equivalent of scripts/windows/Build-SlangShaders.ps1.
 #
 # Everything generic - resolving slangc, expanding the -I include paths, reading
 # the manifest, compiling each (file, entry, target) with staleness checking,

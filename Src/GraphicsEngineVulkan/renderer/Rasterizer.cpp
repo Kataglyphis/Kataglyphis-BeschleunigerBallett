@@ -267,7 +267,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
-    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md) — a relative path works from there.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 

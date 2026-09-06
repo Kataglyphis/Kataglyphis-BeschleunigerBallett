@@ -82,7 +82,7 @@ void Clouds::createDescriptorSets()
 
 void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 {
-    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
 
     // cloud specific set AND sharedRenderDescriptorSet

@@ -3304,7 +3304,7 @@ TEST(GoldenRender, SwapchainRecreationKeepsRendering)
 // does not guarantee that ordering on its own (MAX_FRAME_DRAWS == 3,
 // common/Globals.hpp). A stale ordering here would show up as a driver hang
 // or a validate_sync SYNC-HAZARD, not a wrong pixel - see
-// docs/gpu-golden-testing.md and run Run-SyncValidation.ps1 with clouds
+// docs/gpu-golden-testing.md and run Invoke-SyncValidation.ps1 with clouds
 // enabled to check for hazards; this test exists to give that barrier a
 // frames-in-flight-crossing exercise in a mode
 // GuiInputSweepNeverCrashesOrLosesTheDevice cannot reach today, because its

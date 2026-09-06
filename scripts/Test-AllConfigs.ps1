@@ -13,7 +13,7 @@
 # configurations, which preset, which image, which build directory.
 #
 # Usage:
-#   pwsh -ExecutionPolicy Bypass -File .\scripts\test-all-configs.ps1
+#   pwsh -ExecutionPolicy Bypass -File .\scripts\Test-AllConfigs.ps1
 #
 # Returns the aggregate exit code (non-zero if ANY build failed).
 

@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/windows/Run-SyncValidation.ps1's pass/fail
+# Pester coverage for scripts/windows/Invoke-SyncValidation.ps1's pass/fail
 # contract. Invokes the actual script as a child process against a canned
 # log fixture via -LogFixturePath, so it exercises the real hazard-scanning
 # and exit-code logic without needing a GPU or a built commitTestSuite.exe -
@@ -10,10 +10,10 @@
 # NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
 # assertion syntax (see Submodule.Pins.Tests.ps1).
 
-Describe 'Run-SyncValidation' {
+Describe 'Invoke-SyncValidation' {
 
   BeforeAll {
-    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\Run-SyncValidation.ps1')).Path
+    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\Invoke-SyncValidation.ps1')).Path
     $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('sync-validation-test-' + (Get-Random))) -Force
     $script:tmpDir = $tmp.FullName
   }

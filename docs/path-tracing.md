@@ -147,7 +147,7 @@ ceiling (186 after tonemap) and hid most of every light response.
 
 Editing the kernel no longer needs a C++ rebuild: the Slang compile script
 regenerates the `.spv` and the engine loads it at startup.
-`scripts/windows/compile-slang-shaders.ps1` is the build/CI path.
+`scripts/windows/Build-SlangShaders.ps1` is the build/CI path.
 
 ## Open work (BACKLOG, "PT survey" section)
 

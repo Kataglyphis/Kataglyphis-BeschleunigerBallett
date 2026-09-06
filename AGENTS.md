@@ -12,10 +12,10 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | If you are doing this | Start with |
 | --- | --- |
 | Building anything on Windows | `Build-Windows-Container.ps1` — see [Fast path](#fast-path-windows-build-run-verify). Never invoke CMake/Ninja/MSBuild on the host. |
-| Running the engine / seeing pixels | `scripts/windows/run-clangcl-*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
-| Changing a shader | Edit `Resources/ShadersSlang/*.slang` + `shader-manifest.json`, run `compile-slang-shaders.ps1`, run one golden. No C++ rebuild. [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) |
+| Running the engine / seeing pixels | `scripts/windows/Invoke-ClangCl*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
+| Changing a shader | Edit `Resources/ShadersSlang/*.slang` + `shader-manifest.json`, run `Build-SlangShaders.ps1`, run one golden. No C++ rebuild. [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) |
 | Adding or changing a test | `Test/commit/VulkanEngine/` (CPU + GPU golden), `Test/fuzz/`, `Test/perf/`. Always in scope — see [Testing](#testing) |
-| Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Run-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
+| Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Invoke-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
 | Refactoring the renderer / device path | The per-unit verification loop in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md); log the change in [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) |
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ContainerHub](#rule-reusable-work-belongs-in-containerhub) |
@@ -67,9 +67,9 @@ this repo's presets (see below).
    directory must be the **repo root** (`Resources/` is loaded via cwd-relative
    paths):
    ```pwsh
-   .\scripts\windows\run-clangcl-debug.ps1        # ctest + fuzz exes + launch
-   .\scripts\windows\run-clangcl-profile.ps1
-   .\scripts\windows\run-clangcl-release.ps1
+   .\scripts\windows\Invoke-ClangClDebug.ps1        # ctest + fuzz exes + launch
+   .\scripts\windows\Invoke-ClangClProfile.ps1
+   .\scripts\windows\Invoke-ClangClRelease.ps1
    ```
    Debug builds need the Vulkan validation layers installed on the host; see
    [Running on the Host](#running-on-the-host-windows). Profile/Release do not.
@@ -275,19 +275,19 @@ wrapper only supplies this project's payload.
 | --- | --- |
 | `scripts/windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
 | `scripts/linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
-| `scripts/windows/run-clangcl-{profile,release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
+| `scripts/windows/Invoke-ClangCl{Profile,Release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
 | `scripts/linux/run-{debug,profile,release}.sh` | `linux/scripts/lib/app-runner.sh` (the Bash twin of the above) |
 | `scripts/linux/run-static-analysis-format.sh` | `linux/scripts/lib/code-quality.sh` |
 | `scripts/linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
 | `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
-| `scripts/windows/Run-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
+| `scripts/windows/Invoke-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
 | `scripts/agentic-loop/Run-AgenticLoop.{ps1,sh}` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
-| `scripts/test-all-configs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
+| `scripts/Test-AllConfigs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
 | `scripts/windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
 | `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
 
-`run-clangcl-debug.ps1` is the exception: it keeps its own flow because it
+`Invoke-ClangClDebug.ps1` is the exception: it keeps its own flow because it
 orchestrates CTest and the fuzz executables before launching — but it still
 takes `Resolve-AppExecutablePath` from `WindowsAppRunner.Common`.
 
@@ -400,7 +400,7 @@ coupling above — that one is on you.
 ## Running on the Host (Windows)
 
 Containers cannot present a swapchain — run the built binaries on the bare host,
-from the **repo root** as working directory (`scripts/windows/run-clangcl-*.ps1`
+from the **repo root** as working directory (`scripts/windows/Invoke-ClangCl*.ps1`
 wrap this). Verified 2026-07-17 on the AMD RX 9070 XT: all four clang-cl builds
 render (~32 FPS ImGui overlay).
 
@@ -408,7 +408,7 @@ render (~32 FPS ImGui overlay).
   them the app dies at startup with exit code `-1073740791` (`0xC0000409`,
   vulkan.hpp assert after "Validation layers requested, but not available!").
   Install the Vulkan SDK (`winget install VulkanSDK`; 1.4.350.0 is what
-  `Run-SyncValidation.ps1` defaults to), or point `VK_LAYER_PATH` at a directory
+  `Invoke-SyncValidation.ps1` defaults to), or point `VK_LAYER_PATH` at a directory
   containing `VkLayer_khronos_validation.{dll,json}` (they can be extracted from
   the ContainerHub image under
   `C:\Users\ContainerAdministrator\scoop\apps\vulkan\current\Bin`).
@@ -436,7 +436,7 @@ render (~32 FPS ImGui overlay).
   upstream goes upstream with it (2026-08-07); the six that remain cover the two
   vendored modules, the module-resolution bootstrap, the preset/artifact guards
   and the renderer comparison tools.
-- `scripts/test-all-configs.ps1` is a local one-shot gate: the three standard
+- `scripts/Test-AllConfigs.ps1` is a local one-shot gate: the three standard
   Windows container builds plus the Linux TSan build (`-SkipLinux` drops the
   latter). Not wired into CI.
 - ContainerHub's own suites (the modules this repo imports) run via
@@ -456,7 +456,7 @@ render (~32 FPS ImGui overlay).
   pixel oracle can see (it found 10 real WRITE-AFTER-WRITE hazards in July
   2026). Run it after touching render passes, barriers, or frames-in-flight:
   ```pwsh
-  pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1
+  pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1
   ```
   It exits non-zero iff the run log contains `SYNC-HAZARD`. Deliberately not in
   CI (needs a GPU) — details in
@@ -592,7 +592,7 @@ Flash executor, agents in `.opencode/agents/`).
 
 **Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
-thin consumers: run `scripts/agentic-loop/Run-AgenticLoop.ps1` (Windows,
+thin consumers: run `scripts/agentic-loop/Invoke-AgenticLoop.ps1` (Windows,
 requires PowerShell 7+) or `scripts/agentic-loop/Run-AgenticLoop.sh` (Linux,
 requires `jq`). The default planner/executor **task** prompts are single-sourced
 in ContainerHub at `shared/agentic-loop/prompts/*.md` — both the PowerShell

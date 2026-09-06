@@ -111,7 +111,7 @@ entry for the reasoning rather than restating it here.)
    resolution it superseded are gone entirely with the Slang migration (see
    `docs/shader-sharing.md`) — there is no runtime compile path left to skip.
    Shaders are Slang sources compiled ahead of time to SPIR-V/WGSL by
-   `compile-slang-shaders.ps1`/`.sh`, and the C++ engine loads the committed
+   `Build-SlangShaders.ps1`/`.sh`, and the C++ engine loads the committed
    `.spv` via plain `File` I/O. What remains is only a micro-optimisation:
    pipelines still read the `.spv` and create shader modules at startup
    rather than consuming a fully cached pipeline binary, which the

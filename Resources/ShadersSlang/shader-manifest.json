@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Single source of truth for the Slang shader build, consumed by BOTH",
-    "scripts/windows/compile-slang-shaders.ps1 and scripts/linux/compile-slang-shaders.sh.",
+    "scripts/windows/Build-SlangShaders.ps1 and scripts/linux/compile-slang-shaders.sh.",
     "Keys starting with '_' are documentation only and ignored by the scripts.",
     "",
     "manifest: one row per (entry point, target). Add rows as shaders migrate.",

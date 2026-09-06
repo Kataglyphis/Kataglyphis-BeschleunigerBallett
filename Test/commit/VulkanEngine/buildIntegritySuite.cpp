@@ -57,7 +57,7 @@ using Kataglyphis::TestSupport::repoRoot;
 using Kataglyphis::TestSupport::slangRoot;
 using Kataglyphis::TestSupport::spirvRoot;
 
-// compile-slang-shaders.ps1 names each compiled artifact
+// Build-SlangShaders.ps1 names each compiled artifact
 // "<source-stem>.<entry-point>.<ext>", where <source-stem> is the .slang
 // filename with only the ".slang" extension removed - it may itself contain
 // a dot, e.g. "raytrace.rchit" for raytracing/raytrace.rchit.slang - and
@@ -152,7 +152,7 @@ bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::f
 }
 
 // Resources/ShadersSlang/shader-manifest.json is the SINGLE source of truth
-// for the Slang shader build: both scripts/windows/compile-slang-shaders.ps1
+// for the Slang shader build: both scripts/windows/Build-SlangShaders.ps1
 // and scripts/linux/compile-slang-shaders.sh consume it. It replaced the two
 // per-script hand-maintained copies of the manifest/WGSL-map/patch tables
 // that this suite used to cross-check against each other - with one data
@@ -295,7 +295,7 @@ const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_ro
 
 // A .slang file is only ever compiled on its own if slangc can find an entry
 // point in it. Files that exist purely to be `import`ed (e.g.
-// raytracing/rt_types.slang) never appear in compile-slang-shaders.ps1's
+// raytracing/rt_types.slang) never appear in Build-SlangShaders.ps1's
 // manifest and must not be expected to have a matching .spv.
 bool has_entry_point(const fs::path &slang_source)
 {
@@ -812,7 +812,7 @@ std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::pa
     return std::vector<std::string>{};
 }
 
-// Parses the fuzz-executable names out of run-clangcl-debug.ps1's local
+// Parses the fuzz-executable names out of Invoke-ClangClDebug.ps1's local
 // fuzz-run loop: a PowerShell `foreach ($fuzzExecutable in @('a.exe', ...))`
 // loop. Anchored the same way as parse_ci_fuzz_targets, then strips the
 // trailing ".exe" so the names compare directly against
@@ -1291,7 +1291,7 @@ std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
 
 }// namespace
 
-// Both the build-time compiler (scripts/windows/compile-slang-shaders.ps1) and
+// Both the build-time compiler (scripts/windows/Build-SlangShaders.ps1) and
 // the runtime fallback used to reuse a .spv whenever it merely EXISTED, with
 // no timestamp check. Every shader edit after the first build was then
 // silently ignored and the GPU executed stale SPIR-V - a fragment shader
@@ -1334,7 +1334,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
     EXPECT_TRUE(unmapped.empty())
       << unmapped.size()
       << " compiled .spv could not be mapped back to a .slang source under Resources/ShadersSlang "
-         "(naming contract in compile-slang-shaders.ps1 broken, or a source was deleted after compiling): "
+         "(naming contract in Build-SlangShaders.ps1 broken, or a source was deleted after compiling): "
       << joinViolations(unmapped);
 
     EXPECT_TRUE(stale.empty()) << "SPIR-V older than its source - the GPU would run stale shaders. "
@@ -1612,7 +1612,7 @@ TEST(BuildIntegrity, GlmProducesVulkanDepthRange)
 
 // EVERY Slang source with an entry point, in a subdirectory the C++ engine
 // consumes, must produce SPIR-V - not just the ones a pipeline currently
-// loads. compile-slang-shaders.ps1 fails the whole script on a slangc error
+// loads. Build-SlangShaders.ps1 fails the whole script on a slangc error
 // (unlike the old glslc-based compile-shaders.ps1, which only warned), but a
 // source that was never added to the manifest at all would otherwise go
 // unnoticed until pipeline creation.
@@ -1647,7 +1647,7 @@ TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
 
     EXPECT_TRUE(missing.empty()) << missing.size()
                                  << " shader source(s) have no SPIR-V, which means slangc was never run for "
-                                    "them (missing from compile-slang-shaders.ps1's manifest?) or failed: "
+                                    "them (missing from Build-SlangShaders.ps1's manifest?) or failed: "
                                  << joinViolations(missing);
 }
 
@@ -1911,7 +1911,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 // fuzzer could sit unexercised for weeks between opt-in runs, and nothing
 // noticed when a new target was added to neither lane. This gates every
 // target declared in Test/fuzz/CMakeLists.txt against both workflow files
-// AND the local host runner (run-clangcl-debug.ps1), which used to hard-code
+// AND the local host runner (Invoke-ClangClDebug.ps1), which used to hard-code
 // only the two FuzzTest smoke targets and silently skip the five with real
 // engine-surface coverage.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
@@ -1928,7 +1928,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 
     const fs::path linux_workflow_path = repo_root / ".github" / "workflows" / "Linux.yml";
     const fs::path windows_workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
-    const fs::path local_runner_path = repo_root / "scripts" / "windows" / "run-clangcl-debug.ps1";
+    const fs::path local_runner_path = repo_root / "scripts" / "windows" / "Invoke-ClangClDebug.ps1";
 
     const auto linux_targets_opt = parse_linux_ci_fuzz_targets(linux_workflow_path);
     if (!linux_targets_opt.has_value()) {
@@ -1963,7 +1963,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     struct NotRunInCi
     {
         std::string target;
-        std::string lane;// "Linux.yml", "Windows.yml", or "run-clangcl-debug.ps1"
+        std::string lane;// "Linux.yml", "Windows.yml", or "Invoke-ClangClDebug.ps1"
         std::string reason;
     };
     const std::vector<NotRunInCi> kNotRunInCi;
@@ -1981,7 +1981,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     };
     check_lane("Linux.yml", linux_set);
     check_lane("Windows.yml", windows_set);
-    check_lane("run-clangcl-debug.ps1", local_set);
+    check_lane("Invoke-ClangClDebug.ps1", local_set);
 
     EXPECT_TRUE(missing.empty())
       << missing.size()
@@ -1999,15 +1999,15 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     }
     EXPECT_TRUE(dead_local_entries.empty())
       << dead_local_entries.size()
-      << " entry/entries in run-clangcl-debug.ps1's local fuzz-run foreach array do not correspond to any "
+      << " entry/entries in Invoke-ClangClDebug.ps1's local fuzz-run foreach array do not correspond to any "
          "target declared in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
       << joinViolations(dead_local_entries);
 }
 
 // A source-shape gate, not a behavioural one: it does not exercise a runner
 // end-to-end (that would need a stub executable and a fake build tree), only
-// that each run-clangcl-*.ps1 helper contains a top-level `exit` statement
-// whose argument is a variable. run-clangcl-debug.ps1 used to launch the app
+// that each Invoke-ClangCl*.ps1 helper contains a top-level `exit` statement
+// whose argument is a variable. Invoke-ClangClDebug.ps1 used to launch the app
 // without ever propagating its exit code - the launch happened inside an
 // Invoke-WithAsanOptions scriptblock, and a non-zero result was downgraded to
 // a warning that never escaped - so a device-lost or fatal-submit run read as
@@ -2024,12 +2024,12 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
     for (const auto &entry : fs::directory_iterator(scripts_dir)) {
         if (!entry.is_regular_file()) { continue; }
         const fs::path &candidate = entry.path();
-        if (candidate.extension() == ".ps1" && candidate.filename().string().rfind("run-clangcl-", 0) == 0) {
+        if (candidate.extension() == ".ps1" && candidate.filename().string().rfind("Invoke-ClangCl", 0) == 0) {
             runner_scripts.push_back(candidate);
         }
     }
     ASSERT_FALSE(runner_scripts.empty())
-      << "found zero run-clangcl-*.ps1 helpers under " << scripts_dir.string()
+      << "found zero Invoke-ClangCl*.ps1 helpers under " << scripts_dir.string()
       << " - the naming convention may have changed";
 
     static const std::regex kExitVariableLine(R"(^\s*exit\s+\$[A-Za-z_][A-Za-z0-9_:]*\s*$)");
@@ -2054,7 +2054,7 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
 
     EXPECT_TRUE(missing_exit.empty())
       << missing_exit.size()
-      << " run-clangcl-*.ps1 helper(s) have no top-level 'exit $<variable>' line, so a failing launch inside "
+      << " Invoke-ClangCl*.ps1 helper(s) have no top-level 'exit $<variable>' line, so a failing launch inside "
          "them can silently report success to the caller: "
       << joinViolations(missing_exit);
 }
@@ -2117,7 +2117,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 // SlangWgslPatchTablesAgree and SlangCompileManifestsAgree lived here until
 // 2026-08-02. Both existed only to pin two hand-maintained copies of the same
 // data against each other - the manifest and the depth-texture patch table,
-// duplicated across compile-slang-shaders.ps1 and .sh. Both copies are gone:
+// duplicated across Build-SlangShaders.ps1 and .sh. Both copies are gone:
 // Resources/ShadersSlang/shader-manifest.json is now the single source both
 // scripts read, so there is no second table left to disagree with. The
 // remaining tests below verify the FILESYSTEM against that manifest, which is
@@ -2194,7 +2194,7 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
     EXPECT_TRUE(stale.empty()) << stale.size()
                                << " checked-in Rust-crate WGSL file(s) are older than the Slang source (or a "
                                   "shared common/ import) that generates them (regenerate via "
-                                  "compile-slang-shaders.ps1/.sh): "
+                                  "Build-SlangShaders.ps1/.sh): "
                                << joinViolations(stale);
 }
 
@@ -2240,7 +2240,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
       << hand_edits.size()
       << " line(s) with '//' found in checked-in generated WGSL - generated WGSL must not be hand-edited - put "
          "the change in the .slang source, or in the post-emit patch table in "
-         "compile-slang-shaders.ps1/.sh: "
+         "Build-SlangShaders.ps1/.sh: "
       << joinViolations(hand_edits);
 }
 
@@ -3940,7 +3940,7 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
       << kMinGeometryIndexOpcodeCount
       << " times (one per RayQuery candidate/committed-hit site), found " << actual_count
       << " - path_tracing.slang may have regressed to a bare instance index, or the compiled .spv is "
-         "stale (recompile with compile-slang-shaders.ps1)";
+         "stale (recompile with Build-SlangShaders.ps1)";
 }
 
 // Regression gate for the second half of the multi-mesh device-lost fix
@@ -3976,7 +3976,7 @@ TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
         EXPECT_TRUE(builtins->count(kBuiltInInstanceCustomIndexKHR) > 0)
           << spv_path.string()
           << ": expected BuiltIn InstanceCustomIndexKHR (5327) - InstanceID() may have regressed to "
-             "InstanceIndex(), or the compiled .spv is stale (recompile with compile-slang-shaders.ps1)";
+             "InstanceIndex(), or the compiled .spv is stale (recompile with Build-SlangShaders.ps1)";
         EXPECT_EQ(builtins->count(kBuiltInInstanceId), 0U)
           << spv_path.string()
           << ": expected no BuiltIn InstanceId (6) - it reads the TLAS instance index, not the "
@@ -3996,7 +3996,7 @@ TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
       << path_tracing_spv.string()
       << ": expected OpRayQueryGetIntersectionInstanceCustomIndexKHR to be present - Candidate/Committed "
          "InstanceID() may have regressed to InstanceIndex(), or the compiled .spv is stale (recompile "
-         "with compile-slang-shaders.ps1)";
+         "with Build-SlangShaders.ps1)";
 
     const auto instance_id_it = counts->find(kOpRayQueryGetIntersectionInstanceIdKHR);
     const std::size_t instance_id_count = (instance_id_it == counts->end()) ? 0 : instance_id_it->second;
@@ -5090,7 +5090,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
                 violations.push_back(mapping.slang_source + " -> " + fs::relative(dest, repo_root).string()
                                       + ": reachable function '" + name
                                       + "' is missing from the checked-in WGSL (regenerate with "
-                                        "scripts/windows/compile-slang-shaders.ps1 or .sh)");
+                                        "scripts/windows/Build-SlangShaders.ps1 or .sh)");
             }
         }
     }
@@ -6836,7 +6836,7 @@ std::map<std::string, std::string> shared_module_target_truth(const fs::path &sl
 // docs/shader-sharing.md's shader-targets table claims, per Slang
 // entry-point source, which single target it compiles to (spirv for the C++
 // Vulkan engine, wgsl for the Rust WebGPU renderer). shader-manifest.json is
-// the actual source of truth compile-slang-shaders.ps1/.sh read from, so this
+// the actual source of truth Build-SlangShaders.ps1/.sh read from, so this
 // pins the doc against it the same way MaxTextureCountInDocsMatchesTheHeader
 // pins a doc constant against its header - a previous revision of this doc
 // claimed ten WGSL-only shaders were "compiled to both targets", which this

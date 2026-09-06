@@ -100,7 +100,7 @@ asan.log*
 .venv-docs/
 pipeline_cache/
 
-# slangc output (SPIR-V + WGSL) from compile-slang-shaders.ps1. Derived
+# slangc output (SPIR-V + WGSL) from Build-SlangShaders.ps1. Derived
 # artifacts, regenerable, churn on every Slang edit - see docs/shader-sharing.md.
 Resources/ShadersSlang/build/
 

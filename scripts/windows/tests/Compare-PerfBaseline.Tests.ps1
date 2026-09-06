@@ -6,7 +6,7 @@
 # script as a child process against small fixture baseline/candidate JSON
 # files in a temp directory (never the checked-in
 # Test/perf/baselines/win-9070xt-32core.json, which will change over time),
-# the same pattern Run-SyncValidation.Tests.ps1 uses for its script.
+# the same pattern Invoke-SyncValidation.Tests.ps1 uses for its script.
 #
 # NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
 # assertion syntax (see Submodule.Pins.Tests.ps1).

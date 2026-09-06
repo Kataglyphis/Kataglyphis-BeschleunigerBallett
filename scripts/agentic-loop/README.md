@@ -127,7 +127,7 @@ flowchart TD
 | `.opencode/commands/test.md` | `/test` slash command |
 | `.opencode/commands/quality.md` | `/quality` slash command |
 | `scripts/agentic-loop/AgenticLoop.config.json` | Loop configuration (models, intervals, build configs) |
-| `scripts/agentic-loop/Run-AgenticLoop.ps1` | Windows orchestration script (PowerShell) |
+| `scripts/agentic-loop/Invoke-AgenticLoop.ps1` | Windows orchestration script (PowerShell) |
 | `scripts/agentic-loop/Run-AgenticLoop.sh` | Linux orchestration script (Bash) |
 
 ## Prerequisites
@@ -231,7 +231,7 @@ $env:AGENTIC_EXECUTOR_MODEL = "claude-sonnet-5"
 ### Full loop (Windows)
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1
 ```
 
 ### Full loop (Linux)
@@ -244,7 +244,7 @@ pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1
 
 ```pwsh
 # Windows — run with OpenCode instead of the default (claude)
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -Engine opencode
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1 -Engine opencode
 ```
 
 ```bash
@@ -255,31 +255,31 @@ pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -En
 ### Dry run (see what would happen)
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -DryRun
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1 -DryRun
 ```
 
 ### Planner only (add tasks without executing)
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -PlannerOnly
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1 -PlannerOnly
 ```
 
 ### Executor only (drain current queue)
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -ExecutorOnly
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1 -ExecutorOnly
 ```
 
 ### Limited iterations
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -MaxIterations 5
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1 -MaxIterations 5
 ```
 
 ### Skip builds/tests/quality (fast planning cycle)
 
 ```pwsh
-pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Run-AgenticLoop.ps1 -SkipBuild -SkipTests -SkipQuality
+pwsh -ExecutionPolicy Bypass -File .\scriptsgentic-loop\Invoke-AgenticLoop.ps1 -SkipBuild -SkipTests -SkipQuality
 ```
 
 ### Interactive OpenCode commands

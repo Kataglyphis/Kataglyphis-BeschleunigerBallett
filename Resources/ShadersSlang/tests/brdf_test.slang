@@ -3,7 +3,7 @@ import brdf;
 // Test entry point: forces emit of the BRDF math so we can verify it
 // compiles to both SPIR-V and WGSL. Not loaded by any renderer — it exists
 // to guard the shared math module in CI (like the Rust tests/shader_export.rs
-// guards the naga path). See scripts/windows/compile-slang-shaders.ps1.
+// guards the naga path). See scripts/windows/Build-SlangShaders.ps1.
 
 RWStructuredBuffer<float4> outBuf;
 

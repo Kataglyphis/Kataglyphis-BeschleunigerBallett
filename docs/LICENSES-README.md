@@ -119,7 +119,7 @@ Hinweise zu einzelnen Einträgen:
 
 | Tool | Herkunft | Lizenz |
 |---|---|---|
-| slangc (Slang-Shader-Compiler) | Aus dem installierten Vulkan SDK (`VULKAN_SDK\Bin` bzw. `PATH`), siehe `scripts/windows/compile-slang-shaders.ps1` / `scripts/linux/compile-slang-shaders.sh`; nicht im Repo gevendort | Toolchain, nicht mitgeliefert; Lizenz nicht aus dem Repo verifizierbar |
+| slangc (Slang-Shader-Compiler) | Aus dem installierten Vulkan SDK (`VULKAN_SDK\Bin` bzw. `PATH`), siehe `scripts/windows/Build-SlangShaders.ps1` / `scripts/linux/compile-slang-shaders.sh`; nicht im Repo gevendort | Toolchain, nicht mitgeliefert; Lizenz nicht aus dem Repo verifizierbar |
 
 ## Unverifiziert — zu prüfen
 

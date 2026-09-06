@@ -142,7 +142,7 @@ function Invoke-ConfiguredBuild {
 function Invoke-SlangShaderPrecompile {
   param([Parameter(Mandatory)][string]$BuildLabel)
 
-  $compileSlangScript = Join-Path $PSScriptRoot 'compile-slang-shaders.ps1'
+  $compileSlangScript = Join-Path $PSScriptRoot 'Build-SlangShaders.ps1'
   if (-not (Test-Path $compileSlangScript)) {
     Write-BuildLogWarning -Context $context -Message "Slang shader compile script not found: $compileSlangScript"
     return

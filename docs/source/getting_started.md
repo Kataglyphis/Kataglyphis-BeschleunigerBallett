@@ -75,8 +75,8 @@ Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer 
 After building, these run helpers are available:
 
 ```pwsh
-& ./scripts/windows/run-clangcl-debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
-& ./scripts/windows/run-clangcl-release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
+& ./scripts/windows/Invoke-ClangClDebug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
+& ./scripts/windows/Invoke-ClangClRelease.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
 ```
 
 If build dependencies are missing on the host, prefer the containerized workflow below — the toolchain image ships everything (clang-cl, CMake, Ninja, Vulkan SDK, Rust, sccache).
@@ -152,4 +152,4 @@ On Linux, install the runtime packages first:
 sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
 ```
 
-On Windows this shows up as Debug builds aborting at startup with exit code `-1073740791` (`0xC0000409`) right after logging `Validation layers requested, but not available!`. Install the Vulkan SDK (`winget install VulkanSDK`), or set `VK_LAYER_PATH` to a directory containing `VkLayer_khronos_validation.dll`/`.json`. Profile and Release builds run without validation layers. When running the AddressSanitizer Debug build manually, keep the `ASAN_OPTIONS` `log_path` relative (an absolute `C:\...` path breaks ASAN option parsing at the drive-letter colon) — the `run-clangcl-debug.ps1` helper already handles this.
+On Windows this shows up as Debug builds aborting at startup with exit code `-1073740791` (`0xC0000409`) right after logging `Validation layers requested, but not available!`. Install the Vulkan SDK (`winget install VulkanSDK`), or set `VK_LAYER_PATH` to a directory containing `VkLayer_khronos_validation.dll`/`.json`. Profile and Release builds run without validation layers. When running the AddressSanitizer Debug build manually, keep the `ASAN_OPTIONS` `log_path` relative (an absolute `C:\...` path breaks ASAN option parsing at the drive-letter colon) — the `Invoke-ClangClDebug.ps1` helper already handles this.

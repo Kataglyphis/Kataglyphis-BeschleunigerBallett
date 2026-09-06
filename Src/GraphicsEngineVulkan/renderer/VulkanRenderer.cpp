@@ -1004,7 +1004,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         // waits on (FrameSync::inFlightFence()) only guarantees the submission 3
         // frames prior has completed, not the immediately preceding one.
         // Measured 2026-08-01, with this barrier in place (RX 9070 XT,
-        // Run-SyncValidation.ps1, khronos_validation.validate_sync=true): no
+        // Invoke-SyncValidation.ps1, khronos_validation.validate_sync=true): no
         // SYNC-HAZARD in the log across the new
         // GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice (30+ frames,
         // clouds enabled) nor in the frames the all-maximum case of

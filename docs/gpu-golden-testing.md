@@ -87,7 +87,7 @@ image barriers, the deferred/forward command streams, path/ray tracing) into
 verifiable ones.
 
 Shader-only units are cheap: edit a `.slang` source, run
-`compile-slang-shaders.ps1` (Windows) / `compile-slang-shaders.sh` (Linux) to
+`Build-SlangShaders.ps1` (Windows) / `compile-slang-shaders.sh` (Linux) to
 refresh the compiled SPIR-V, then run one golden — no C++ rebuild needed.
 The `BuildIntegrity` tests check each `.spv` is not older than its `.slang`
 source. Note the output tree (`Resources/ShadersSlang/build/`) is **gitignored,
@@ -142,7 +142,7 @@ the debug build's normal validation layers.
 Run it after touching render passes, barriers, or frames-in-flight:
 
 ```
-pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1
+pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1
 ```
 
 This builds on the same `commitTestSuite.exe` as above (repo root or

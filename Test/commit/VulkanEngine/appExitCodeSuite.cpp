@@ -2,7 +2,7 @@
 //
 // Before this, App.cpp always returned EXIT_SUCCESS regardless of how the
 // frame loop ended, so a device-lost or fatal-submit run was reported as a
-// clean quit - Run-SyncValidation.ps1 and the run-clangcl-*.ps1 helpers had
+// clean quit - Invoke-SyncValidation.ps1 and the Invoke-ClangCl*.ps1 helpers had
 // no way to tell a broken run from a normal window close.
 
 #include <gtest/gtest.h>

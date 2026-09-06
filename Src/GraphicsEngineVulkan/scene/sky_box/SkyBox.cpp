@@ -285,7 +285,7 @@ void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, uint3
 
 void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 {
-    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
 

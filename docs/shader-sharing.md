@@ -209,7 +209,7 @@ push constants, so it never merged with the Rust tonemap shader.
 **CI guards:** `tests/brdf_test.slang` and `tests/noise_test.slang` each
 `import` a shared math module and dual-emit to SPIR-V + WGSL, so a change
 that breaks either target's compile fails the manifest run in
-`compile-slang-shaders.ps1` before it reaches either renderer. They are
+`Build-SlangShaders.ps1` before it reaches either renderer. They are
 deliberately excluded from the table above (see its gating test). Only
 `brdf` and `noise` are guarded for dual emit today; a spirv-only module has
 nothing to guard until it gains a real wgsl consumer — the
