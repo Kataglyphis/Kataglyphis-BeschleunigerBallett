@@ -20,7 +20,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 CODE_QUALITY_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/code-quality.sh"
 if [[ ! -f "${CODE_QUALITY_LIB}" ]]; then
-  err "Shared code-quality library not found at '${CODE_QUALITY_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+  err "Shared code-quality library not found at '${CODE_QUALITY_LIB}'. Initialize the ContainerHub submodule first."
 fi
 # shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/code-quality.sh
 source "${CODE_QUALITY_LIB}"

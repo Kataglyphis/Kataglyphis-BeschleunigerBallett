@@ -316,7 +316,7 @@ jobs:
       #
       # It must be actions/checkout doing this, not a hand-rolled
       # `git submodule update --init` step. .gitmodules pins git@github.com:
-      # (SSH) URLs for Kataglyphis-ContainerHub and Kataglyphis-RustProjectTemplate,
+      # (SSH) URLs for ContainerHub and OxidANT,
       # and a hosted runner has no SSH key - the bare git command died with
       # "git@github.com: Permission denied (publickey)" on both, every single run.
       # checkout's submodule support installs the same `url.<https>.insteadOf

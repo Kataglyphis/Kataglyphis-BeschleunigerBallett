@@ -2,7 +2,7 @@
 
 An autonomous coding loop that alternates between a **planner** (expensive,
 powerful model) and an **executor** (cheap, fast model) to continuously
-improve the Kataglyphis-BeschleunigerBallett graphics engine.
+improve the BeschleunigerBallett graphics engine.
 
 Two engines are supported (select via `engine` in the config, `--engine` /
 `-Engine` on the runner scripts, or `AGENTIC_ENGINE` in the environment):
@@ -13,7 +13,7 @@ Two engines are supported (select via `engine` in the config, `--engine` /
 | `opencode` | GLM 5.2 | DeepSeek v4 Flash | [OpenCode](https://opencode.ai) `opencode run` |
 
 The reusable loop logic lives in the
-[Kataglyphis-ContainerHub](../../third_party/ContainerHub)
+[ContainerHub](../../third_party/ContainerHub)
 submodule (`linux/scripts/lib/agentic-loop.sh` and
 `windows/scripts/modules/WindowsAgenticLoop.Common.psm1`); the scripts here
 are thin project-specific wrappers.
@@ -162,7 +162,7 @@ opencode auth login
 
 ### Container Runtime
 
-- **Windows**: [Stevedore](https://github.com/kataglyphis/Kataglyphis-ContainerHub)
+- **Windows**: [Stevedore](https://github.com/kataglyphis/ContainerHub)
   (Docker) — already configured via `Build-Windows-Container.ps1`.
 - **Linux**: [Rancher Desktop](https://rancherdesktop.io/) — provides the
   Docker-compatible CLI for any containerized build steps.

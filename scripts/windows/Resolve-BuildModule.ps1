@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Copied verbatim from Kataglyphis-ContainerHub
+# Copied verbatim from ContainerHub
 # `shared/windows/templates/Resolve-BuildModule.ps1` — do not hand-edit; sync
 # from upstream instead. This is the one build-tooling file that cannot be
 # imported out of the submodule, because it is what *finds* the submodule: it

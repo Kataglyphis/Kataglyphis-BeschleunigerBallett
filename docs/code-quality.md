@@ -19,7 +19,7 @@ database rewrite (upstream trap 1) resolves here to:
 ```pwsh
 $db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
 (Get-Content build-clangcl-debug\compile_commands.json -Raw) `
-  -replace 'C:/ws', 'D:/GitHub/Kataglyphis-BeschleunigerBallett' |
+  -replace 'C:/ws', 'D:/GitHub/BeschleunigerBallett' |
   Set-Content "$db\compile_commands.json" -NoNewline
 & $CT -p $db --quiet Src/GraphicsEngineVulkan/Main.cpp
 ```

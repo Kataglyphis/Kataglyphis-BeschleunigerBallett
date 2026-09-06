@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 APP_RUNNER_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/app-runner.sh"
 if [[ ! -f "${APP_RUNNER_LIB}" ]]; then
-  err "Shared app-runner library not found at '${APP_RUNNER_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+  err "Shared app-runner library not found at '${APP_RUNNER_LIB}'. Initialize the ContainerHub submodule first."
 fi
 # shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/app-runner.sh
 source "${APP_RUNNER_LIB}"

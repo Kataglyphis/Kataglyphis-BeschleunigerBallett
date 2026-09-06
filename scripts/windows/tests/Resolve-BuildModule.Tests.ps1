@@ -14,7 +14,7 @@ Describe 'Resolve-BuildModule' {
     It 'resolves the once-vendored modules upstream now that they were moved there' {
       # WindowsTesting.Common and WindowsClang.Common were vendored here until
       # 2026-08-11, when the two-consumer test moved them into ContainerHub
-      # (Inference-Engine needed the same ASan-runtime discovery). The vendored
+      # (OmniAccelerANT needed the same ASan-runtime discovery). The vendored
       # copies were then deleted -- and nothing else had to change, because the
       # preference order below picks up the upstream copy automatically. That
       # automatic pickup is the property this asserts.

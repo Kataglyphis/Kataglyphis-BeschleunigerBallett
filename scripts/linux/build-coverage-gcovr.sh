@@ -10,7 +10,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 COVERAGE_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/coverage.sh"
 if [[ ! -f "${COVERAGE_LIB}" ]]; then
-  err "Shared coverage library not found at '${COVERAGE_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+  err "Shared coverage library not found at '${COVERAGE_LIB}'. Initialize the ContainerHub submodule first."
 fi
 # shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/coverage.sh
 source "${COVERAGE_LIB}"

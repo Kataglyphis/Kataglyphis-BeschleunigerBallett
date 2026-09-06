@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────
-# Agentic loop for Kataglyphis-BeschleunigerBallett (Linux / Rancher Desktop)
+# Agentic loop for BeschleunigerBallett (Linux / Rancher Desktop)
 #
 # Thin wrapper around the reusable library in
 # third_party/ContainerHub/linux/scripts/lib/agentic-loop.sh.
@@ -68,7 +68,7 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   exit 1
 fi
 
-init_agentic_loop "Kataglyphis-BeschleunigerBallett" "$REPO_ROOT"
+init_agentic_loop "BeschleunigerBallett" "$REPO_ROOT"
 
 EXIT_CODE=0
 

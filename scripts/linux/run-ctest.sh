@@ -12,7 +12,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 CTEST_RUN_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/ctest-run.sh"
 if [[ ! -f "${CTEST_RUN_LIB}" ]]; then
-  err "Shared ctest-run library not found at '${CTEST_RUN_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+  err "Shared ctest-run library not found at '${CTEST_RUN_LIB}'. Initialize the ContainerHub submodule first."
 fi
 # shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/ctest-run.sh
 source "${CTEST_RUN_LIB}"

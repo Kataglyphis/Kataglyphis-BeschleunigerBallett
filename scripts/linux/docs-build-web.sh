@@ -18,7 +18,7 @@ source_hub_module lib rust-toolchain.sh   || err "ContainerHub lib/rust-toolchai
 
 DOCS_BUILD_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/docs-build.sh"
 if [[ ! -f "${DOCS_BUILD_LIB}" ]]; then
-  err "Shared docs-build library not found at '${DOCS_BUILD_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+  err "Shared docs-build library not found at '${DOCS_BUILD_LIB}'. Initialize the ContainerHub submodule first."
 fi
 # shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/docs-build.sh
 source "${DOCS_BUILD_LIB}"

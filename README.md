@@ -3,7 +3,7 @@
     <img src="images/logo.png" alt="logo" width="200" />
   </a>
 
-  <h1>Kataglyphis-BeschleunigerBallett</h1>
+  <h1>BeschleunigerBallett</h1>
 
   <h4>Experimental graphics engine and renderer playground for Vulkan, a Rust WebGPU sibling renderer, modern CMake, testing, packaging, and optional Rust integration.</h4>
 </div>
@@ -17,19 +17,19 @@
 
 see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/). 
 
-[![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_arm.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_arm.yml)
-[![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_x86.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_x86.yml)
-[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Windows.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Windows.yml)  
-[![CodeQL](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/github-code-scanning/codeql)
-[![Automatic Dependency Submission](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission)
-[![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/Kataglyphis-BeschleunigerBallett)]()  
+[![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_arm.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_arm.yml)
+[![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_x86.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_x86.yml)
+[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Windows.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Windows.yml)  
+[![CodeQL](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/github-code-scanning/codeql)
+[![Automatic Dependency Submission](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission/badge.svg)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission)
+[![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/BeschleunigerBallett)]()  
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BX9AVVES2P9LN)
 [![Twitter](https://img.shields.io/twitter/follow/Cataglyphis_?style=social)](https://twitter.com/Cataglyphis_)
 [![YouTube](https://img.shields.io/youtube/channel/subscribers/UC3LZiH4sZzzaVBCUV8knYeg?style=social)](https://www.youtube.com/channel/UC3LZiH4sZzzaVBCUV8knYeg)
 
 ## Overview
 
-Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground used to explore modern graphics APIs and the surrounding engineering workflow. The repository combines a C++23-modules Vulkan engine, a companion Rust WebGPU renderer (native + browser), build automation, packaging, testing, documentation, and Rust integration.
+BeschleunigerBallett is a renderer and graphics-engine playground used to explore modern graphics APIs and the surrounding engineering workflow. The repository combines a C++23-modules Vulkan engine, a companion Rust WebGPU renderer (native + browser), build automation, packaging, testing, documentation, and Rust integration.
 
 ## Highlights
 
@@ -57,8 +57,8 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground us
 ### Clone
 
 ```bash
-git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
-cd Kataglyphis-BeschleunigerBallett
+git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/BeschleunigerBallett.git
+cd BeschleunigerBallett
 ```
 
 ### Configure and build with CMake presets
@@ -115,7 +115,7 @@ Shaders for the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [ContainerHub](https://github.com/Kataglyphis/ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
 
 ## Roadmap
 
@@ -156,12 +156,12 @@ See the full third-party license overview in [docs/LICENSES-README.md](docs/LICE
 
 Jonas Heinle - [@Cataglyphis_](https://twitter.com/Cataglyphis_) - renderdude@jotrockenmitlocken.de
 
-Project link: [https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett)
+Project link: [https://github.com/Kataglyphis/BeschleunigerBallett](https://github.com/Kataglyphis/BeschleunigerBallett)
 
 ## Further Reading
 
 - [Official homepage](https://beschleunigerballette.jonasheinle.de/)
-- [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/ContainerHub)
+- [ContainerHub](https://github.com/Kataglyphis/ContainerHub)
 - [Doxygen PDF reference](Documents/refman.pdf)
 - [Sphinx docs source](docs/source)
 

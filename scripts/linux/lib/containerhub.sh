@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copied verbatim from Kataglyphis-ContainerHub
+# Copied verbatim from ContainerHub
 # `shared/linux/templates/containerhub.sh` — do not hand-edit; sync from
 # upstream instead. This is the one build-tooling file that cannot be sourced
 # out of the submodule, because it is what *finds* the submodule.

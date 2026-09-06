@@ -1,4 +1,4 @@
-# Project: Kataglyphis-BeschleunigerBallett
+# Project: BeschleunigerBallett
 
 The role, the headless-session discipline, the per-task workflow and the generic
 rules come from ContainerHub's shared Executor prompt, which the loop prepends to

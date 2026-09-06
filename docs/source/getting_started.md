@@ -14,8 +14,8 @@ Make sure these tools are available before you build the project:
 ## Clone the Repository
 
 ```bash
-git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
-cd Kataglyphis-BeschleunigerBallett
+git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/BeschleunigerBallett.git
+cd BeschleunigerBallett
 ```
 
 ## Configure with CMake Presets
@@ -34,7 +34,7 @@ For Visual Studio style generators on Windows, add `-C Debug` or `-C Release` to
 A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
 and fails `cmake --list-presets` with `Unrecognized "version" field` — read
 the file itself, or the Windows configurations table in
-[AGENTS.md](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/blob/develop/AGENTS.md#windows-configurations-build-windowsps1),
+[AGENTS.md](https://github.com/Kataglyphis/BeschleunigerBallett/blob/develop/AGENTS.md#windows-configurations-build-windowsps1),
 instead.
 On Windows, prefer `scripts/windows/Build-Windows-Container.ps1`, which builds
 inside a container that already has a new enough CMake.

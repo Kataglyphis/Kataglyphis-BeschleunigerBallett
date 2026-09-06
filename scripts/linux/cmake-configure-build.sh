@@ -12,7 +12,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 CMAKE_BUILD_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/cmake-build.sh"
 if [[ ! -f "${CMAKE_BUILD_LIB}" ]]; then
-  err "Shared cmake-build library not found at '${CMAKE_BUILD_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+  err "Shared cmake-build library not found at '${CMAKE_BUILD_LIB}'. Initialize the ContainerHub submodule first."
 fi
 # shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/cmake-build.sh
 source "${CMAKE_BUILD_LIB}"

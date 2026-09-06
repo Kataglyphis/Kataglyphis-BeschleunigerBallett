@@ -7,14 +7,14 @@ from pathlib import Path
 
 # Import shared configuration from ContainerHub.
 #
-# The shared docs tooling moved out of ContainerHub into Kataglyphis-DocumANTation,
+# The shared docs tooling moved out of ContainerHub into DocumANTation,
 # which ContainerHub vendors under external/. This path still pointed at the old
 # ContainerHub location, so .exists() had been silently False ever since and the
 # else-branch fallback below was what actually configured these docs — the shared
 # extension list and theme options were never applied. Fixed 2026-08-11.
 CONTAINER_HUB_CONF = (
     Path(__file__).parent.parent.parent
-    / "third_party/ContainerHub/external/Kataglyphis-DocumANTation"
+    / "third_party/ContainerHub/external/DocumANTation"
     / "docs-tooling/source_templates/sphinx-book/conf_base.py"
 )
 if CONTAINER_HUB_CONF.exists():
@@ -35,7 +35,7 @@ if CONTAINER_HUB_CONF.exists():
         extensions = ["myst_parser", "sphinx_design"]
         html_theme = "sphinx_book_theme"
         html_theme_options = {
-            "repository_url": "https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett",
+            "repository_url": "https://github.com/Kataglyphis/BeschleunigerBallett",
             "use_repository_button": True,
             "show_navbar_depth": 2,
             "navigation_with_keys": True,
@@ -46,7 +46,7 @@ else:
     extensions = ["myst_parser", "sphinx_design"]
     html_theme = "sphinx_book_theme"
     html_theme_options = {
-        "repository_url": "https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett",
+        "repository_url": "https://github.com/Kataglyphis/BeschleunigerBallett",
         "use_repository_button": True,
         "show_navbar_depth": 2,
         "navigation_with_keys": True,
@@ -82,7 +82,7 @@ def _find_doxygen_xml_dir() -> Path | None:
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "Kataglyphis-BeschleunigerBallett"
+project = "BeschleunigerBallett"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
 release = (REPO_ROOT / "version.txt").read_text(encoding="utf-8").strip()
@@ -90,7 +90,7 @@ release = (REPO_ROOT / "version.txt").read_text(encoding="utf-8").strip()
 # -- Project-specific overrides ------------------------------------------------
 # Update repository URL for this project
 html_theme_options["repository_url"] = (
-    "https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett"
+    "https://github.com/Kataglyphis/BeschleunigerBallett"
 )
 
 # -- Add project-specific extensions -------------------------------------------
@@ -119,8 +119,8 @@ myst_enable_extensions = [
 doxygen_xml_dir = _find_doxygen_xml_dir()
 if doxygen_xml_dir is not None:
     extensions.extend(["breathe", "exhale"])
-    breathe_projects = {"Kataglyphis-BeschleunigerBallett": str(doxygen_xml_dir)}
-    breathe_default_project = "Kataglyphis-BeschleunigerBallett"
+    breathe_projects = {"BeschleunigerBallett": str(doxygen_xml_dir)}
+    breathe_default_project = "BeschleunigerBallett"
     exhale_args = {
         "containmentFolder": "./api",
         "rootFileName": "library_root.rst",

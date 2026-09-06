@@ -1,9 +1,9 @@
-Kataglyphis-BeschleunigerBallett Documentation
+BeschleunigerBallett Documentation
 ==============================================
 
 .. rst-class:: hero-section
 
-Build and maintenance guide for Kataglyphis-BeschleunigerBallett.
+Build and maintenance guide for BeschleunigerBallett.
 
 - Project overview and repository map
 - Build, run, packaging, and docs workflow

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI agents and new contributors working in Kataglyphis-BeschleunigerBallett
+Guidance for AI agents and new contributors working in BeschleunigerBallett
 (a Vulkan graphics-engine playground with a Rust WebGPU sibling renderer:
 C++23/C17, CMake presets, optional Rust).
 
@@ -336,7 +336,7 @@ rather than hand-editing it.
 
 **The vendored directory is now empty**, and a Pester case asserts it stays that
 way. `WindowsClang.Common` and `WindowsTesting.Common` were the last two, and
-they went upstream on 2026-08-11 under the two-consumer test: Inference-Engine
+they went upstream on 2026-08-11 under the two-consumer test: OmniAccelerANT
 needed the same ASan-runtime discovery, and needing something twice is what
 makes it shared. Their project-specific values became parameters whose defaults
 preserve this repo's behaviour (`-SourceSubdirectory 'Src'`,
@@ -545,7 +545,7 @@ The `ubuntu-24.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
 kataglyphis_webgpu_renderer`) after the performance benchmarks step. Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm
-demo) but its ~150 tests only ran in `Kataglyphis-RustProjectTemplate`'s own
+demo) but its ~150 tests only ran in `OxidANT`'s own
 workflow — so edits made to `crates/webgpu_renderer` from this working tree
 got no test signal until the submodule was pushed separately.
 

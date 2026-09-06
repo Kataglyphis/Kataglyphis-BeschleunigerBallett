@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   Agentic loop: planner adds tasks to BACKLOG.md, executor drains the queue.
-  Uses WindowsAgenticLoop.Common module from Kataglyphis-ContainerHub.
+  Uses WindowsAgenticLoop.Common module from ContainerHub.
 
   Engines (config .engine, or -Engine / $env:AGENTIC_ENGINE):
     claude   — planner: Opus 5 (fallback Fable 5), executor: Sonnet

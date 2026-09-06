@@ -1,6 +1,6 @@
 # Project Overview
 
-Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground for experimenting with Vulkan, a companion Rust WebGPU renderer, modern CMake, testing, packaging, and optional Rust integration. This documentation focuses on the build and maintenance workflow around the engine, not only on the rendering features themselves.
+BeschleunigerBallett is a renderer and graphics-engine playground for experimenting with Vulkan, a companion Rust WebGPU renderer, modern CMake, testing, packaging, and optional Rust integration. This documentation focuses on the build and maintenance workflow around the engine, not only on the rendering features themselves.
 
 ## What is in Scope?
 

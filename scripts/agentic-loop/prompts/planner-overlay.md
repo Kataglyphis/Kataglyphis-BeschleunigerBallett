@@ -1,4 +1,4 @@
-# Project: Kataglyphis-BeschleunigerBallett
+# Project: BeschleunigerBallett
 
 The role, the critical rules, the refactor focus areas and the task-entry
 template come from ContainerHub's shared Planner prompt, which the loop prepends

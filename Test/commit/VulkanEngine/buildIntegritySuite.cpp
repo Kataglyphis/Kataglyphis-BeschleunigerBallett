@@ -2162,7 +2162,7 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
           << "Slang source mapped by the manifest's wgslMap is missing: " << source.string();
 
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
-        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+        if (!fs::exists(dest)) { continue; }// OxidANT submodule not checked out here
 
         std::error_code error;
         const auto source_time = fs::last_write_time(source, error);
@@ -2188,7 +2188,7 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 
     if (checked == 0) {
         GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the "
-                        "RustProjectTemplate submodule is likely not checked out here";
+                        "OxidANT submodule is likely not checked out here";
     }
 
     EXPECT_TRUE(stale.empty()) << stale.size()
@@ -2215,7 +2215,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
     int checked = 0;
     for (const auto &mapping : manifest->wgsl_map) {
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
-        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+        if (!fs::exists(dest)) { continue; }// OxidANT submodule not checked out here
         ++checked;
 
         const auto lines = readFileLines(dest);
@@ -2233,7 +2233,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
 
     if (checked == 0) {
         GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the "
-                        "RustProjectTemplate submodule is likely not checked out here";
+                        "OxidANT submodule is likely not checked out here";
     }
 
     EXPECT_TRUE(hand_edits.empty())
@@ -2281,7 +2281,7 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
     int checked = 0;
     for (const auto &mapping : manifest->wgsl_map) {
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
-        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+        if (!fs::exists(dest)) { continue; }// OxidANT submodule not checked out here
         ++checked;
 
         const auto lines_opt = readFileLines(dest);
@@ -2328,7 +2328,7 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
 
     if (checked == 0) {
         GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the "
-                        "RustProjectTemplate submodule is likely not checked out here";
+                        "OxidANT submodule is likely not checked out here";
     }
 
     EXPECT_TRUE(violations.empty())
@@ -5071,7 +5071,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 
     for (const auto &mapping : manifest->wgsl_map) {
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
-        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+        if (!fs::exists(dest)) { continue; }// OxidANT submodule not checked out here
 
         const auto dest_text_opt = readFileText(dest);
         ASSERT_TRUE(dest_text_opt.has_value()) << "could not open " << dest.string();
@@ -5096,7 +5096,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
     }
 
     if (checked_destinations == 0) {
-        GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the RustProjectTemplate "
+        GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the OxidANT "
                         "submodule is likely not checked out here";
     }
 
@@ -10405,8 +10405,8 @@ TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
       << joinViolations(violations);
 }
 
-// README.md and docs/source/conf.py drifted to the old "Kataglyphis-Renderer"
-// repository slug after the rename to Kataglyphis-BeschleunigerBallett -
+// README.md and docs/source/conf.py drifted to the old "BeschleunigerBallett"
+// repository slug after the rename to BeschleunigerBallett -
 // conf.py's repository_url was fixed but project/breathe_projects/
 // breathe_default_project were not, and the README's build badges kept
 // pointing at someone else's CI. Nothing else gates prose, so a partial
@@ -10416,7 +10416,7 @@ TEST(BuildIntegrity, DocsNameThisRepository)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const std::string kStaleSlug = "Kataglyphis-Renderer";
+    const std::string kStaleSlug = "BeschleunigerBallett";
 
     std::vector<fs::path> candidates = { repo_root / "README.md" };
 
