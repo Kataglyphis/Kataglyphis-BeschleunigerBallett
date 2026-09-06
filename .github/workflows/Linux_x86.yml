@@ -34,7 +34,7 @@ jobs:
   build-x64:
     uses: ./.github/workflows/Linux.yml
     with:
-      runner: ubuntu-24.04
+      runner: ubuntu-26.04
     secrets:
       SERVER: ${{ secrets.SERVER }}
       USERNAME: ${{ secrets.USERNAME }}

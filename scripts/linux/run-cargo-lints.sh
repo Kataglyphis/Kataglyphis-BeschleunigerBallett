@@ -11,7 +11,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # reimplementing it, the same way run-cargo-tests.sh delegates to
 # cargo_test.sh. Run workspace-wide with no `-p` filter: `cargo fmt --all -p
 # <crate>` is a conflicting-arguments error, and workspace-wide is exactly
-# what the submodule's own CI runs (rust_ubuntu24_04.yml).
+# what the submodule's own CI runs (rust_ubuntu26_04.yml).
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"

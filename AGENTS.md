@@ -541,7 +541,7 @@ lint the wrong tree while still reporting green.
 Not covered today: `scripts/agentic-loop/Run-AgenticLoop.sh` and
 `bump-version.sh` fall outside the shellcheck globs.
 
-The `ubuntu-24.04` leg of the Linux lane also runs the Rust renderer crate's
+The `ubuntu-26.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
 kataglyphis_webgpu_renderer`) after the performance benchmarks step. Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm

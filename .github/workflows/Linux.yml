@@ -48,7 +48,7 @@ env:
   # The :latest-cross INDEX, one tag for every architecture. This used to be a
   # per-arch expression, and the reason it had to be is now obsolete: on
   # 2026-08-04 the :latest-cross manifest list contained exactly ONE entry,
-  # linux/amd64, so `docker pull` on ubuntu-24.04-arm died with "no matching
+  # linux/amd64, so `docker pull` on ubuntu-26.04-arm died with "no matching
   # manifest for linux/arm64/v8 in the manifest list entries" and took the whole
   # ARM lane with it. Naming :latest-cross-amd64 / :latest-cross-arm64 directly
   # was the way around that.
@@ -335,7 +335,7 @@ jobs:
           log-file: output.log
 
       - name: Codecov
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
+        if: ${{ inputs.runner == 'ubuntu-26.04' }}
         uses: codecov/codecov-action@v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -450,7 +450,7 @@ jobs:
   # ---------------------------------------------------------------------------
   rust:
     name: Rust renderer tests
-    if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    if: ${{ inputs.runner == 'ubuntu-26.04' }}
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
@@ -477,7 +477,7 @@ jobs:
   # ---------------------------------------------------------------------------
   docs:
     name: docs + wasm demo
-    if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    if: ${{ inputs.runner == 'ubuntu-26.04' }}
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host

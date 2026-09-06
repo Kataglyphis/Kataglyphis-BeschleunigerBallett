@@ -28,7 +28,7 @@ jobs:
     if: contains(github.event.head_commit.message, '[build-arm]')
     uses: ./.github/workflows/Linux.yml
     with:
-      runner: ubuntu-24.04-arm
+      runner: ubuntu-26.04-arm
     secrets:
       SERVER: ${{ secrets.SERVER }}
       USERNAME: ${{ secrets.USERNAME }}
