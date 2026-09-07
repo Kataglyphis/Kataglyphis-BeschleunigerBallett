@@ -342,7 +342,8 @@
 			"installDir": "${sourceDir}/build_release/",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-				"BUILD_TESTING": "FALSE"
+				"BUILD_TESTING": "FALSE",
+				"myproject_ENABLE_COVERAGE": "OFF"
 			}
 		},
 		{

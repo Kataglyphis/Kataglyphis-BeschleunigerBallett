@@ -620,7 +620,7 @@ queue must be fully drained before the planner adds new tasks; tasks marked
 Two engines are selectable via `engine` in
 `scripts/agentic-loop/AgenticLoop.config.json`, `-Engine`/`--engine`, or the
 `AGENTIC_ENGINE` env var: **`claude`** (default — Claude Code CLI, Opus 5
-planner with Fable 5 fallback, Sonnet executor, system prompts in
+planner with Fable 5 fallback, Sonnet executor, system-prompt overlays in
 `scripts/agentic-loop/prompts/`) and **`opencode`** (GLM 5.2 planner, DeepSeek v4
 Flash executor, agents in `.opencode/agents/`).
 
@@ -628,10 +628,15 @@ Flash executor, agents in `.opencode/agents/`).
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
 thin consumers: run `scripts/agentic-loop/Invoke-AgenticLoop.ps1` (Windows,
 requires PowerShell 7+) or `scripts/agentic-loop/Run-AgenticLoop.sh` (Linux,
-requires `jq`). The default planner/executor **task** prompts are single-sourced
-in ContainerHub at `shared/agentic-loop/prompts/*.md` — both the PowerShell
-module and the Bash library read them; only the engine-neutral **system**
-prompts stay project-owned. Architecture, configuration, and usage:
+requires `jq`). Prompts are single-sourced in ContainerHub: the planner/executor
+**task** prompts at `shared/agentic-loop/prompts/*.md` (both the PowerShell
+module and the Bash library read them) and the role **system** prompts at
+`shared/agentic-loop/system-prompts/*.md`. This repo owns only a per-role
+delta — `scripts/agentic-loop/prompts/planner-overlay.md` and
+`executor-overlay.md`, wired via `plannerPromptOverlayFile` /
+`executorPromptOverlayFile` and appended below the shared system prompt into
+one composed file at startup (Windows module only; the Bash library has no
+overlay support yet). What this repo configures, and its runners and overlays:
 [`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
 and sanitizer-aware tests:
 [agentic-loop-build-matrix.md](third_party/ContainerHub/docs/agentic-loop-build-matrix.md);
@@ -663,7 +668,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
-| `scripts/agentic-loop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
+| `scripts/agentic-loop/README.md` | Agentic loop consumer half: what this repo configures (and what deviates from upstream defaults), its two runners, its two prompt overlays — loop architecture and usage live in the two ContainerHub docs below |
 | `third_party/ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
 | `third_party/ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
 | `third_party/ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |

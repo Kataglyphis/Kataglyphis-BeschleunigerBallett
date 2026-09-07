@@ -37,13 +37,19 @@ $FuzzDir = $DebugDir
 # orchestrates tests and fuzz executables before the launch.
 Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsTesting.Common')
 
-$cmakeExePath = Resolve-PreferredTool -CommandName 'cmake.exe' -CandidatePaths @(
+# Get-PreferredToolPath -Required, not Resolve-PreferredTool: the latter was
+# deleted upstream on 2026-08-21 as "zero callers anywhere" — that audit grepped
+# ContainerHub only, and these three lines have been calling a function that
+# does not exist ever since. -Required keeps the throw-on-missing behaviour, so
+# a host without cmake fails HERE naming the tool instead of several lines later
+# on a $null path (which under Set-StrictMode reads as an unrelated defect).
+$cmakeExePath = Get-PreferredToolPath -Required -CommandName 'cmake.exe' -CandidatePaths @(
     'C:\Program Files\CMake\bin\cmake.exe'
 )
-$ctestExePath = Resolve-PreferredTool -CommandName 'ctest.exe' -CandidatePaths @(
+$ctestExePath = Get-PreferredToolPath -Required -CommandName 'ctest.exe' -CandidatePaths @(
     'C:\Program Files\CMake\bin\ctest.exe'
 )
-$clangClExePath = Resolve-PreferredTool -CommandName 'clang-cl.exe' -CandidatePaths @(
+$clangClExePath = Get-PreferredToolPath -Required -CommandName 'clang-cl.exe' -CandidatePaths @(
     'C:\Program Files\LLVM\bin\clang-cl.exe',
     (Join-Path $env:USERPROFILE 'scoop\apps\llvm\current\bin\clang-cl.exe')
 )

@@ -7,3 +7,9 @@ repos:
         language: system
         files: \.(c|cc|cpp|cxx|h|hh|hpp|ixx)$
         pass_filenames: true
+      - id: cmake-format
+        name: cmake-format
+        entry: cmake-format -i
+        language: system
+        files: (^|/)CMakeLists\.txt$|\.cmake$
+        pass_filenames: true
